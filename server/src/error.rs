@@ -2,6 +2,7 @@ type BoxDynError = Box<dyn std::error::Error>;
 
 #[derive(Debug)]
 pub struct Error {
+    kind: String,
     msg: Option<String>,
     src: Option<BoxDynError>,
 }
@@ -11,9 +12,18 @@ pub type Result<T> = std::result::Result<T, Error>;
 impl Error {
     pub fn new() -> Error {
         Error {
+            kind: String::from("Error"),
             msg: None,
             src: None,
         }
+    }
+
+    pub fn kind<K>(mut self, kind: K) -> Self
+    where
+        K: Into<String>
+    {
+        self.kind = kind.into();
+        self
     }
 
     pub fn message<M>(mut self, msg: M) -> Error
@@ -32,8 +42,8 @@ impl Error {
         self
     }
 
-    pub fn into_parts(self) -> (Option<String>, Option<BoxDynError>) {
-        (self.msg, self.src)
+    pub fn into_parts(self) -> (String, Option<String>, Option<BoxDynError>) {
+        (self.kind, self.msg, self.src)
     }
 }
 
@@ -67,19 +77,44 @@ impl From<&str> for Error {
     }
 }
 
+impl From<deadpool_postgres::BuildError> for Error {
+    fn from(err: deadpool_postgres::BuildError) -> Self {
+        use deadpool_postgres::BuildError;
+
+        match err {
+            BuildError::Backend(e) => Error::new()
+                .kind("tokio_postgres::Error")
+                .source(e),
+            BuildError::NoRuntimeSpecified(string) => Error::new()
+                .kind("deadpool::managed::BuildError")
+                .source(string)
+        }
+    }
+}
+
+impl From<hkdf::InvalidLength> for Error {
+    fn from(err: hkdf::InvalidLength) -> Self {
+        Error::new()
+            .kind("hkdf::InvalidLength")
+            .source("invalid output length when deriving key")
+    }
+}
+
 macro_rules! generic_catch {
-    ($e:path) => {
+    ($k:expr, $e:path) => {
         impl From<$e> for Error {
             fn from(err: $e) -> Self {
                 Error::new()
+                    .kind($k)
                     .source(err)
             }
         }
     };
-    ($e:path, $m:expr) => {
+    ($k:expr, $e:path, $m:expr) => {
         impl From<$e> for Error {
             fn from(err: $e) -> Self {
                 Error::new()
+                    .kind($k)
                     .message($m)
                     .source(err)
             }
@@ -87,4 +122,7 @@ macro_rules! generic_catch {
     }
 }
 
-generic_catch!(std::io::Error);
+generic_catch!("std::io::Error", std::io::Error);
+generic_catch!("handlebars::TemplateError", handlebars::TemplateError);
+generic_catch!("tokio_postgres::Error", tokio_postgres::Error);
+generic_catch!("snowcloud_cloud::error::Error", snowcloud_cloud::error::Error);

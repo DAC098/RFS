@@ -1,12 +1,14 @@
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::HeaderMap;
 use axum::extract::State;
-use axum::response::{Response, IntoResponse};
+use axum::response::IntoResponse;
 use serde::Serialize;
 
 use crate::net::{self, error};
-use crate::state::Shared;
+use crate::state::ArcShared;
 
 pub mod ping;
+pub mod auth;
+pub mod storage;
 
 #[derive(Serialize)]
 pub struct RootContext {}
@@ -16,7 +18,10 @@ pub struct RootJson {
     message: String
 }
 
-pub async fn get(State(state): State<Shared>, headers: HeaderMap) -> error::Result<impl IntoResponse> {
+pub async fn get(
+    State(state): State<ArcShared>, 
+    headers: HeaderMap
+) -> error::Result<impl IntoResponse> {
     if net::html::is_html_accept(&headers)?.is_some() {
         if state.templates().has_template("pages/root") {
             let context = RootContext {};
@@ -26,23 +31,14 @@ pub async fn get(State(state): State<Shared>, headers: HeaderMap) -> error::Resu
                 .into_response());
         }
 
-        let mut working = state.pages().clone();
-        working.push("root.html");
-
-        if !working.try_exists()? {
-            return Err(error::Error::new()
-                .status(StatusCode::NOT_FOUND)
-                .kind("NotFound")
-                .message("root html was not found"));
-        }
-
-        return Ok(net::fs::stream_file(working)
-            .await?
-            .into_response());
+        return Ok(net::fs::response_file(
+            "root html",
+            state.pages().join("root.html")
+        ).await?.into_response())
     }
 
     Ok(net::Json::empty()
-        .set_message("no-op")
+        .with_message("no-op")
         .into_response())
 }
 

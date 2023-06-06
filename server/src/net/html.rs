@@ -1,4 +1,4 @@
-use axum::http::{header, Request, HeaderValue, HeaderMap, StatusCode};
+use axum::http::{header, HeaderValue, HeaderMap, StatusCode};
 use axum::response::Response;
 
 use crate::net::error;

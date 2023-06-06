@@ -3,57 +3,8 @@ use std::str::FromStr;
 
 use clap::ArgMatches;
 use tokio_postgres::{Client, Config, NoTls};
-use sqlx::{Connection, PgConnection};
-use sqlx::postgres::PgConnectOptions;
 
 use crate::error;
-
-pub async fn postgres_sqlx(args: &ArgMatches) -> error::Result<PgConnection> {
-    if let Some(connect) = args.get_one::<String>("connect") {
-        Ok(PgConnection::connect(connect.as_str()).await?)
-    } else {
-        let user = args.get_one::<String>("user")
-            .unwrap();
-        let password = args.get_one::<String>("password");
-        let host = args.get_one::<String>("host")
-            .unwrap();
-        let port = args.get_one("port")
-            .map(|v: &u16| v.clone())
-            .unwrap();
-        let dbname = args.get_one::<String>("dbname")
-            .unwrap();
-
-        let mut options = PgConnectOptions::new()
-            .username(user.as_str())
-            .host(host.as_str())
-            .port(port)
-            .database(dbname.as_str());
-
-        if args.get_flag("req_password") {
-            print!("postgres user password: ");
-            std::io::stdout().flush()?;
-
-            let mut input = String::new();
-            let _read = std::io::stdin().read_line(&mut input)?;
-
-            if let Some((given, _newline)) = input.rsplit_once('\n') {
-                options = options.password(given);
-            } else {
-                options = options.password(input.as_str());
-            }
-        } else if let Some(pass) = password {
-            options = options.password(pass.as_str());
-        }
-
-        tracing::event!(
-            tracing::Level::DEBUG,
-            "conn options: {:#?}",
-            options
-        );
-
-        Ok(PgConnection::connect_with(&options).await?)
-    }
-}
 
 pub async fn postgres(args: &ArgMatches) -> error::Result<Client> {
     let (client, conn) = if let Some(connect) = args.get_one::<String>("connect") {

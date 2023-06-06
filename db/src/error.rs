@@ -100,5 +100,4 @@ macro_rules! generic_catch {
 }
 
 generic_catch!("std::io::Error", std::io::Error);
-generic_catch!("sqlx::Error", sqlx::Error);
 generic_catch!("tokio_postgres::Error", tokio_postgres::Error);

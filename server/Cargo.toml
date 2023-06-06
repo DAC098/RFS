@@ -6,24 +6,44 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-clap = { version = "4.2.1" }
+lib = { path = "../lib" }
+
+clap = { version = "4.3.0", features = ["derive"] }
 lazy_static = { version = "1.4.0" }
 futures = { version = "0.3" }
+pin-project = { version = "1" }
+chrono = { version = "0.4.24", features = ["serde"] }
+base64 = { version = "0.21.0" }
+data-encoding = { version = "2.4.0" }
+snowcloud-cloud = { git = "https://github.com/DAC098/snowcloud" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
 
+rand = { version = "0.8.5", features = ["small_rng", "std"] }
+rust-argon2 = { version = "1" }
+blake3 = { version = "1.3.3" }
+sha1 = { version = "0.10.5" }
+sha2 = { version = "0.10.6" }
+sha3 = { version = "0.10.8" }
+hmac = { version = "0.12.1" }
+hkdf = { version = "0.12.3" }
+rust-otp = { git = "https://github.com/dac098/rust-otp" }
+
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7.8", features = ["codec", "io"] }
+tracing = { version = "0.1.37" }
+tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
+bytes = { version = "1.4.0" }
+
+tokio-postgres = { version = "0.7.8", features = ["with-serde_json-1", "with-chrono-0_4"] }
+deadpool-postgres = { version = "0.10.5" }
+
 hyper = { version = "0.14.26", features = ["full"] }
-tower = { version = "0.4.13" }
+tower = { version = "0.4.13", features = ["timeout"] }
 tower-http = { version = "0.4.0", features = ["trace"] }
 mime = { version = "0.3.17" }
 
-tokio = { version = "1", features = ["full"] }
-tokio-util = { version = "0.7.7", features = ["codec", "io"] }
-tracing = { version = "0.1.37" }
-tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
-bytes = { version = "1.4.0" }
+axum = { version = "0.6.18", features = ["macros"] }
 
-axum = { version = "0.6.12", features = ["macros"] }
-
-handlebars = { version = "4.3.6" }
+handlebars = { version = "4.3.7" }

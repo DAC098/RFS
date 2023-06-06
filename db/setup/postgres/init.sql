@@ -9,28 +9,32 @@ create table users (
 
 create table auth_password (
     user_id bigint not null primary key references users(id),
-
+    version 
     hash varchar not null
 );
 
 create table auth_totp (
     user_id bigint not null primary key references users(id),
 
-    algo varchar not null,
+    algo smallint not null,
     step int not null,
     digits int not null,
-    secret varchar not null
+    secret bytea not null
 );
 
 create table auth_totp_hash (
-    user_id bigint not null primary key references users(id),
+    key varchar not null,
 
-    key varchar not null unique,
-    used bool not null default false
+    user_id bigint not null references users(id),
+    hash varchar not null unique,
+
+    used bool not null default false,
+
+    primary key (key, user_id)
 );
 
 create table auth_session (
-    token varchar not null primary key,
+    token bytea not null primary key,
 
     user_id bigint not null references users(id),
 
@@ -39,7 +43,11 @@ create table auth_session (
     issued_on timestamp with time zone not null,
     expires timestamp with time zone not null,
 
-    verified bool not null default false
+    authenticated bool not null default false,
+    verified bool not null default false,
+
+    auth_method smallint not null,
+    verify_method smallint not null,
 );
 
 create table storage (
@@ -47,19 +55,21 @@ create table storage (
 
     user_id bigint not null references users(id),
 
-    name varchar not null unique,
+    name varchar not null,
 
-    s_type varchar not null,
-    s_data json not null,
+    s_data jsonb not null,
 
     created timestamp with time zone not null,
     updated timestamp with time zone,
-    deleted timestamp with time zone
+    deleted timestamp with time zone,
+
+    unique (user_id, name)
 );
 
 create table storage_tags (
     storage_id bigint not null references storage(id),
     tag varchar not null,
+    value varchar,
 
     constraint unique_storage_id_tag primary key (storage_id, tag)
 );
@@ -68,16 +78,20 @@ create table fs (
     id bigint not null primary key,
 
     user_id bigint not null references users(id),
-    storage_id bigint not null references storage(id),
     parent bigint references fs(id),
+
+    basename varchar not null,
 
     fs_type varchar not null,
 
     fs_path varchar not null,
-    fs_size bigint not null,
-    mime varchar,
+    fs_size bigint not null default 0,
+    mime_type varchar,
+    mime_subtype varchar,
 
-    storage_data json not null,
+    comment varchar,
+
+    s_data jsonb not null,
 
     created timestamp with time zone not null,
     updated timestamp with time zone,
@@ -87,6 +101,7 @@ create table fs (
 create table fs_tags (
     fs_id bigint not null references fs(id),
     tag varchar not null,
+    value varchar,
 
     constraint unique_fs_id_tag primary key (fs_id, tag)
 );
@@ -94,7 +109,7 @@ create table fs_tags (
 create table fs_checksums (
     fs_id bigint not null references fs(id),
     algo varchar not null,
-    hash varchar not null,
+    hash bytea not null,
 
     constraint unique_fs_id_algo primary key (fs_id, algo)
 );

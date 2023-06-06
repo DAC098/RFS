@@ -30,3 +30,20 @@ where
         .header("content-length", metadata.len())
         .body(StreamBody::new(stream))?)
 }
+
+pub async fn response_file<N, P>(name: N, path: P) -> error::Result<Response<StreamBody<ReaderStream<File>>>>
+where
+    N: AsRef<str>,
+    P: AsRef<Path>,
+{
+    let path_ref = path.as_ref();
+
+    if !path_ref.try_exists()? {
+        Err(error::Error::new()
+            .status(StatusCode::NOT_FOUND)
+            .kind("NotFound")
+            .message(format!("{} was not found", name.as_ref())))
+    } else {
+        Ok(stream_file(path_ref).await?)
+    }
+}

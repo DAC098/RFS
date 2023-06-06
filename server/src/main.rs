@@ -1,61 +1,83 @@
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::Duration;
 
-use clap::ArgMatches;
-use axum::{
-    routing::get,
-    Router,
-};
+use clap::Parser;
+use axum::Router;
+use axum::error_handling::HandleErrorLayer;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{FmtSubscriber, EnvFilter};
 
 mod error;
+mod util;
 mod net;
+mod record;
+mod fs;
+mod template;
+mod user;
+mod auth;
 mod state;
+mod tags;
+mod storage;
 mod routing;
 
-fn commands() -> clap::Command {
-    use clap::{Command, Arg, ArgAction, value_parser};
+#[derive(clap::Parser, Debug)]
+#[command(author, version, version, about, long_about = None)]
+struct CommandArgs {
+    /// ip address to bind the server to
+    #[arg(short, long)]
+    ip: Option<String>,
 
-    Command::new("personal-site")
-        .arg(Arg::new("ip")
-            .short('i')
-            .long("ip")
-            .action(ArgAction::Set)
-            .help("ip address to bind the server to")
-        )
-        .arg(Arg::new("port")
-            .short('p')
-            .long("port")
-            .action(ArgAction::Set)
-            .value_parser(value_parser!(u16))
-            .help("port for the server to listen on")
-        )
-        .arg(Arg::new("assets")
-            .long("assets")
-            .action(ArgAction::Set)
-            .value_parser(value_parser!(PathBuf))
-            .help("specifies the directory to load assets from")
-        )
-        .arg(Arg::new("pages")
-            .long("pages")
-            .action(ArgAction::Set)
-            .value_parser(value_parser!(PathBuf))
-            .help("specifies the directory to load html pages from")
-        )
-        .arg(Arg::new("templates")
-            .long("templates")
-            .action(ArgAction::Set)
-            .value_parser(value_parser!(PathBuf))
-            .help("specifies the directory to load handlebars templates from")
-        )
-        .arg(Arg::new("hbs_dev_mode")
-            .long("hbs-dev-mode")
-            .action(ArgAction::SetTrue)
-            .help("enabled dev mode for handlebars templates")
-        )
+    /// port for the server to listen on
+    #[arg(short, long)]
+    port: Option<u16>,
+
+    /// specified the directory to load assets from
+    #[arg(long)]
+    assets: Option<PathBuf>,
+
+    /// specifies the directory to load html pages from
+    #[arg(long)]
+    pages: Option<PathBuf>,
+
+    /// specified the directory to load handlebars templates from
+    #[arg(long)]
+    templates: Option<PathBuf>,
+
+    /// enabled dev mode for handlebars templates
+    #[arg(long)]
+    hbs_dev_mode: bool,
+
+    /// postgres username for connecting to database
+    #[arg(long)]
+    pg_user: Option<String>,
+
+    /// postgres user password for connecting to database
+    #[arg(long)]
+    pg_password: Option<String>,
+
+    /// postgres host address for database
+    #[arg(long)]
+    pg_host: Option<String>,
+
+    /// postgres port for connecting to host
+    #[arg(long)]
+    pg_port: Option<u16>,
+
+    /// postgres database name
+    #[arg(long)]
+    pg_dbname: Option<String>,
+
+    /// hashing algorithm to use for session key
+    #[arg(long)]
+    session_hash: Option<auth::state::SessionHash>,
+
+    /// session secret for hashing session ids
+    #[arg(long)]
+    session_secret: Option<String>
 }
 
 fn main() {
@@ -68,7 +90,7 @@ fn main() {
     tracing::subscriber::set_global_default(subscriber)
         .expect("failed to initalize global tracing subscriber");
 
-    let matches = commands().get_matches();
+    let matches = CommandArgs::parse();
 
     let rt = match Builder::new_multi_thread()
         .enable_io()
@@ -88,47 +110,47 @@ fn main() {
 
     if let Err(err) = rt.block_on(init(matches)) {
         match err.into_parts() {
-            (Some(msg), Some(err)) => {
+            (kind, Some(msg), Some(err)) => {
                 tracing::event!(
                     tracing::Level::ERROR,
-                    "Error: {}\n{}",
+                    "{}: {}\n{}",
+                    kind,
                     msg,
                     err
                 );
             },
-            (Some(msg), None) => {
+            (kind, Some(msg), None) => {
                 tracing::event!(
                     tracing::Level::ERROR,
-                    "Error: {}",
+                    "{}: {}",
+                    kind,
                     msg
                 );
             },
-            (None, Some(err)) => {
+            (kind, None, Some(err)) => {
                 tracing::event!(
                     tracing::Level::ERROR,
-                    "Error: {}",
+                    "{}: {}",
+                    kind,
                     err
                 );
             },
-            (None, None) => {
+            (kind, None, None) => {
                 tracing::event!(
                     tracing::Level::ERROR,
-                    "Error: no additional data"
+                    "{}",
+                    kind
                 );
             }
         }
     }
 }
 
-fn get_sock_addr(arg: &ArgMatches) -> error::Result<SocketAddr> {
+fn get_sock_addr(arg: &CommandArgs) -> error::Result<SocketAddr> {
     use std::net::IpAddr;
 
-    let port = arg.get_one("port")
-        .map(|v: &u16| v.clone())
-        .unwrap_or(0);
-
-    let ip_addr = if let Some(ip) = arg.get_one::<&str>("ip") {
-        IpAddr::from_str(ip).map_err(|_|
+    let ip_addr = if let Some(ip) = &arg.ip {
+        IpAddr::from_str(&ip).map_err(|_|
             error::Error::new()
                 .message("invalid ip address provided")
         )?
@@ -136,40 +158,197 @@ fn get_sock_addr(arg: &ArgMatches) -> error::Result<SocketAddr> {
         IpAddr::from([0,0,0,0])
     };
 
-    Ok(SocketAddr::new(ip_addr, port))
+    Ok(SocketAddr::new(ip_addr, arg.port.unwrap_or(0)))
 }
 
-fn get_shared_state(arg: &ArgMatches) -> error::Result<state::Shared> {
+fn get_shared_state(arg: &CommandArgs) -> error::Result<state::Shared> {
     let mut state_builder = state::Shared::builder();
 
-    if let Some(path) = arg.get_one::<PathBuf>("assets") {
-        state_builder.with_assets(path);
+    if let Some(path) = &arg.assets {
+        state_builder.set_assets(path);
     }
 
-    if let Some(path) = arg.get_one::<PathBuf>("pages") {
-        state_builder.with_pages(path.clone());
+    if let Some(path) = &arg.pages {
+        state_builder.set_pages(path.clone());
     }
 
-    if let Some(path) = arg.get_one::<PathBuf>("templates") {
-        state_builder.with_templates(path.clone());
+    {
+        let templates = state_builder.templates();
+
+        if let Some(path) = &arg.templates {
+            templates.set_templates(path.clone());
+        }
+
+        templates.set_dev_mode(arg.hbs_dev_mode);
     }
 
-    state_builder.set_hbs_dev_mode(arg.get_flag("hbs_dev_mode"));
+    {
+        let pg_options = state_builder.pg_options();
+
+        if let Some(user) = &arg.pg_user {
+            pg_options.set_user(user);
+        }
+
+        if let Some(password) = &arg.pg_password {
+            pg_options.set_password(password);
+        }
+
+        if let Some(host) = &arg.pg_host {
+            pg_options.set_host(host);
+        }
+
+        if let Some(port) = &arg.pg_port {
+            pg_options.set_port(*port);
+        }
+
+        if let Some(dbname) = &arg.pg_dbname {
+            pg_options.set_dbname(dbname);
+        }
+    }
+
+    {
+        let auth = state_builder.auth();
+
+        if let Some(session_secret) = &arg.session_secret {
+            auth.set_session_secret(session_secret.clone());
+        }
+
+        if let Some(session_hash) = &arg.session_hash { 
+            auth.set_session_hash(session_hash.clone());
+        }
+    }
+
+    tracing::event!(
+        tracing::Level::DEBUG,
+        "shared state builder {:#?}",
+        state_builder
+    );
 
     Ok(state_builder.build()?)
 }
 
-async fn init(arg: ArgMatches) -> error::Result<()> {
+async fn init(arg: CommandArgs) -> error::Result<()> {
+    use axum::routing::{get, post, put, patch, delete};
+
     let sock_addr = get_sock_addr(&arg)?;
     let state = get_shared_state(&arg)?;
 
+    tracing::event!(
+        tracing::Level::DEBUG,
+        "shared state {:#?}",
+        state
+    );
+
     let router = Router::new()
         .route("/", get(routing::handle::get))
+        .route(
+            "/auth",
+            get(routing::handle::auth::get)
+        )
+        .route(
+            "/auth/request",
+            post(routing::handle::auth::request::post)
+        )
+        .route(
+            "/auth/submit",
+            post(routing::handle::auth::submit::post)
+        )
+        .route(
+            "/auth/verify",
+            post(routing::handle::auth::verify::post)
+        )
+        .route(
+            "/auth/password",
+            post(routing::handle::auth::password::post)
+                .delete(routing::handle::auth::password::delete)
+        )
+        .route(
+            "/auth/totp",
+            get(routing::okay)
+                .post(routing::handle::auth::totp::post)
+                .delete(routing::handle::auth::totp::delete)
+        )
+        .route(
+            "/auth/totp_hash",
+            get(routing::okay)
+                .post(routing::handle::auth::totp_hash::post)
+        )
+        .route(
+            "/auth/totp_hash/:key_id",
+            put(routing::handle::auth::totp_hash::key_id::put)
+                .delete(routing::handle::auth::totp_hash::key_id::delete)
+        )
+        .route(
+            "/storage",
+            get(routing::handle::storage::get)
+                .post(routing::handle::storage::post)
+        )
+        .route(
+            "/storage/:storage_id",
+            get(routing::handle::storage::storage_id::get)
+                .put(routing::handle::storage::storage_id::put)
+                .delete(routing::handle::storage::storage_id::delete)
+        )
+        .route(
+            "/storage/:storage_id/fs",
+            get(routing::handle::storage::storage_id::fs::get)
+                .post(routing::handle::storage::storage_id::fs::post)
+        )
+        .route(
+            "/storage/:storage_id/fs/:fs_id",
+            get(routing::handle::storage::storage_id::fs::fs_id::get)
+                .post(routing::handle::storage::storage_id::fs::fs_id::post)
+                .put(routing::handle::storage::storage_id::fs::fs_id::put)
+                .delete(routing::handle::storage::storage_id::fs::fs_id::delete)
+        )
+        .route(
+            "/storage/:storage_id/fs/:fs_id/download",
+            get(routing::okay)
+        )
+        .route(
+            "/stroage/:stroage_id/fs/:fs_id/contents",
+            get(routing::okay)
+        )
+        .route(
+            "/storage/:storage_id/fs/:fs_id/checksum",
+            get(routing::okay)
+                .post(routing::okay)
+        )
+        .route(
+            "/storage/:storage_id/fs/:fs_id/checksum/:type",
+            get(routing::okay)
+                .delete(routing::okay)
+        )
+        .route(
+            "/users",
+            get(routing::okay)
+                .post(routing::okay)
+        )
+        .route(
+            "/users/:user_id",
+            get(routing::okay)
+                .put(routing::okay)
+                .delete(routing::okay)
+        )
+        .route(
+            "/users/:user_id/bot",
+            get(routing::okay)
+                .post(routing::okay)
+        )
+        .route(
+            "/users/:user_id/bot/:bot_id",
+            get(routing::okay)
+                .put(routing::okay)
+                .delete(routing::okay)
+        )
         .route("/ping", get(routing::handle::ping::get))
         .fallback(routing::serve_file::handle)
         .layer(ServiceBuilder::new()
-            .layer(TraceLayer::new_for_http()))
-        .with_state(state);
+            .layer(TraceLayer::new_for_http())
+            .layer(HandleErrorLayer::new(net::error::handle_error))
+            .layer(net::layer::timeout::TimeoutLayer::new(Duration::new(90, 0)))
+        )
+        .with_state(Arc::new(state));
 
     let server = hyper::Server::try_bind(&sock_addr)
         .map_err(|error| error::Error::new()

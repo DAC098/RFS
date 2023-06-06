@@ -5,10 +5,14 @@ use axum::response::IntoResponse;
 
 use crate::net;
 use crate::net::error;
-use crate::state::Shared;
+use crate::state::ArcShared;
 
 #[debug_handler]
-pub async fn handle(State(state): State<Shared>, method: Method, uri: Uri) -> error::Result<impl IntoResponse> {
+pub async fn handle(
+    State(state): State<ArcShared>,
+    method: Method,
+    uri: Uri
+) -> error::Result<impl IntoResponse> {
     if method != Method::GET {
         return Err(error::Error::new()
             .status(StatusCode::METHOD_NOT_ALLOWED)
