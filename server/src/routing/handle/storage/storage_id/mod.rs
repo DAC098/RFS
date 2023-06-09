@@ -6,7 +6,7 @@ use axum::response::IntoResponse;
 use serde::{Deserialize, Serialize};
 use lib::ids;
 use lib::models::storage::{StorageItem, StorageType};
-use lib::models::actions::storage::{UpdateStorage, UpdateStorageType};
+use lib::actions::storage::{UpdateStorage, UpdateStorageType};
 
 use crate::net;
 use crate::net::error;
@@ -54,7 +54,7 @@ pub async fn get(
         }
     };
 
-    let rtn = net::JsonWrapper::new(StorageItem {
+    let rtn = lib::json::Wrapper::new(StorageItem {
         id: medium.id,
         name: medium.name,
         user_id: medium.user_id,
@@ -146,7 +146,7 @@ pub async fn put(
 
     transaction.commit().await?;
 
-    Ok(net::Json::empty())
+    Ok(net::Json::new(()))
 }
 
 pub async fn delete(
@@ -183,6 +183,8 @@ pub async fn delete(
         &[&storage_id, &deleted]
     ).await?;
 
-    Ok(net::Json::empty()
-       .with_message("deleted storage"))
+    let body = lib::json::Wrapper::new(())
+        .with_message("deleted storage");
+
+    Ok(net::Json::new(body))
 }

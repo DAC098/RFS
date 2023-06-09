@@ -1,4 +1,5 @@
 use lib::models;
+use lib::actions;
 use axum::http::{HeaderMap, StatusCode};
 use axum::extract::State;
 use axum::response::IntoResponse;
@@ -13,7 +14,7 @@ use crate::auth::initiator::{self, LookupError};
 pub async fn post(
     State(state): State<ArcShared>,
     headers: HeaderMap,
-    axum::Json(json): axum::Json<models::actions::auth::SubmitAuth>,
+    axum::Json(json): axum::Json<actions::auth::SubmitAuth>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
@@ -36,7 +37,7 @@ pub async fn post(
     };
 
     match json {
-        models::actions::auth::SubmitAuth::None => match session.auth_method {
+        actions::auth::SubmitAuth::None => match session.auth_method {
             AuthMethod::None => {},
             _ => {
                 return Err(error::Error::new()
@@ -45,7 +46,7 @@ pub async fn post(
                     .message("invalid auth method provided"));
             }
         },
-        models::actions::auth::SubmitAuth::Password(given) => match session.auth_method {
+        actions::auth::SubmitAuth::Password(given) => match session.auth_method {
             AuthMethod::Password => {
                 let Some(user_password) = password::Password::retrieve(
                     &conn,
@@ -76,7 +77,7 @@ pub async fn post(
         }
     }
 
-    let verify_opt: Option<models::actions::auth::VerifyMethod>;
+    let verify_opt: Option<models::auth::VerifyMethod>;
 
     match session.verify_method {
         VerifyMethod::None => {
@@ -92,7 +93,7 @@ pub async fn post(
                     .source("session required user totp but user totp was not found"));
             };
 
-            verify_opt = Some(models::actions::auth::VerifyMethod::Totp {
+            verify_opt = Some(models::auth::VerifyMethod::Totp {
                 digits: *totp.digits()
             });
         }
@@ -107,14 +108,14 @@ pub async fn post(
     }
 
     if let Some(verify) = verify_opt {
-        let json_root = net::JsonWrapper::new(verify)
+        let json_root = lib::json::Wrapper::new(verify)
             .with_message("proceed with request verify method");
 
-        Ok(net::Json::new(json_root)
-            .into_response())
+        Ok(net::Json::new(json_root).into_response())
     } else {
-        Ok(net::Json::empty()
-            .with_message("session authenticated")
-            .into_response())
+        let body = lib::json::Wrapper::new(())
+            .with_message("session authenticated");
+
+        Ok(net::Json::new(body).into_response())
     }
 }

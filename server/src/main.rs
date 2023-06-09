@@ -229,6 +229,7 @@ fn get_shared_state(arg: &CommandArgs) -> error::Result<state::Shared> {
 
 async fn init(arg: CommandArgs) -> error::Result<()> {
     use axum::routing::{get, post, put, patch, delete};
+    use axum::error_handling::HandleError;
 
     let sock_addr = get_sock_addr(&arg)?;
     let state = get_shared_state(&arg)?;
@@ -240,7 +241,10 @@ async fn init(arg: CommandArgs) -> error::Result<()> {
     );
 
     let router = Router::new()
-        .route("/", get(routing::handle::get))
+        .route(
+            "/",
+            get(routing::handle::get)
+        )
         .route(
             "/auth",
             get(routing::handle::auth::get)

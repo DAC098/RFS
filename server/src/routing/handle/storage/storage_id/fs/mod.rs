@@ -89,9 +89,7 @@ pub async fn get(
         });
     }
 
-    Ok(net::Json::new(
-        net::JsonListWrapper::with_vec(list)
-    ))
+    Ok(net::Json::new(lib::json::ListWrapper::with_vec(list)))
 }
 
 pub async fn post(
@@ -161,7 +159,7 @@ pub async fn post(
 
     transaction.commit().await?;
 
-    let wrapper = net::JsonWrapper::new(rtn);
+    let wrapper = lib::json::Wrapper::new(rtn);
 
     Ok(net::Json::new(wrapper))
 }

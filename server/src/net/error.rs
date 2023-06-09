@@ -7,6 +7,96 @@ const DEFAULT_ACCEPT_VALUE: &str = "application/json";
 
 type BoxDynError = Box<dyn std::error::Error + Send + Sync>;
 
+fn box_into_inner<T>(b: Box<T>) -> T {
+    *b
+}
+
+fn handle_error_json(inner: Inner) -> Response {
+    let mut body = String::new();
+    body.push_str("{\"error\":\"");
+    body.push_str(&inner.kind);
+    body.push('"');
+
+    if let Some(msg) = inner.msg {
+        body.push_str(",\"message\":\"");
+        body.push_str(&msg);
+        body.push('"');
+    }
+
+    body.push('}');
+
+    Response::builder()
+        .status(inner.status)
+        .header("content-type", "application/json")
+        .header("content-length", body.len())
+        .body(body)
+        .unwrap()
+        .into_response()
+}
+
+fn handle_error_text(inner: Inner) -> Response {
+    let mut body = inner.kind;
+
+    if let Some(msg) = inner.msg {
+        body.push_str(": ");
+        body.push_str(&msg);
+    }
+
+    Response::builder()
+        .status(inner.status)
+        .header("content-type", "text/plain")
+        .header("content-length", body.len())
+        .body(body)
+        .unwrap()
+        .into_response()
+}
+
+pub async fn handle_error<E>(
+    headers: HeaderMap,
+    error: E
+) -> Response
+where
+    E: Into<Error>
+{
+    let error = error.into();
+
+    if let Some(err) = error.inner.src.as_ref() {
+        tracing::event!(
+            Level::ERROR,
+            "unhandled error when prcessing request: {:#?}",
+            err
+        );
+    }
+
+    let accept_value = if let Some(found) = headers.get(ACCEPT) {
+        let Ok(p) = found.to_str() else {
+            return handle_error_json(error.inner);
+        };
+
+        p
+    } else {
+        DEFAULT_ACCEPT_VALUE
+    };
+
+    let mut iter = mime::MimeIter::new(accept_value);
+
+    while let Some(check) = iter.next() {
+        if let Ok(part) = check {
+            if part.type_() == "text" {
+                if part.subtype() == "plain" {
+                    return handle_error_text(error.inner);
+                }
+            } else if part.type_() == "application" {
+                if part.subtype() == "json" {
+                    return handle_error_json(error.inner);
+                }
+            }
+        }
+    }
+
+    handle_error_json(error.inner)
+}
+
 #[derive(Debug)]
 pub struct Inner {
     status: StatusCode,
@@ -65,87 +155,6 @@ impl Error {
 
 }
 
-fn box_into_inner<T>(b: Box<T>) -> T {
-    *b
-}
-
-fn handle_error_json(inner: Inner) -> Response {
-    let mut body = String::new();
-    body.push_str("{\"error\":\"");
-    body.push_str(&inner.kind);
-    body.push('"');
-
-    if let Some(msg) = inner.msg {
-        body.push_str(",\"message\":\"");
-        body.push_str(&msg);
-        body.push('"');
-    }
-
-    body.push('}');
-
-    Response::builder()
-        .status(inner.status)
-        .header("content-type", "application/json")
-        .header("content-length", body.len())
-        .body(body)
-        .unwrap()
-        .into_response()
-}
-
-fn handle_error_text(inner: Inner) -> Response {
-    let mut body = inner.kind;
-
-    if let Some(msg) = inner.msg {
-        body.push_str(": ");
-        body.push_str(&msg);
-    }
-
-    Response::builder()
-        .status(inner.status)
-        .header("content-type", "text/plain")
-        .header("content-length", body.len())
-        .body(body)
-        .unwrap()
-        .into_response()
-}
-
-pub async fn handle_error<E>(
-    headers: HeaderMap,
-    error: E
-) -> Response
-where
-    E: Into<Error>
-{
-    let error = error.into();
-    let accept_value = if let Some(found) = headers.get(ACCEPT) {
-        let Ok(p) = found.to_str() else {
-            return handle_error_json(error.inner);
-        };
-
-        p
-    } else {
-        DEFAULT_ACCEPT_VALUE
-    };
-
-    let mut iter = mime::MimeIter::new(accept_value);
-
-    while let Some(check) = iter.next() {
-        if let Ok(part) = check {
-            if part.type_() == "text" {
-                if part.subtype() == "plain" {
-                    return handle_error_text(error.inner);
-                }
-            } else if part.type_() == "application" {
-                if part.subtype() == "json" {
-                    return handle_error_json(error.inner);
-                }
-            }
-        }
-    }
-
-    handle_error_json(error.inner)
-}
-
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.inner.kind)?;
@@ -169,7 +178,7 @@ impl axum::response::IntoResponse for Error {
         if let Some(err) = self.inner.src.as_ref() {
             tracing::event!(
                 Level::ERROR,
-                "error during request {:#?}",
+                "unhandled error when prcessing request: {:#?}",
                 err
             );
         }

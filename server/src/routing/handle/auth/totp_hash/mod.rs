@@ -1,4 +1,4 @@
-use lib::models::actions;
+use lib::actions;
 use axum::http::StatusCode;
 use axum::extract::State;
 use axum::response::IntoResponse;

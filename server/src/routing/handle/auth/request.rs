@@ -1,4 +1,5 @@
 use lib::models;
+use lib::actions;
 use axum::http::{HeaderMap, StatusCode};
 use axum::extract::State;
 use axum::response::IntoResponse;
@@ -12,7 +13,7 @@ use crate::auth::session;
 pub async fn post(
     State(state): State<ArcShared>,
     headers: HeaderMap,
-    axum::Json(json): axum::Json<models::actions::auth::RequestAuth>,
+    axum::Json(json): axum::Json<actions::auth::RequestUser>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
     let Some(user) = user::User::query_with_username(&mut conn, &json.username).await? else {
@@ -29,7 +30,7 @@ pub async fn post(
         .ok_or(error::Error::new()
             .source("chrono::DateTime<Utc> overflowed when adding 7 days"))?;
 
-    let mut json_auth_method = models::actions::auth::AuthMethod::None;
+    let mut json_auth_method = models::auth::AuthMethod::None;
     let mut session = auth::session::Session {
         token: session::token::SessionToken::unique(&conn).await?.unwrap(),
         user_id: user.id().clone(),
@@ -46,7 +47,7 @@ pub async fn post(
         match auth_method {
             auth::Authorize::Password(_) => {
                 session.auth_method = session::AuthMethod::Password;
-                json_auth_method = models::actions::auth::AuthMethod::Password;
+                json_auth_method = models::auth::AuthMethod::Password;
             }
         }
 
@@ -68,7 +69,7 @@ pub async fn post(
     }
 
     let session_cookie = session::create_session_cookie(state.auth(), &session);
-    let json_root = net::JsonWrapper::new(json_auth_method)
+    let json_root = lib::json::Wrapper::new(json_auth_method)
         .with_message("proceed with requested auth method");
 
     Ok(net::Json::new(json_root)

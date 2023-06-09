@@ -18,128 +18,9 @@ pub mod layer;
 pub mod fs;
 pub mod html;
 
-#[derive(Serialize)]
-pub struct JsonWrapper<T> {
-    message: Option<String>,
-    timestamp: Option<chrono::DateTime<chrono::Utc>>,
-    payload: T
-}
-
-impl<T> JsonWrapper<T> {
-    pub fn new(payload: T) -> Self {
-        Self {
-            message: None,
-            timestamp: None,
-            payload
-        }
-    }
-
-    pub fn payload(&self) -> &T {
-        &self.payload
-    }
-
-    pub fn message(&self) -> &Option<String> {
-        &self.message
-    }
-
-    pub fn timestamp(&self) -> &Option<chrono::DateTime<chrono::Utc>> {
-        &self.timestamp
-    }
-
-    pub fn with_timestamp_now(mut self) -> Self {
-        self.timestamp = Some(chrono::Utc::now());
-        self
-    }
-
-    pub fn with_message<M>(mut self, msg: M) -> Self
-    where
-        M: Into<String>
-    {
-        self.message = Some(msg.into());
-        self
-    }
-}
-
-#[derive(Serialize)]
-pub struct JsonListWrapper<T> {
-    message: Option<String>,
-    timestamp: Option<chrono::DateTime<chrono::Utc>>,
-    total: usize,
-    payload: T,
-}
-
-impl<T> JsonListWrapper<T> {
-    pub fn new(payload: T) -> Self {
-        Self {
-            message: None,
-            timestamp: None,
-            total: 0,
-            payload
-        }
-    }
-
-    pub fn payload(&self) -> &T {
-        &self.payload
-    }
-
-    pub fn message(&self) -> Option<&String> {
-        self.message.as_ref()
-    }
-
-    pub fn with_timestamp_now(mut self) -> Self {
-        self.timestamp = Some(chrono::Utc::now());
-        self
-    }
-
-    pub fn with_message<M>(mut self, msg: M) -> Self
-    where
-        M: Into<String>,
-    {
-        self.message = Some(msg.into());
-        self
-    }
-
-    pub fn with_total(mut self, total: usize) -> Self {
-        self.total = total;
-        self
-    }
-}
-
-impl<T> JsonListWrapper<Vec<T>> {
-    pub fn with_vec(payload: Vec<T>) -> Self {
-        Self {
-            message: None,
-            timestamp: None,
-            total: payload.len(),
-            payload
-        }
-    }
-}
-
 pub struct Json<T> {
     builder: Builder,
-    root: T,
-}
-
-impl<T> Json<JsonWrapper<T>> {
-    pub fn with_message<M>(mut self, msg: M) -> Self
-    where
-        M: Into<String>
-    {
-        self.root.message = Some(msg.into());
-        self
-    }
-
-    pub fn with_timestamp_now(mut self) -> Self {
-        self.root.timestamp = Some(chrono::Utc::now());
-        self
-    }
-}
-
-impl Json<JsonWrapper<()>> {
-    pub fn empty() -> Self {
-        Json::new(JsonWrapper::new(()))
-    }
+    root: T
 }
 
 impl<T> Json<T> {
@@ -176,6 +57,25 @@ impl<T> Json<T> {
     {
         self.builder = self.builder.header(key, value);
         self
+    }
+}
+
+impl<T> Json<lib::json::Wrapper<T>> {
+    pub fn with_message<M>(mut self, message: M) -> Self
+    where
+        M: Into<String>
+    {
+        self.root = self.root.with_message(message);
+        self
+    }
+}
+
+impl Json<lib::json::Wrapper<()>> {
+    pub fn empty() -> Self {
+        Self {
+            builder: Builder::new(),
+            root: lib::json::Wrapper::new(()),
+        }
     }
 }
 

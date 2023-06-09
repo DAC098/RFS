@@ -9,7 +9,7 @@ use futures::TryStreamExt;
 use serde::{Deserialize, Serialize};
 use lib::ids;
 use lib::models::storage::{StorageItem, StorageType, StorageListItem};
-use lib::models::actions::storage::{CreateStorage, CreateStorageType};
+use lib::actions::storage::{CreateStorage, CreateStorageType};
 
 use crate::net;
 use crate::net::error;
@@ -105,7 +105,7 @@ pub async fn get(
         list.push(item);
     }
 
-    let wrapper = net::JsonListWrapper::with_vec(list);
+    let wrapper = lib::json::ListWrapper::with_vec(list);
 
     Ok(net::Json::new(wrapper))
 }
@@ -162,7 +162,7 @@ pub async fn post(
 
     transaction.commit().await?;
 
-    let rtn = net::JsonWrapper::new(StorageItem {
+    let rtn = lib::json::Wrapper::new(StorageItem {
         id,
         name: json.name,
         user_id: initiator.user().id().clone(),

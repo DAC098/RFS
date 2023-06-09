@@ -81,7 +81,7 @@ impl Session {
                    auth_session.verified, \
                    auth_session.auth_method, \
                    auth_session.verify_method \
-            from auth_sessions \
+            from auth_session \
             where auth_session.token = $1",
             &[&token.as_slice()]
         ).await? {
@@ -109,7 +109,7 @@ impl Session {
 
         let _ = conn.execute(
             "\
-            insert into auth_sessions (\
+            insert into auth_session (\
                 token, \
                 user_id, \
                 dropped, \
@@ -120,7 +120,7 @@ impl Session {
                 auth_method, \
                 verify_method\
             ) values \
-            ($1, $2, $3, $4, $5, $6, $7, $8)",
+            ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
             &[
                 &self.token.as_slice(),
                 &self.user_id,
@@ -143,7 +143,7 @@ impl Session {
 
         let _ = conn.execute(
             "\
-            update auth_sessions
+            update auth_session
             set user_id = $2, \
                 dropped = $3, \
                 issued_on = $4, \
@@ -171,7 +171,7 @@ impl Session {
 
     pub async fn delete(&self, conn: &impl GenericClient) -> Result<(), PgError> {
         let _ = conn.execute(
-            "delete from auth_sessions where token = $1",
+            "delete from auth_session where token = $1",
             &[&self.token.as_slice()]
         ).await?;
 

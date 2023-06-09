@@ -75,7 +75,7 @@ impl SessionToken {
 
         loop {
             count = conn.execute(
-                "select token from auth_sessions where token = $1",
+                "select token from auth_session where token = $1",
                 &[&rtn.0.as_slice()]
             ).await?;
 

@@ -1,4 +1,4 @@
-use lib::models::actions::auth::SubmitVerify;
+use lib::actions::auth::SubmitVerify;
 use axum::http::{HeaderMap, StatusCode};
 use axum::extract::State;
 use axum::response::IntoResponse;
