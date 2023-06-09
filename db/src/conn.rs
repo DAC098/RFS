@@ -1,4 +1,3 @@
-use std::io::Write;
 use std::str::FromStr;
 
 use clap::ArgMatches;
@@ -45,7 +44,7 @@ pub async fn postgres(args: &ArgMatches) -> error::Result<Client> {
         config.connect(NoTls).await?
     };
 
-    tokio::spawn(async move {
+    tokio::task::spawn(async move {
         if let Err(e) = conn.await {
             tracing::event!(
                 tracing::Level::ERROR,

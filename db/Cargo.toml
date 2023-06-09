@@ -6,12 +6,16 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+lib = { path = "../lib" }
+
 clap = { version = "4.2.1" }
 chrono = { version = "0.4.24", features = [] }
 futures = { version = "0.3" }
 rpassword = { version = "7.2.0" }
+snowcloud-core = { git = "https://github.com/DAC098/snowcloud" }
+snowcloud-cloud = { git = "https://github.com/DAC098/snowcloud" }
 
-tokio = { version = "1", feautres = ["full"] }
+tokio = { version = "1", features = ["full"] }
 tracing = { version = "0.1.37" }
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
 

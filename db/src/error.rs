@@ -101,3 +101,4 @@ macro_rules! generic_catch {
 
 generic_catch!("std::io::Error", std::io::Error);
 generic_catch!("tokio_postgres::Error", tokio_postgres::Error);
+generic_catch!("snowcloud_cloud::error::Error", snowcloud_cloud::error::Error);

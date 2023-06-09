@@ -74,7 +74,7 @@ pub mod db {
         Arg::new("dbname")
             .long("dbname")
             .action(ArgAction::Set)
-            .default_value("fs_server")
+            .default_value("rfs")
             .help("dbname for postgres connection.")
             .conflicts_with("connect")
     }

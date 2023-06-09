@@ -1,14 +1,23 @@
+use tokio::runtime;
+use tracing_subscriber::{FmtSubscriber, EnvFilter};
+
 mod error;
 mod args;
 mod conn;
 mod run;
 
 fn commands() -> clap::Command {
-    use clap::{Command, Arg, ArgAction, value_parser};
+    use clap::{Command, Arg, ArgAction};
 
     Command::new("db")
         .subcommand_required(true)
         .arg_required_else_help(true)
+        .subcommand(
+            Command::new("ids")
+                .subcommand_required(true)
+                .about("generates an for the desired namespace")
+                .subcommand(Command::new("user"))
+        )
         .subcommand(
             Command::new("setup")
                 .about("creates the database from scratch")
@@ -75,9 +84,6 @@ fn commands() -> clap::Command {
 }
 
 fn main() {
-    use tokio::runtime::Builder;
-    use tracing_subscriber::{FmtSubscriber, EnvFilter};
-
     let subscriber = FmtSubscriber::builder()
         .with_env_filter(EnvFilter::from_default_env())
         .finish();
@@ -87,7 +93,7 @@ fn main() {
 
     let matches = commands().get_matches();
 
-    let rt = match Builder::new_current_thread()
+    let rt = match runtime::Builder::new_current_thread()
         .enable_io()
         .enable_time()
         .max_blocking_threads(1)
@@ -122,6 +128,7 @@ fn main() {
 async fn exec(matches: &clap::ArgMatches) -> error::Result<()> {
     match matches.subcommand() {
         Some(("setup", setup_matches)) => run::setup(&setup_matches).await?,
+        Some(("ids", ids_matches)) => run::ids(&ids_matches)?,
         Some(("migrate", migrate_matches)) => {},
         _ => unreachable!()
     };

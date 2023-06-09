@@ -9,7 +9,7 @@ create table users (
 
 create table auth_password (
     user_id bigint not null primary key references users(id),
-    version 
+    version int not null default 0,
     hash varchar not null
 );
 
@@ -47,7 +47,7 @@ create table auth_session (
     verified bool not null default false,
 
     auth_method smallint not null,
-    verify_method smallint not null,
+    verify_method smallint not null
 );
 
 create table storage (
