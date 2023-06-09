@@ -6,23 +6,9 @@ pub struct RequestUser {
 }
 
 #[derive(Serialize, Deserialize)]
-pub enum AuthMethod {
-    None,
-    Password
-}
-
-#[derive(Serialize, Deserialize)]
 pub enum SubmitAuth {
     None,
     Password(String)
-}
-
-#[derive(Serialize, Deserialize)]
-pub enum VerifyMethod {
-    None,
-    Totp {
-        digits: u32
-    }
 }
 
 #[derive(Serialize, Deserialize)]
