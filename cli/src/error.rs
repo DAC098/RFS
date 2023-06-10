@@ -100,3 +100,5 @@ macro_rules! generic_catch {
 }
 
 generic_catch!("std::io::Error", std::io::Error);
+generic_catch!("url::ParseError", url::ParseError);
+generic_catch!("reqwest::Error", reqwest::Error);

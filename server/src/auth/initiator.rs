@@ -3,7 +3,7 @@ use std::pin::Pin;
 use std::future::Future;
 
 use axum::http::StatusCode;
-use axum::http::header::HeaderMap;
+use axum::http::header::{HeaderMap, HeaderValue, GetAll};
 use axum::http::request::Parts;
 use axum::extract::FromRequestParts;
 use deadpool_postgres::{Pool, GenericClient};
@@ -51,12 +51,19 @@ pub enum LookupError {
 
     AuthorizationNotFound,
 
-    Database(tokio_postgres::Error)
+    Database(tokio_postgres::Error),
+    HeaderToStr(axum::http::header::ToStrError),
 }
 
 impl From<tokio_postgres::Error> for LookupError {
     fn from(e: tokio_postgres::Error) -> Self {
         LookupError::Database(e)
+    }
+}
+
+impl From<axum::http::header::ToStrError> for LookupError {
+    fn from(e: axum::http::header::ToStrError) -> Self {
+        LookupError::HeaderToStr(e)
     }
 }
 
@@ -96,7 +103,8 @@ impl From<LookupError> for error::Error {
                 .kind("AuthorizationNotFound")
                 .message("authorization not provided"),
 
-            LookupError::Database(e) => e.into()
+            LookupError::Database(e) => e.into(),
+            LookupError::HeaderToStr(e) => e.into(),
         }
     }
 }
@@ -149,16 +157,39 @@ where
     }
 }
 
+fn find_session_id<'a>(cookies: GetAll<'a, HeaderValue>) -> Result<Option<&'a str>, LookupError> {
+    for value in cookies {
+        let value_str = value.to_str()?;
+
+        if let Some((name, value)) = value_str.split_once('=') {
+            if name == "session_id" {
+                return Ok(Some(value));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+
 pub async fn lookup_header_map(
     auth: &state::Auth,
     conn: &impl GenericClient,
     headers: &HeaderMap
 ) -> Result<Initiator, LookupError> {
-    if let Some(session_id) = headers.get("session_id") {
-        lookup_session_id(auth, conn, session_id.as_bytes()).await
-    } else {
-        Err(LookupError::AuthorizationNotFound)
+    tracing::event!(
+        tracing::Level::DEBUG,
+        "headers: {:?}",
+        headers
+    );
+
+    let cookies = headers.get_all("cookie");
+
+    if let Some(found) = find_session_id(cookies)? {
+        return lookup_session_id(auth, conn, found.as_bytes()).await;
     }
+
+    Err(LookupError::AuthorizationNotFound)
 }
 
 impl<A, S> FromRequestParts<A> for Initiator

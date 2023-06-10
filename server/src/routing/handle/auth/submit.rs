@@ -38,7 +38,9 @@ pub async fn post(
 
     match json {
         actions::auth::SubmitAuth::None => match session.auth_method {
-            AuthMethod::None => {},
+            AuthMethod::None => {
+                session.authenticated = true;
+            },
             _ => {
                 return Err(error::Error::new()
                     .status(StatusCode::UNAUTHORIZED)
@@ -67,6 +69,8 @@ pub async fn post(
                         .kind("InvalidPassword")
                         .message("provided password is invalid"));
                 }
+
+                session.authenticated = true;
             },
             _ => {
                 return Err(error::Error::new()
@@ -77,27 +81,26 @@ pub async fn post(
         }
     }
 
-    let verify_opt: Option<models::auth::VerifyMethod>;
-
-    match session.verify_method {
+    let verify = match session.verify_method {
         VerifyMethod::None => {
             session.verified = true;
-            verify_opt = None;
+
+            models::auth::VerifyMethod::None
         },
         VerifyMethod::Totp => {
             let Some(totp) = auth::totp::Totp::retrieve(
-                &conn, 
+                &conn,
                 &session.user_id
             ).await? else {
                 return Err(error::Error::new()
                     .source("session required user totp but user totp was not found"));
             };
 
-            verify_opt = Some(models::auth::VerifyMethod::Totp {
+            models::auth::VerifyMethod::Totp {
                 digits: *totp.digits()
-            });
+            }
         }
-    }
+    };
 
     {
         let transaction = conn.transaction().await?;
@@ -107,15 +110,8 @@ pub async fn post(
         transaction.commit().await?;
     }
 
-    if let Some(verify) = verify_opt {
-        let json_root = lib::json::Wrapper::new(verify)
-            .with_message("proceed with request verify method");
+    let json_root = lib::json::Wrapper::new(verify)
+        .with_message("proceed with request verify method");
 
-        Ok(net::Json::new(json_root).into_response())
-    } else {
-        let body = lib::json::Wrapper::new(())
-            .with_message("session authenticated");
-
-        Ok(net::Json::new(body).into_response())
-    }
+    Ok(net::Json::new(json_root).into_response())
 }

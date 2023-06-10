@@ -1,6 +1,6 @@
 use serde::{Serialize, Deserialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum VerifyMethod {
     None,
     Totp {
@@ -8,7 +8,7 @@ pub enum VerifyMethod {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum AuthMethod {
     None,
     Password

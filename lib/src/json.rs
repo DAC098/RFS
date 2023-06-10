@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Serialize, Deserialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Wrapper<T> {
     message: Option<String>,
     timestamp: Option<DateTime<Utc>>,
@@ -21,12 +21,12 @@ impl<T> Wrapper<T> {
         &self.payload
     }
 
-    pub fn message(&self) -> &Option<String> {
-        &self.message
+    pub fn message(&self) -> Option<&String> {
+        self.message.as_ref()
     }
 
-    pub fn timestamp(&self) -> &Option<DateTime<Utc>> {
-        &self.timestamp
+    pub fn timestamp(&self) -> Option<&DateTime<Utc>> {
+        self.timestamp.as_ref()
     }
 
     pub fn with_timestamp_now(mut self) -> Self {
@@ -47,7 +47,7 @@ impl<T> Wrapper<T> {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ListWrapper<T> {
     message: Option<String>,
     timestamp: Option<DateTime<Utc>>,
@@ -71,6 +71,10 @@ impl<T> ListWrapper<T> {
 
     pub fn message(&self) -> Option<&String> {
         self.message.as_ref()
+    }
+
+    pub fn timestamp(&self) -> Option<&DateTime<Utc>> {
+        self.timestamp.as_ref()
     }
 
     pub fn with_timestamp_now(mut self) -> Self {
@@ -107,7 +111,7 @@ impl<T> ListWrapper<Vec<T>> {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Error {
     error: String,
     message: Option<String>
@@ -122,6 +126,14 @@ impl Error {
             error: kind.into(),
             message: None
         }
+    }
+
+    pub fn error(&self) -> &String {
+        &self.error
+    }
+
+    pub fn message(&self) -> Option<&String> {
+        self.message.as_ref()
     }
 
     pub fn with_message<M>(mut self, message: M) -> Self
