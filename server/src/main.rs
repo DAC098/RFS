@@ -14,7 +14,6 @@ use tracing_subscriber::{FmtSubscriber, EnvFilter};
 mod error;
 mod util;
 mod net;
-mod record;
 mod fs;
 mod template;
 mod user;
