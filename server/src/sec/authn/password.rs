@@ -3,7 +3,7 @@ use tokio_postgres::{Error as PgError};
 use deadpool_postgres::GenericClient;
 
 use crate::net;
-use crate::auth::secret::{EMPTY_SECRET, Secret};
+use crate::sec::secret::{EMPTY_SECRET, Secret};
 
 pub enum PasswordError {
     Rand(rand::Error),
@@ -59,10 +59,7 @@ impl<'a> PasswordBuilder<'a> {
         }
     }
 
-    pub async fn build<S>(self, conn: &impl GenericClient) -> Result<Password, PasswordError>
-    where
-        S: AsRef<[u8]>
-    {
+    pub async fn build(self, conn: &impl GenericClient) -> Result<Password, PasswordError> {
         use argon2::{Variant};
         use rand::RngCore;
 
@@ -125,7 +122,7 @@ impl Password {
 
     pub async fn retrieve(
         conn: &impl GenericClient,
-        id: &ids::UserId,
+        user_id: &ids::UserId,
     ) -> Result<Option<Password>, PgError> {
         if let Some(row) = conn.query_opt(
             "\
@@ -134,7 +131,7 @@ impl Password {
                    auth_password.hash \
             from auth_password \
             where auth_password.user_id = $1",
-            &[id]
+            &[user_id]
         ).await? {
             Ok(Some(Password {
                 user_id: row.get(0),
@@ -165,21 +162,13 @@ impl Password {
 
         Ok(result)
     }
-}
 
-pub enum Method {
-    Password(Password)
-}
+    pub async fn delete(&self, conn: &impl GenericClient) -> Result<bool, PgError> {
+        let deleted = conn.execute(
+            "delete from auth_password where user_id = $1",
+            &[&self.user_id]
+        ).await?;
 
-impl Method {
-    pub async fn retrieve_primary(
-        conn: &impl GenericClient,
-        id: &ids::UserId
-    ) -> Result<Option<Method>, PgError> {
-        if let Some(password) = Password::retrieve(conn, id).await? {
-            Ok(Some(Method::Password(password)))
-        } else {
-            Ok(None)
-        }
+        Ok(deleted == 1)
     }
 }

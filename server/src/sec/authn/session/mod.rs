@@ -4,7 +4,7 @@ use tokio_postgres::{Error as PgError};
 use deadpool_postgres::GenericClient;
 use hmac::{Hmac, Mac, digest::CtOutput};
 
-use super::state;
+use crate::sec::state;
 use crate::net::cookie::{SameSite, SetCookie};
 
 pub mod token;
@@ -191,7 +191,7 @@ pub enum Hash {
     HS512(CtOutput<HS512>),
 }
 
-pub fn create_hash<T>(auth: &state::Auth, token: T) -> Hash
+pub fn create_hash<T>(auth: &state::Sec, token: T) -> Hash
 where
     T: AsRef<[u8]>
 {
@@ -274,7 +274,7 @@ pub enum DecodeError {
     InvalidHash,
 }
 
-pub fn decode_base64<S>(auth: &state::Auth, session_id: S) -> Result<(token::SessionToken, Hash), DecodeError>
+pub fn decode_base64<S>(auth: &state::Sec, session_id: S) -> Result<(token::SessionToken, Hash), DecodeError>
 where
     S: AsRef<[u8]>
 {
@@ -364,7 +364,7 @@ where
     }
 }
 
-pub fn create_session_cookie(auth: &state::Auth, session: &Session) -> SetCookie {
+pub fn create_session_cookie(auth: &state::Sec, session: &Session) -> SetCookie {
     let hash = create_hash(auth, &session.token);
     let encoded_token = encode_base64(&session.token, hash);
 
@@ -382,7 +382,7 @@ pub fn create_session_cookie(auth: &state::Auth, session: &Session) -> SetCookie
     cookie
 }
 
-pub fn expire_session_cookie(auth: &state::Auth) -> SetCookie {
+pub fn expire_session_cookie(auth: &state::Sec) -> SetCookie {
     let mut cookie = SetCookie::new("session_id", "")
         .with_max_age(std::time::Duration::new(0, 0))
         .with_path("/")
@@ -402,7 +402,7 @@ mod test {
     use super::*;
     use crate::auth::state;
 
-    fn check_encode_decode(auth: state::Auth) {
+    fn check_encode_decode(auth: state::Sec) {
         let token = token::SessionToken::new().expect("failed to generate token");
         let hash = create_hash(&auth, &token);
 
@@ -454,7 +454,7 @@ mod test {
 
     #[test]
     fn encode_decode_blake3() {
-        let auth = state::Auth::builder()
+        let auth = state::Sec::builder()
             .with_session_hash(state::SessionHash::Blake3)
             .build()
             .expect("failed to create auth state");
@@ -464,7 +464,7 @@ mod test {
 
     #[test]
     fn encode_decode_hs256() {
-        let auth = state::Auth::builder()
+        let auth = state::Sec::builder()
             .with_session_hash(state::SessionHash::HS256)
             .build()
             .expect("failed to create auth state");
@@ -474,7 +474,7 @@ mod test {
 
     #[test]
     fn encode_decode_hs384() {
-        let auth = state::Auth::builder()
+        let auth = state::Sec::builder()
             .with_session_hash(state::SessionHash::HS384)
             .build()
             .expect("failed to create auth state");
@@ -484,7 +484,7 @@ mod test {
 
     #[test]
     fn encode_decode_hs512() {
-        let auth = state::Auth::builder()
+        let auth = state::Sec::builder()
             .with_session_hash(state::SessionHash::HS512)
             .build()
             .expect("failed to create auth state");

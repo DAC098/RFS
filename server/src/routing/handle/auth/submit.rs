@@ -6,10 +6,9 @@ use axum::response::IntoResponse;
 
 use crate::net::{self, error};
 use crate::state::ArcShared;
-use crate::auth;
-use crate::auth::password;
-use crate::auth::session::{VerifyMethod, AuthMethod};
-use crate::auth::initiator::{self, LookupError};
+use crate::sec::authn::{totp, password};
+use crate::sec::authn::session::{VerifyMethod, AuthMethod};
+use crate::sec::authn::initiator::{self, LookupError};
 
 pub async fn post(
     State(state): State<ArcShared>,
@@ -88,7 +87,7 @@ pub async fn post(
             models::auth::VerifyMethod::None
         },
         VerifyMethod::Totp => {
-            let Some(totp) = auth::totp::Totp::retrieve(
+            let Some(totp) = totp::Totp::retrieve(
                 &conn,
                 &session.user_id
             ).await? else {

@@ -1,5 +1,6 @@
 use crate::error;
-use crate::auth::secret;
+
+use super::secret;
 
 const BLAKE3_CONTEXT: &str = "rust-file-server 2023-05-12 12:35:00 session tokens";
 
@@ -58,7 +59,7 @@ impl Builder {
         self.secret_manager.add(secret::Secret::new(version, bytes))
     }
 
-    pub fn build(self) -> error::Result<Auth> {
+    pub fn build(self) -> error::Result<Sec> {
         let session_secret = self.session_secret.unwrap_or(String::from("secret"));
 
         let session_key = match self.session_hash.unwrap_or(SessionHash::Blake3) {
@@ -95,7 +96,7 @@ impl Builder {
             }
         };
 
-        Ok(Auth {
+        Ok(Sec {
             session_info: SessionInfo {
                 key: session_key,
                 domain: self.session_domain,
@@ -136,12 +137,12 @@ impl SessionInfo {
 }
 
 #[derive(Debug)]
-pub struct Auth {
+pub struct Sec {
     session_info: SessionInfo,
     secrets: secret::Manager,
 }
 
-impl Auth {
+impl Sec {
     pub fn builder() -> Builder {
         Builder {
             session_hash: None,

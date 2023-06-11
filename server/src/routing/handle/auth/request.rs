@@ -7,9 +7,8 @@ use axum::response::IntoResponse;
 use crate::net::{self, error};
 use crate::state::ArcShared;
 use crate::user;
-use crate::auth;
-use crate::auth::session;
-use crate::auth::initiator::{self, LookupError};
+use crate::sec::authn::{session, Authenticate, Verify};
+use crate::sec::authn::initiator::{self, LookupError};
 
 pub async fn post(
     State(state): State<ArcShared>,
@@ -25,7 +24,7 @@ pub async fn post(
                 .into_response());
         },
         Err(err) => match err {
-            LookupError::AuthorizationNotFound => {},
+            LookupError::MechanismNotFound => {},
             _ => {
                 return Err(err.into());
             }
@@ -48,7 +47,7 @@ pub async fn post(
 
     let mut json_auth_method = models::auth::AuthMethod::None;
     let mut json_message = String::from("session authenticated");
-    let mut session = auth::session::Session {
+    let mut session = session::Session {
         token: session::token::SessionToken::unique(&conn).await?.unwrap(),
         user_id: user.id().clone(),
         dropped: false,
@@ -60,18 +59,18 @@ pub async fn post(
         verify_method: session::VerifyMethod::None,
     };
 
-    if let Some(auth_method) = auth::Authorize::retrieve_primary(&conn, user.id()).await? {
+    if let Some(auth_method) = Authenticate::retrieve_primary(&conn, user.id()).await? {
         match auth_method {
-            auth::Authorize::Password(_) => {
+            Authenticate::Password(_) => {
                 session.auth_method = session::AuthMethod::Password;
                 json_auth_method = models::auth::AuthMethod::Password;
                 json_message = String::from("proceed with requested auth method");
             }
         }
 
-        if let Some(verify_method) = auth::Verify::retrieve_primary(&conn, user.id()).await? {
+        if let Some(verify_method) = Verify::retrieve_primary(&conn, user.id()).await? {
             match verify_method {
-                auth::Verify::Totp(_) => {
+                Verify::Totp(_) => {
                     session.verify_method = session::VerifyMethod::Totp;
                 }
             }

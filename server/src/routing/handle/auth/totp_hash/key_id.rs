@@ -6,8 +6,8 @@ use serde::Deserialize;
 
 use crate::net::{self, error};
 use crate::state::ArcShared;
-use crate::auth::initiator::Initiator;
-use crate::auth::totp::TotpHash;
+use crate::sec::authn::initiator::Initiator;
+use crate::sec::authn::totp::TotpHash;
 
 #[derive(Deserialize)]
 pub struct TotpHashParams {

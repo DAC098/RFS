@@ -5,9 +5,9 @@ use axum::response::IntoResponse;
 
 use crate::net::{self, error};
 use crate::state::ArcShared;
-use crate::auth;
-use crate::auth::initiator::{self, LookupError};
-use crate::auth::session::VerifyMethod;
+use crate::sec::authn::totp;
+use crate::sec::authn::initiator::{self, LookupError};
+use crate::sec::authn::session::VerifyMethod;
 
 pub async fn post(
     State(state): State<ArcShared>,
@@ -48,7 +48,7 @@ pub async fn post(
             VerifyMethod::Totp => {
                 use rust_otp::VerifyResult;
 
-                let Some(totp) = auth::totp::Totp::retrieve(&conn, &session.user_id).await? else {
+                let Some(totp) = totp::Totp::retrieve(&conn, &session.user_id).await? else {
                     return Err(error::Error::new()
                         .source("session required totp verify but user totp was not found"));
                 };
@@ -74,7 +74,7 @@ pub async fn post(
         },
         SubmitVerify::TotpHash(hash) => match session.verify_method {
             VerifyMethod::Totp => {
-                let Some(mut totp_hash) = auth::totp::TotpHash::retrieve_hash(
+                let Some(mut totp_hash) = totp::TotpHash::retrieve_hash(
                     &conn, 
                     &session.user_id, 
                     &hash

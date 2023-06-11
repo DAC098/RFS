@@ -14,7 +14,7 @@ use lib::models::fs::{Storage, Type, ListItem, Item, File, Directory};
 use crate::net;
 use crate::net::error;
 use crate::state::ArcShared;
-use crate::auth::initiator;
+use crate::sec::authn::initiator;
 use crate::util::PgParams;
 use crate::storage;
 use crate::fs;

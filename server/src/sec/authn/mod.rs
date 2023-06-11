@@ -2,14 +2,9 @@ use lib::ids;
 use tokio_postgres::{Error as PgError};
 use deadpool_postgres::GenericClient;
 
-pub mod secret;
-pub mod state;
-
+pub mod session;
 pub mod password;
 pub mod totp;
-
-pub mod session;
-
 pub mod initiator;
 
 pub enum Verify {
@@ -29,17 +24,17 @@ impl Verify {
     }
 }
 
-pub enum Authorize {
+pub enum Authenticate {
     Password(password::Password)
 }
 
-impl Authorize {
+impl Authenticate {
     pub async fn retrieve_primary(
         conn: &impl GenericClient,
         id: &ids::UserId,
-    ) -> Result<Option<Authorize>, PgError> {
+    ) -> Result<Option<Self>, PgError> {
         if let Some(password) = password::Password::retrieve(conn, id).await? {
-            Ok(Some(Authorize::Password(password)))
+            Ok(Some(Authenticate::Password(password)))
         } else {
             Ok(None)
         }

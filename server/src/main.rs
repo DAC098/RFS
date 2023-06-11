@@ -17,7 +17,7 @@ mod net;
 mod fs;
 mod template;
 mod user;
-mod auth;
+mod sec;
 mod state;
 mod tags;
 mod storage;
@@ -72,7 +72,7 @@ struct CommandArgs {
 
     /// hashing algorithm to use for session key
     #[arg(long)]
-    session_hash: Option<auth::state::SessionHash>,
+    session_hash: Option<sec::state::SessionHash>,
 
     /// session secret for hashing session ids
     #[arg(long)]
@@ -206,14 +206,14 @@ fn get_shared_state(arg: &CommandArgs) -> error::Result<state::Shared> {
     }
 
     {
-        let auth = state_builder.auth();
+        let sec = state_builder.sec();
 
         if let Some(session_secret) = &arg.session_secret {
-            auth.set_session_secret(session_secret.clone());
+            sec.set_session_secret(session_secret.clone());
         }
 
         if let Some(session_hash) = &arg.session_hash { 
-            auth.set_session_hash(session_hash.clone());
+            sec.set_session_hash(session_hash.clone());
         }
     }
 

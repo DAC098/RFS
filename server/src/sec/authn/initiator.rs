@@ -9,19 +9,20 @@ use axum::extract::FromRequestParts;
 use deadpool_postgres::{Pool, GenericClient};
 
 use crate::net::error;
-use super::state;
-use super::session;
+use crate::sec::state;
 use crate::user;
 
-pub enum Authorization {
+use super::session;
+
+// not sure what to call this
+pub enum Mechanism {
     Session(session::Session),
-    Jwt(()),
 }
 
 pub struct Initiator {
     user: user::User,
     bot: Option<()>,
-    access: Authorization
+    mechanism: Mechanism
 }
 
 impl Initiator {
@@ -33,8 +34,8 @@ impl Initiator {
         self.bot.as_ref()
     }
 
-    pub fn access(&self) -> &Authorization {
-        &self.access
+    pub fn mechanism(&self) -> &Mechanism {
+        &self.mechanism
     }
 }
 
@@ -47,9 +48,9 @@ pub enum LookupError {
     SessionUnauthenticated(session::Session),
     SessionUnverified(session::Session),
 
-    UserNotFound(Authorization),
+    UserNotFound(Mechanism),
 
-    AuthorizationNotFound,
+    MechanismNotFound,
 
     Database(tokio_postgres::Error),
     HeaderToStr(axum::http::header::ToStrError),
@@ -98,9 +99,9 @@ impl From<LookupError> for error::Error {
                 .kind("UserNotFound")
                 .message("authorization user was not found"),
 
-            LookupError::AuthorizationNotFound => error::Error::new()
+            LookupError::MechanismNotFound => error::Error::new()
                 .status(StatusCode::UNAUTHORIZED)
-                .kind("AuthorizationNotFound")
+                .kind("MechanismNotFound")
                 .message("authorization not provided"),
 
             LookupError::Database(e) => e.into(),
@@ -110,7 +111,7 @@ impl From<LookupError> for error::Error {
 }
 
 pub async fn lookup_session_id<S>(
-    auth: &state::Auth,
+    auth: &state::Sec,
     conn: &impl GenericClient,
     session_id: S
 ) -> Result<Initiator, LookupError>
@@ -147,10 +148,10 @@ where
             Ok(Initiator {
                 user,
                 bot: None,
-                access: Authorization::Session(session),
+                mechanism: Mechanism::Session(session),
             })
         } else {
-            Err(LookupError::UserNotFound(Authorization::Session(session)))
+            Err(LookupError::UserNotFound(Mechanism::Session(session)))
         }
     } else {
         Err(LookupError::SessionNotFound)
@@ -173,7 +174,7 @@ fn find_session_id<'a>(cookies: GetAll<'a, HeaderValue>) -> Result<Option<&'a st
 
 
 pub async fn lookup_header_map(
-    auth: &state::Auth,
+    auth: &state::Sec,
     conn: &impl GenericClient,
     headers: &HeaderMap
 ) -> Result<Initiator, LookupError> {
@@ -189,13 +190,13 @@ pub async fn lookup_header_map(
         return lookup_session_id(auth, conn, found.as_bytes()).await;
     }
 
-    Err(LookupError::AuthorizationNotFound)
+    Err(LookupError::MechanismNotFound)
 }
 
 impl<A, S> FromRequestParts<A> for Initiator
 where
     A: Deref<Target = S> + Sync,
-    S: AsRef<state::Auth> + AsRef<Pool> + Sync,
+    S: AsRef<state::Sec> + AsRef<Pool> + Sync,
 {
     type Rejection = error::Error;
 
@@ -215,7 +216,7 @@ where
             // this is wierd but it works so...
             let state_deref = state.deref();
 
-            let auth: &state::Auth = state_deref.as_ref();
+            let auth: &state::Sec = state_deref.as_ref();
             let pool: &Pool = state_deref.as_ref();
             let conn = pool.get().await?;
 

@@ -5,8 +5,8 @@ use axum::response::IntoResponse;
 
 use crate::net::{self, error};
 use crate::state::ArcShared;
-use crate::auth::initiator::Initiator;
-use crate::auth::password::Password;
+use crate::sec::authn::initiator::Initiator;
+use crate::sec::authn::password::Password;
 
 pub async fn post(
     State(state): State<ArcShared>,

@@ -6,7 +6,7 @@ use deadpool_postgres::Pool;
 use crate::error;
 use crate::template;
 use crate::fs;
-use crate::auth;
+use crate::sec;
 
 pub mod ids;
 pub mod db;
@@ -19,7 +19,7 @@ pub struct SharedBuilder {
     pages: Option<PathBuf>,
     pg_options: db::Builder,
     templates: template::state::Builder,
-    auth: auth::state::Builder,
+    sec: sec::state::Builder,
 }
 
 impl SharedBuilder {
@@ -27,8 +27,8 @@ impl SharedBuilder {
         &mut self.templates
     }
 
-    pub fn auth(&mut self) -> &mut auth::state::Builder {
-        &mut self.auth
+    pub fn sec(&mut self) -> &mut sec::state::Builder {
+        &mut self.sec
     }
 
     pub fn pg_options(&mut self) -> &mut db::Builder {
@@ -80,7 +80,7 @@ impl SharedBuilder {
             pages,
             pool: self.pg_options.build()?,
             templates: self.templates.build()?,
-            auth: self.auth.build()?,
+            sec: self.sec.build()?,
             ids: ids::Ids::new(primary_id)?,
         })
     }
@@ -92,7 +92,7 @@ pub struct Shared {
     pages: PathBuf,
     pool: Pool,
     templates: template::state::Templates,
-    auth: auth::state::Auth,
+    sec: sec::state::Sec,
     ids: ids::Ids,
 }
 
@@ -106,7 +106,7 @@ impl Shared {
             pages: None,
             pg_options: db::Builder::new(),
             templates: template::state::Templates::builder(),
-            auth: auth::state::Auth::builder(),
+            sec: sec::state::Sec::builder(),
         }
     }
 
@@ -126,8 +126,12 @@ impl Shared {
         &self.templates
     }
 
-    pub fn auth(&self) -> &auth::state::Auth {
-        &self.auth
+    pub fn auth(&self) -> &sec::state::Sec {
+        &self.sec
+    }
+
+    pub fn sec(&self) -> &sec::state::Sec {
+        &self.sec
     }
 
     pub fn ids(&self) -> &ids::Ids {
@@ -141,9 +145,9 @@ impl AsRef<Pool> for Shared {
     }
 }
 
-impl AsRef<auth::state::Auth> for Shared {
-    fn as_ref(&self) -> &auth::state::Auth {
-        &self.auth
+impl AsRef<sec::state::Sec> for Shared {
+    fn as_ref(&self) -> &sec::state::Sec {
+        &self.sec
     }
 }
 
