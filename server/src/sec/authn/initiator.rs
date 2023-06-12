@@ -129,7 +129,7 @@ where
         }
     };
 
-    if let Some(session) = session::Session::query_with_token(conn, &token).await? {
+    if let Some(session) = session::Session::retrieve_token(conn, &token).await? {
         let now = chrono::Utc::now();
 
         if session.dropped || session.expires < now {
@@ -172,18 +172,11 @@ fn find_session_id<'a>(cookies: GetAll<'a, HeaderValue>) -> Result<Option<&'a st
     Ok(None)
 }
 
-
 pub async fn lookup_header_map(
     auth: &state::Sec,
     conn: &impl GenericClient,
     headers: &HeaderMap
 ) -> Result<Initiator, LookupError> {
-    tracing::event!(
-        tracing::Level::DEBUG,
-        "headers: {:?}",
-        headers
-    );
-
     let cookies = headers.get_all("cookie");
 
     if let Some(found) = find_session_id(cookies)? {

@@ -45,6 +45,10 @@ impl SessionToken {
         Ok(SessionToken(array))
     }
 
+    pub fn from_array(array: [u8; SESSION_ID_BYTES]) -> Self {
+        SessionToken(array)
+    }
+
     pub fn from_vec(mut vec: Vec<u8>) -> Self {
         let mut array = [0; SESSION_ID_BYTES];
         let mut index = 0;
@@ -69,20 +73,23 @@ impl SessionToken {
         SessionToken(array)
     }
 
+
     pub async fn unique(conn: &impl GenericClient) -> Result<Option<Self>, UniqueError> {
-        let mut rtn = Self::new()?;
+        let mut rtn = [0; SESSION_ID_BYTES];
         let mut count = 0;
 
         loop {
+            rand::thread_rng().try_fill_bytes(&mut rtn)?;
+
             count = conn.execute(
                 "select token from auth_session where token = $1",
-                &[&rtn.0.as_slice()]
+                &[&rtn.as_slice()]
             ).await?;
 
             if count == 0 {
-                return Ok(Some(rtn));
+                return Ok(Some(SessionToken(rtn)));
             } else {
-                rtn = Self::new()?;
+                rtn.fill(0);
             }
         }
 
@@ -104,4 +111,16 @@ impl From<Vec<u8>> for SessionToken {
     fn from(vec: Vec<u8>) -> Self {
         Self::from_vec(vec)
     }
+}
+
+pub async fn exists_check<T>(conn: &impl GenericClient, token: T) -> Result<bool, PgError>
+where
+    T: AsRef<[u8]>
+{
+    let count = conn.execute(
+        "select token from auth_session where token = $1",
+        &[&token.as_ref()]
+    ).await?;
+
+    Ok(count != 0)
 }

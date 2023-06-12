@@ -1,5 +1,6 @@
 use lib::models;
 use lib::actions;
+use axum::debug_handler;
 use axum::http::{HeaderMap, StatusCode};
 use axum::extract::State;
 use axum::response::IntoResponse;
@@ -10,6 +11,7 @@ use crate::user;
 use crate::sec::authn::{session, Authenticate, Verify};
 use crate::sec::authn::initiator::{self, LookupError};
 
+#[debug_handler]
 pub async fn post(
     State(state): State<ArcShared>,
     headers: HeaderMap,
@@ -38,31 +40,16 @@ pub async fn post(
             .message("provided username was not found"));
     };
 
-    let duration = chrono::Duration::days(7);
-    let issued_on = chrono::Utc::now();
-    let expires = issued_on.clone()
-        .checked_add_signed(duration)
-        .ok_or(error::Error::new()
-            .source("chrono::DateTime<Utc> overflowed when adding 7 days"))?;
+    let mut builder = session::Session::builder(user.id().clone());
 
     let mut json_auth_method = models::auth::AuthMethod::None;
     let mut json_message = String::from("session authenticated");
-    let mut session = session::Session {
-        token: session::token::SessionToken::unique(&conn).await?.unwrap(),
-        user_id: user.id().clone(),
-        dropped: false,
-        issued_on,
-        expires,
-        authenticated: false,
-        verified: false,
-        auth_method: session::AuthMethod::None,
-        verify_method: session::VerifyMethod::None,
-    };
 
     if let Some(auth_method) = Authenticate::retrieve_primary(&conn, user.id()).await? {
         match auth_method {
             Authenticate::Password(_) => {
-                session.auth_method = session::AuthMethod::Password;
+                builder.auth_method(session::AuthMethod::Password);
+
                 json_auth_method = models::auth::AuthMethod::Password;
                 json_message = String::from("proceed with requested auth method");
             }
@@ -71,21 +58,18 @@ pub async fn post(
         if let Some(verify_method) = Verify::retrieve_primary(&conn, user.id()).await? {
             match verify_method {
                 Verify::Totp(_) => {
-                    session.verify_method = session::VerifyMethod::Totp;
+                    builder.verify_method(session::VerifyMethod::Totp);
                 }
             }
-        } else {
-            session.verified = true;
         }
-    } else {
-        session.authenticated = true;
-        session.verified = true;
     }
+
+    let session;
 
     {
         let transaction = conn.transaction().await?;
 
-        session.create(&transaction).await?;
+        session = builder.build(&transaction).await?;
 
         transaction.commit().await?;
     }

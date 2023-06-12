@@ -1,10 +1,13 @@
 use lib::ids;
+use axum::http::StatusCode;
+use chrono::{DateTime, Utc};
 use base64::{Engine, engine::general_purpose::URL_SAFE};
 use tokio_postgres::{Error as PgError};
 use deadpool_postgres::GenericClient;
 use hmac::{Hmac, Mac, digest::CtOutput};
 
 use crate::sec::state;
+use crate::net::error::Error as NetError;
 use crate::net::cookie::{SameSite, SetCookie};
 
 pub mod token;
@@ -53,6 +56,209 @@ impl VerifyMethod {
     }
 }
 
+pub enum BuilderError {
+    TokenExists,
+    InvalidExpires,
+    UtcOverflow,
+
+    Pg(PgError),
+    Rand(rand::Error),
+}
+
+impl From<PgError> for BuilderError {
+    fn from(err: PgError) -> Self {
+        BuilderError::Pg(err)
+    }
+}
+
+impl From<rand::Error> for BuilderError {
+    fn from(err: rand::Error) -> Self {
+        BuilderError::Rand(err)
+    }
+}
+
+impl From<token::UniqueError> for BuilderError {
+    fn from(err: token::UniqueError) -> Self {
+        match err {
+            token::UniqueError::Rand(err) => BuilderError::Rand(err),
+            token::UniqueError::Pg(err) => BuilderError::Pg(err)
+        }
+    }
+}
+
+impl From<BuilderError> for NetError {
+    fn from(err: BuilderError) -> NetError {
+        match err {
+            BuilderError::TokenExists => NetError::new()
+                .source("failed to generate a unique token for the session"),
+            BuilderError::InvalidExpires => NetError::new()
+                .source("expires date is before the issued_on date"),
+            BuilderError::UtcOverflow => NetError::new()
+                .source("date time value overflowed"),
+            BuilderError::Pg(err) => err.into(),
+            BuilderError::Rand(err) => err.into(),
+        }
+    }
+}
+
+pub struct SessionBuilder {
+    user_id: ids::UserId,
+    token: Option<token::SessionToken>,
+    issued_on: Option<DateTime<Utc>>,
+    expires: Option<DateTime<Utc>>,
+    authenticated: Option<bool>,
+    verified: Option<bool>,
+    auth_method: Option<AuthMethod>,
+    verify_method: Option<VerifyMethod>
+}
+
+impl SessionBuilder {
+    pub fn token(&mut self, token: token::SessionToken) -> &mut Self {
+        self.token = Some(token);
+        self
+    }
+
+    pub fn issued_on(&mut self, date: DateTime<Utc>) -> &mut Self {
+        self.issued_on = Some(date);
+        self
+    }
+
+    pub fn expires(&mut self, date: DateTime<Utc>) -> &mut Self {
+        self.expires = Some(date);
+        self
+    }
+
+    pub fn authenticated(&mut self, value: bool) -> &mut Self {
+        self.authenticated = Some(value);
+        self
+    }
+
+    pub fn verified(&mut self, value: bool) -> &mut Self {
+        self.verified = Some(value);
+        self
+    }
+
+    pub fn auth_method(&mut self, method: AuthMethod) -> &mut Self {
+        self.auth_method = Some(method);
+        self
+    }
+
+    pub fn verify_method(&mut self, method: VerifyMethod) -> &mut Self {
+        self.verify_method = Some(method);
+        self
+    }
+
+    pub async fn build(self, conn: &impl GenericClient) -> Result<Session, BuilderError> {
+        let user_id = self.user_id;
+        let dropped = false;
+        let issued_on = self.issued_on.unwrap_or(Utc::now());
+        let token = if let Some(token) = self.token {
+            if !token::exists_check(conn, &token).await? {
+                return Err(BuilderError::TokenExists);
+            }
+
+            token
+        } else {
+            token::SessionToken::unique(conn).await?.unwrap()
+        };
+        let expires = if let Some(expires) = self.expires {
+            if expires <= issued_on {
+                return Err(BuilderError::InvalidExpires);
+            }
+
+            expires
+        } else {
+            let duration = chrono::Duration::days(7);
+
+            let Some(expires) = issued_on.clone().checked_add_signed(duration) else {
+                return Err(BuilderError::UtcOverflow);
+            };
+
+            expires
+        };
+
+        let authenticated_calc;
+        let verified_calc;
+        let auth_method = if let Some(method) = self.auth_method {
+            match method {
+                AuthMethod::None => {
+                    authenticated_calc = true;
+                }
+                _ => {
+                    authenticated_calc = false;
+                }
+            }
+
+            method
+        } else {
+            authenticated_calc = true;
+            AuthMethod::None
+        };
+        let verify_method = if let Some(method) = self.verify_method {
+            match method {
+                VerifyMethod::None => {
+                    verified_calc = true;
+                }
+                _ => {
+                    verified_calc = false;
+                }
+            }
+
+            method
+        } else {
+            verified_calc = true;
+            VerifyMethod::None
+        };
+        let authenticated = self.authenticated.unwrap_or(authenticated_calc);
+        let verified = self.verified.unwrap_or(verified_calc);
+
+        {
+            let auth_method_int = auth_method.as_i16();
+            let verify_method_int = verify_method.as_i16();
+
+            let _ = conn.execute(
+                "\
+                insert into auth_session (\
+                    token, \
+                    user_id, \
+                    dropped, \
+                    issued_on, \
+                    expires, \
+                    authenticated, \
+                    verified, \
+                    auth_method, \
+                    verify_method\
+                ) values \
+                ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+                &[
+                    &token.as_slice(),
+                    &user_id,
+                    &dropped,
+                    &issued_on,
+                    &expires,
+                    &authenticated,
+                    &verified,
+                    &auth_method_int,
+                    &verify_method_int,
+                ]
+            ).await?;
+        }
+
+        Ok(Session {
+            token,
+            user_id,
+            dropped: false,
+            issued_on,
+            expires,
+            authenticated,
+            verified,
+            auth_method,
+            verify_method
+        })
+    }
+}
+
+
 pub struct Session {
     pub token: token::SessionToken,
     pub user_id: ids::UserId,
@@ -66,7 +272,20 @@ pub struct Session {
 }
 
 impl Session {
-    pub async fn query_with_token(
+    pub fn builder(user_id: ids::UserId) -> SessionBuilder {
+        SessionBuilder {
+            user_id,
+            token: None,
+            issued_on: None,
+            expires: None,
+            authenticated: None,
+            verified: None,
+            auth_method: None,
+            verify_method: None,
+        }
+    }
+
+    pub async fn retrieve_token(
         conn: &impl GenericClient, 
         token: &token::SessionToken
     ) -> Result<Option<Session>, PgError> {
