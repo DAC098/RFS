@@ -1,5 +1,6 @@
 use std::default::Default;
 use std::sync::Arc;
+use std::path::PathBuf;
 
 use ratatui::{Frame, Terminal};
 use ratatui::backend::{Backend, CrosstermBackend};
@@ -19,62 +20,94 @@ struct ServerInfo {
     url: Url,
 }
 
-impl Default for ServerInfo {
-    fn default() -> Self {
+impl ServerInfo {
+    pub fn new() -> Self {
         ServerInfo {
             url: Url::parse("http://localhost:80").unwrap()
         }
     }
 }
 
-struct UserInfo {
-    username: String
-}
-
-impl Default for UserInfo {
-    fn default() -> Self {
-        UserInfo {
-            username: String::from("unknown")
-        }
-    }
-}
+type CookieStore = reqwest_cookie_store::CookieStore;
+type CookieStoreSync = reqwest_cookie_store::CookieStoreRwLock;
 
 struct AppState {
-    cookie_jar: Arc<Jar>,
+    cookie_file: PathBuf,
+    store: Arc<CookieStoreSync>,
     client: reqwest::blocking::Client,
     server: ServerInfo,
-    user: UserInfo,
 }
 
-impl Default for AppState {
-    fn default() -> Self {
-        let cookie_jar = Arc::new(Jar::default());
+impl AppState {
+    pub fn new<P>(given_file: P) -> error::Result<Self>
+    where
+        P: AsRef<std::path::Path>
+    {
+        let given_file_ref = given_file.as_ref();
+
+        let store = if given_file_ref.try_exists()? {
+            let file = std::fs::OpenOptions::new()
+                .read(true)
+                .open(given_file_ref)?;
+            let reader = std::io::BufReader::new(file);
+
+            CookieStore::load_json(reader)
+                .map_err(|e| error::Error::new()
+                    .kind("FailedLoadingRFSCookies")
+                    .message("failed to load the requested cookies file")
+                    .source(e))?
+        } else {
+            CookieStore::default()
+        };
+
+        let store = Arc::new(CookieStoreSync::new(store));
         let client = reqwest::blocking::Client::builder()
-            .cookie_provider(cookie_jar.clone())
+            .cookie_provider(store.clone())
             .user_agent("rfs-client-0.1.0")
             .build()
             .expect("failed to create client");
 
-        AppState {
-            cookie_jar,
+        Ok(AppState {
+            cookie_file: given_file_ref.to_owned(),
+            store,
             client,
-            server: ServerInfo::default(),
-            user: UserInfo::default(),
-        }
+            server: ServerInfo::new(),
+        })
+    }
+
+    pub fn save_store(&self) -> error::Result<()> {
+        let store = self.store.read()
+            .map_err(|_e| error::Error::new()
+                .kind("RwLockPoisoned")
+                .message("something has caused the RwLock to be poisoned"))?;
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(&self.cookie_file)
+            .map_err(|e| error::Error::new()
+                .kind("FailedSavingRFSCookies")
+                .message("failed to open the rfs cookies file")
+                .source(e))?;
+        let mut writer = std::io::BufWriter::new(file);
+
+        store.save_json(&mut writer)
+            .map_err(|e| error::Error::new()
+                .kind("FailedSavingRFSCookies")
+                .message("failed to save data to the rfs cookies file")
+                .source(e))?;
+
+        Ok(())
     }
 }
 
-pub fn interactive_commands() -> clap::Command {
+fn main_subcommands(mut command: clap::Command) -> clap::Command {
     use clap::{Command, Arg, ArgAction, value_parser};
 
-    Command::new("")
-        .subcommand_required(true)
-        .no_binary_name(true)
-        .disable_help_flag(true)
+    command
         .subcommand(
             Command::new("connect")
                 .alias("c")
-                .about("attempts to connect to the specified server")
+                .about("attempts a login to the specified server")
                 .disable_help_flag(true)
                 .arg(
                     Arg::new("host")
@@ -101,6 +134,32 @@ pub fn interactive_commands() -> clap::Command {
                         .help("sets the connection to use https")
                 )
         )
+}
+
+pub fn app_commands() -> clap::Command {
+    use clap::{Command, Arg, ArgAction, value_parser};
+
+    let command = Command::new("rfs-cli")
+        .arg(
+            Arg::new("cookies")
+                .long("cookies")
+                .action(ArgAction::Set)
+                .value_parser(value_parser!(PathBuf))
+                .help("specifies a specific file to save any cookie data to")
+        );
+
+    main_subcommands(command)
+}
+
+pub fn interactive_commands() -> clap::Command {
+    use clap::{Command, Arg, ArgAction, value_parser};
+
+    let command = Command::new("")
+        .subcommand_required(true)
+        .no_binary_name(true)
+        .disable_help_flag(true);
+
+    main_subcommands(command)
         .subcommand(
             Command::new("quit")
                 .alias("q")
@@ -108,59 +167,95 @@ pub fn interactive_commands() -> clap::Command {
         )
 }
 
-fn main() {
-    let end_result = run();
-
-    if let Err(err) = end_result {
-        match err.into_parts() {
-            (kind, Some(msg), Some(err)) => {
-                println!("{}: {}\n{}", kind, msg, err);
-            },
-            (kind, Some(msg), None) => {
-                println!("{}: {}", kind, msg);
-            },
-            (kind, None, Some(err)) => {
-                println!("{}: {}", kind, err);
-            },
-            (kind, None, None) => {
-                println!("{}", kind);
-            }
+fn print_error(err: error::Error) {
+    match err.into_parts() {
+        (kind, Some(msg), Some(err)) => {
+            println!("{}: {}\n{}", kind, msg, err);
+        },
+        (kind, Some(msg), None) => {
+            println!("{}: {}", kind, msg);
+        },
+        (kind, None, Some(err)) => {
+            println!("{}: {}", kind, err);
+        },
+        (kind, None, None) => {
+            println!("{}", kind);
         }
     }
 }
 
+fn main() {
+    let end_result = run();
+
+    if let Err(err) = end_result {
+        print_error(err);
+    }
+}
+
 fn run() -> error::Result<()> {
-    let mut state = AppState::default();
+    let app_matches = app_commands().get_matches();
 
-    loop {
-        let commands = interactive_commands();
-        let given = input::read_stdin(">")?;
-        let trimmed = given.trim();
-        let Ok(args_list) = shell_words::split(&trimmed) else {
-            println!("failed to parse command line args");
-            break;
-        };
+    let session_file = if let Some(arg) = app_matches.get_one::<PathBuf>("cookies") {
+        arg.clone()
+    } else {
+        let mut current_dir = std::env::current_dir()?;
+        current_dir.push("rfs_cookies.json");
+        current_dir
+    };
 
-        let matches = match commands.try_get_matches_from(args_list) {
-            Ok(m) => m,
-            Err(err) => {
-                println!("{}", err);
-                continue;
-            }
-        };
+    let mut state = AppState::new(session_file)?;
 
-        match matches.subcommand() {
-            Some(("connect", connect_matches)) => connect(&mut state, connect_matches)?,
-            Some(("quit", quit_matches)) => {
-                break;
+    match app_matches.subcommand() {
+        None => {
+            loop {
+                let given = input::read_stdin(">")?;
+                let trimmed = given.trim();
+
+                let Ok(args_list) = shell_words::split(&trimmed) else {
+                    println!("failed to parse command line args");
+                    continue;
+                };
+
+                let matches = match interactive_commands().try_get_matches_from(args_list) {
+                    Ok(m) => m,
+                    Err(err) => {
+                        println!("{}", err);
+                        continue;
+                    }
+                };
+
+                let result = match matches.subcommand() {
+                    Some(("quit", quit_matches)) => {
+                        return Ok(());
+                    },
+                    Some((cmd, cmd_matches)) => run_subcommand(&mut state, cmd, cmd_matches),
+                    _ => {
+                        println!("unknown command");
+
+                        Ok(())
+                    }
+                };
+
+                if let Err(err) = result {
+                    print_error(err);
+                }
             }
-            _ => {
-                println!("unknown command");
-            }
-        }
+        },
+        Some((cmd, cmd_matches)) => run_subcommand(&mut state, cmd, cmd_matches)?
     }
 
     Ok(())
+}
+
+fn run_subcommand(state: &mut AppState, command: &str, matches: &ArgMatches) -> error::Result<()> {
+    match command {
+        "connect" => connect(state, matches),
+        _ => {
+            println!("uknown command");
+
+            Ok(())
+        }
+    }
 }
 
 fn submit_user(
@@ -195,9 +290,7 @@ fn submit_user(
                 .source(format!("{:?}", json)));
         }
 
-        println!("cookie_jar: {:?}", state.cookie_jar);
-
-        state.user.username = username;
+        state.save_store()?;
 
         let json = res.json::<lib::json::Wrapper<Option<lib::models::auth::AuthMethod>>>()?;
 
@@ -210,34 +303,11 @@ fn submit_auth(
     auth_method: lib::models::auth::AuthMethod
 ) -> error::Result<Option<lib::models::auth::VerifyMethod>> {
     match auth_method {
-        lib::models::auth::AuthMethod::None => {
-            println!("AuthMethod::None");
-
-            let auth_method = lib::actions::auth::SubmitAuth::None;
-
-            let res = state.client.post(state.server.url.join("/auth/submit")?)
-                .json(&auth_method)
-                .send()?;
-
-            let status = res.status();
-
-            if status != reqwest::StatusCode::OK {
-                let json = res.json::<lib::json::Error>()?;
-
-                return Err(error::Error::new()
-                    .kind("FailedAuthentication")
-                    .message("failed to submit requested auth method")
-                    .source(format!("{:?}", json)));
-            }
-
-            let json = res.json::<lib::json::Wrapper<Option<lib::models::auth::VerifyMethod>>>()?;
-
-            return Ok(json.into_payload());
-        }
+        lib::models::auth::AuthMethod::None => {}
         lib::models::auth::AuthMethod::Password => {
             println!("AuthMethod::Password");
 
-            let prompt = format!("{} password: ", state.user.username);
+            let prompt = "password: ";
 
             loop {
                 let password = rpassword::prompt_password(&prompt)?;
@@ -269,6 +339,8 @@ fn submit_auth(
             }
         }
     };
+
+    Ok(None)
 }
 
 fn submit_verify(
