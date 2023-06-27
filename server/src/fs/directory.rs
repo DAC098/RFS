@@ -12,34 +12,24 @@ use lib::models;
 use crate::net;
 use crate::storage;
 use crate::tags;
-use crate::util::{sql, PgParams};
+use crate::util::sql;
 
+use super::consts;
+use super::traits;
 use super::error::{StreamError, BuilderError};
-use super::{DIR_TYPE, name_check, name_gen, IdOption};
+use super::{name_check, name_gen};
 
 pub struct Builder<'a, 'b> {
     id: ids::FSId,
     user_id: ids::UserId,
     storage: &'a storage::Medium,
-    parent: Option<&'b Directory>,
+    parent: &'b dyn traits::Container,
     basename: Option<String>,
     tags: tags::TagMap,
     comment: Option<String>,
 }
 
 impl<'a, 'b> Builder<'a, 'b> {
-    pub fn with_parent<'c>(mut self, parent: &'c Directory) -> Builder<'a, 'c> {
-        Builder {
-            id: self.id,
-            user_id: self.user_id,
-            storage: self.storage,
-            parent: Some(parent),
-            basename: self.basename,
-            tags: self.tags,
-            comment: self.comment
-        }
-    }
-
     pub fn basename<B>(&mut self, basename: B) -> ()
     where
         B: Into<String>
@@ -68,28 +58,17 @@ impl<'a, 'b> Builder<'a, 'b> {
 
     pub async fn build(self, conn: &impl GenericClient) -> Result<Directory, BuilderError> {
         let created = chrono::Utc::now();
-        let id_opt: IdOption;
-        let path: PathBuf;
-        let parent: Option<ids::FSId>;
-
-        if let Some(dir) = self.parent {
-            id_opt = IdOption::Parent(&dir.id);
-            path = dir.path.join(&dir.basename);
-            parent = Some(dir.id.clone());
-        } else {
-            id_opt = IdOption::Storage(&self.storage.id);
-            path = PathBuf::new();
-            parent = None;
-        }
+        let path = self.parent.full_path();
+        let parent = self.parent.id().clone();
 
         let basename = if let Some(given) = self.basename {
-            if !name_check(conn, &id_opt, &given).await?.is_some() {
+            if !name_check(conn, &parent, &given).await?.is_some() {
                 return Err(BuilderError::BasenameExists);
             }
 
             given
         } else {
-            let Some(gen) = name_gen(conn, &id_opt, 100).await? else {
+            let Some(gen) = name_gen(conn, &parent, 100).await? else {
                 return Err(BuilderError::BasenameGenFailed);
             };
 
@@ -97,7 +76,7 @@ impl<'a, 'b> Builder<'a, 'b> {
         };
 
         let storage = match &self.storage.type_ {
-            storage::Type::Local(local) => {
+            storage::types::Type::Local(local) => {
                 let mut full = local.path.join(&path);
                 full.set_file_name(&basename);
 
@@ -132,7 +111,7 @@ impl<'a, 'b> Builder<'a, 'b> {
                     &self.user_id,
                     &parent,
                     &basename,
-                    &DIR_TYPE,
+                    &consts::DIR_TYPE,
                     &path_display,
                     &storage_json,
                     &self.comment,
@@ -163,7 +142,7 @@ pub struct Directory {
     pub id: ids::FSId,
     pub user_id: ids::UserId,
     pub storage: storage::fs::Storage,
-    pub parent: Option<ids::FSId>,
+    pub parent: ids::FSId,
     pub basename: String,
     pub path: PathBuf,
     pub tags: tags::TagMap,
@@ -174,16 +153,20 @@ pub struct Directory {
 }
 
 impl Directory {
-    pub fn builder<'a>(
+    pub fn builder<'a, 'b, P>(
         id: ids::FSId,
         user_id: ids::UserId,
-        storage: &'a storage::Medium
-    ) -> Builder<'a, 'static> {
+        storage: &'a storage::Medium,
+        parent: &'b P,
+    ) -> Builder<'a, 'b>
+    where
+        P: traits::Container
+    {
         Builder {
             id,
             user_id,
             storage,
-            parent: None,
+            parent,
             basename: None,
             tags: tags::TagMap::new(),
             comment: None
@@ -194,26 +177,26 @@ impl Directory {
         conn: &impl GenericClient,
         id: &ids::FSId
     ) -> Result<Option<Self>, PgError> {
-        let mut record_params = PgParams::with_capacity(1);
-        record_params.push(id);
+        let record_params: sql::ParamsVec = vec![id];
+        let tags_params: sql::ParamsVec = vec![id];
 
         let record_query = conn.query_opt(
             "\
             select fs.id, \
-                    fs.user_id, \
-                    fs.parent, \
-                    fs.basename, \
-                    fs.fs_path, \
-                    fs.comment, \
-                    fs.s_data, \
-                    fs.created, \
-                    fs.updated, \
-                    fs.deleted \
+                   fs.user_id, \
+                   fs.parent, \
+                   fs.basename, \
+                   fs.fs_path, \
+                   fs.comment, \
+                   fs.s_data, \
+                   fs.created, \
+                   fs.updated, \
+                   fs.deleted \
             from fs \
             where fs.id = $1 and fs_type = 2",
             record_params.as_slice()
         );
-        let tags_query = conn.query(
+        let tags_query = conn.query_raw(
             "\
             select fs_tags.tag, \
                    fs_tags.value \
@@ -222,17 +205,11 @@ impl Directory {
                     fs_tags.fs_id = fs.id \
             where fs.id = $1 and \
                   fs.fs_type = 2",
-            record_params.as_slice()
+            tags_params
         );
 
         match tokio::try_join!(record_query, tags_query) {
-            Ok((Some(row), tags_list)) => {
-                let mut tags = tags::TagMap::with_capacity(tags_list.len());
-
-                for row in tags_list {
-                    tags.insert(row.get(0), row.get(1));
-                }
-
+            Ok((Some(row), tags_stream)) => {
                 Ok(Some(Directory {
                     id: row.get(0),
                     user_id: row.get(1),
@@ -240,7 +217,7 @@ impl Directory {
                     parent: row.get(2),
                     basename: row.get(3),
                     path: sql::pathbuf_from_sql(row.get(4)),
-                    tags,
+                    tags: tags::from_row_stream(tags_stream).await?,
                     comment: row.get(5),
                     created: row.get(7),
                     updated: row.get(8),
@@ -262,15 +239,21 @@ impl Directory {
             path: self.path,
             tags: self.tags,
             comment: self.comment,
-            total: 0,
-            contents: Vec::new(),
             created: self.created,
             updated: self.updated,
             deleted: self.deleted,
         }
     }
+}
 
-    pub fn into_model_item(self) -> models::fs::Item {
-        models::fs::Item::Directory(self.into_model())
+impl traits::Common for Directory {
+    fn id(&self) -> &ids::FSId {
+        &self.id
+    }
+
+    fn full_path(&self) -> PathBuf {
+        self.path.join(&self.basename)
     }
 }
+
+impl traits::Container for Directory {}

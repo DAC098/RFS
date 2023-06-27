@@ -13,6 +13,12 @@ pub enum Storage {
 }
 
 impl Storage {
+    pub fn id(&self) -> &ids::StorageId {
+        match self {
+            Storage::Local(local) => &local.id
+        }
+    }
+
     pub fn into_model(self) -> models::fs::Storage {
         match self {
             Storage::Local(local) => models::fs::Storage::Local {

@@ -17,7 +17,7 @@ where
     StreamError: From<<S as TryStream>::Error>
 {
     match &storage.type_ {
-        storage::Type::Local(local) => {
+        storage::types::Type::Local(local) => {
             let full = local.path.join(prefix);
             let mut size: u64 = 0;
 

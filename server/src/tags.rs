@@ -5,13 +5,34 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use pin_project::pin_project;
+use futures::TryStreamExt;
 use tokio_postgres::{RowStream, Row, Error as PgError};
 use tokio_postgres::types::ToSql;
 use deadpool_postgres::GenericClient;
 
-use crate::util::PgParams;
+use crate::util::sql;
 
 pub type TagMap = HashMap<String, Option<String>>;
+
+pub async fn from_row_stream(
+    mut stream: RowStream
+) -> Result<TagMap, PgError> {
+    futures::pin_mut!(stream);
+
+    let mut tags = TagMap::new();
+
+    while let Some(row) = stream.try_next().await? {
+        if tags.len() == tags.capacity() - 1 {
+            tags.reserve(5);
+        }
+
+        tags.insert(row.get(0), row.get(1));
+    }
+
+    tags.shrink_to_fit();
+
+    Ok(tags)
+}
 
 pub async fn create_tags<I>(
     conn: &impl GenericClient,
@@ -28,16 +49,26 @@ where
     }
 
     let mut insert_query = String::new();
-    let mut params = PgParams::with_capacity(tags.len() * 2 + 1);
+    let mut params = sql::ParamsVec::with_capacity(tags.len() * 2 + 1);
     params.push(id);
 
     let mut iter = tags.iter();
 
     if let Some((tag, value)) = iter.next() {
-        write!(&mut insert_query, "($1, ${}, ${})", params.push(tag), params.push(value)).unwrap();
+        write!(
+            &mut insert_query,
+            "($1, ${}, ${})",
+            sql::push_param(&mut params, tag),
+            sql::push_param(&mut params, value)
+        ).unwrap();
 
         for (tag, value) in iter {
-            write!(&mut insert_query, ",($1, ${}, ${})", params.push(tag), params.push(value)).unwrap();
+            write!(
+                &mut insert_query,
+                ",($1, ${}, ${})",
+                sql::push_param(&mut params, tag),
+                sql::push_param(&mut params, value)
+            ).unwrap();
         }
     }
 
@@ -63,16 +94,26 @@ where
 {
     if tags.len() > 0 {
         let mut insert_query = String::new();
-        let mut params = PgParams::with_capacity(tags.len() * 2 + 1);
+        let mut params = sql::ParamsVec::with_capacity(tags.len() * 2 + 1);
         params.push(id);
 
         let mut iter = tags.iter();
 
         if let Some((tag, value)) = iter.next() {
-            write!(&mut insert_query, "($1, ${}, ${})", params.push(tag), params.push(value)).unwrap();
+            write!(
+                &mut insert_query, 
+                "($1, ${}, ${})", 
+                sql::push_param(&mut params, tag),
+                sql::push_param(&mut params, value)
+            ).unwrap();
 
             for (tag, value) in iter {
-                write!(&mut insert_query, ",($1, ${}, ${})", params.push(tag), params.push(value)).unwrap();
+                write!(
+                    &mut insert_query, 
+                    ",($1, ${}, ${})",
+                    sql::push_param(&mut params, tag),
+                    sql::push_param(&mut params, value)
+                ).unwrap();
             }
         }
 

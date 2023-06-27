@@ -22,6 +22,18 @@ pub enum Storage {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct Root {
+    pub id: ids::FSId,
+    pub user_id: ids::UserId,
+    pub storage: Storage,
+    pub tags: Tags,
+    pub comment: Option<String>,
+    pub created: DateTime<Utc>,
+    pub updated: Option<DateTime<Utc>>,
+    pub deleted: Option<DateTime<Utc>>,
+}
+
+#[derive(Serialize, Deserialize)]
 pub enum Checksum {
     Blake3(String),
 
@@ -38,8 +50,8 @@ pub struct File {
     pub id: ids::FSId,
     #[serde(with = "string_id")]
     pub user_id: ids::UserId,
-    #[serde(with = "option_string_id")]
-    pub parent: Option<ids::FSId>,
+    #[serde(with = "string_id")]
+    pub parent: ids::FSId,
     pub basename: String,
     pub path: PathBuf,
     pub size: u64,
@@ -60,8 +72,8 @@ pub struct ListItem {
     pub id: ids::FSId,
     #[serde(with = "string_id")]
     pub user_id: ids::UserId,
-    #[serde(with = "option_string_id")]
-    pub parent: Option<ids::FSId>,
+    #[serde(with = "string_id")]
+    pub parent: ids::FSId,
     pub basename: String,
     #[serde(rename(serialize = "type", deserialize = "type"))]
     pub type_: Type,
@@ -77,14 +89,12 @@ pub struct Directory {
     pub id: ids::FSId,
     #[serde(with = "string_id")]
     pub user_id: ids::UserId,
-    #[serde(with = "option_string_id")]
-    pub parent: Option<ids::FSId>,
+    #[serde(with = "string_id")]
+    pub parent: ids::FSId,
     pub basename: String,
     pub path: PathBuf,
     pub tags: Tags,
     pub comment: Option<String>,
-    pub total: usize,
-    pub contents: Vec<ListItem>,
     pub storage: Storage,
     pub created: DateTime<Utc>,
     pub updated: Option<DateTime<Utc>>,
@@ -93,6 +103,7 @@ pub struct Directory {
 
 #[derive(Serialize, Deserialize)]
 pub enum Item {
+    Root(Root),
     File(File),
     Directory(Directory),
 }

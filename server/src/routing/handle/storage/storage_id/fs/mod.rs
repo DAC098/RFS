@@ -15,7 +15,7 @@ use crate::net;
 use crate::net::error;
 use crate::state::ArcShared;
 use crate::sec::authn::initiator;
-use crate::util::PgParams;
+use crate::util::sql;
 use crate::storage;
 use crate::fs;
 
@@ -31,6 +31,7 @@ pub async fn get(
     initiator: initiator::Initiator,
     Path(PathParams { storage_id }): Path<PathParams>,
 ) -> error::Result<impl IntoResponse> {
+    /*
     let conn = state.pool().get().await?;
 
     if !storage::exists_check(&conn, initiator.user().id(), &storage_id, Some(false)).await? {
@@ -90,6 +91,8 @@ pub async fn get(
     }
 
     Ok(net::Json::new(lib::json::ListWrapper::with_vec(list)))
+    */
+    Ok(net::Json::empty())
 }
 
 pub async fn post(
@@ -99,67 +102,5 @@ pub async fn post(
     Path(PathParams { storage_id }): Path<PathParams>,
     mut stream: BodyStream,
 ) -> error::Result<impl IntoResponse> {
-    let mut conn = state.pool().get().await?;
-
-    let Some(medium) = storage::Medium::retrieve(
-        &conn,
-        initiator.user().id(),
-        &storage_id
-    ).await? else {
-        return Err(error::Error::new()
-            .status(StatusCode::NOT_FOUND)
-            .kind("StorageNotFound")
-            .message("requested storage item was not found"));
-    };
-
-    if medium.deleted.is_some() {
-        return Err(error::Error::new()
-            .status(StatusCode::NOT_FOUND)
-            .kind("StorageNotFound")
-            .message("requested storage item was not found"));
-    }
-
-    let is_directory = headers.contains_key("x-as-directory");
-
-    let transaction = conn.transaction().await?;
-
-    let rtn = if is_directory {
-        let mut builder = fs::Directory::builder(
-            state.ids().wait_fs_id()?,
-            initiator.user().id().clone(),
-            &medium
-        );
-
-        if let Some(value) = headers.get("x-basename") {
-            builder.basename(value.to_str()?);
-        }
-
-        let dir = builder.build(&transaction).await?;
-
-        dir.into_model_item()
-    } else {
-        let mut builder = fs::File::builder(
-            state.ids().wait_fs_id()?,
-            initiator.user().id().clone(),
-            &medium
-        );
-
-        if let Some(value) = headers.get("x-basename") {
-            builder.basename(value.to_str()?);
-        }
-
-        if let Some(value) = headers.get("content-type") {
-            builder.mime(mime::Mime::from_str(value.to_str()?)?);
-        }
-
-        let file = builder.build(&transaction, stream).await?;
-
-        file.into_model_item()
-    };
-
-    transaction.commit().await?;
-
-    let wrapper = lib::json::Wrapper::new(rtn);
-
-    Ok(net::Json::new(wrapper))
+    Ok(net::Json::empty())
 }

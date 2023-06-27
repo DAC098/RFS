@@ -15,8 +15,9 @@ use crate::net;
 use crate::net::error;
 use crate::state::ArcShared;
 use crate::sec::authn::initiator;
-use crate::util::{sql, PgParams};
+use crate::util::sql;
 use crate::storage;
+use crate::fs;
 use crate::tags;
 
 pub mod storage_id;
@@ -116,62 +117,34 @@ pub async fn post(
     axum::Json(json): axum::Json<CreateStorage>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
-    let id = state.ids().wait_storage_id()?;
-    let created = chrono::Utc::now();
-    let rtn_type;
 
-    let s_data = match json.type_ {
+    let type_: storage::types::Type = match json.type_ {
         CreateStorageType::Local { path } => {
-            if path.try_exists()? {
-                if !path.is_dir() {
-                    return Err(error::Error::new()
-                        .status(StatusCode::BAD_REQUEST)
-                        .kind("PathNotDirectory")
-                        .message("the requested path is not a directory on the system"));
-                }
-            } else {
-                tokio::fs::create_dir_all(&path).await?;
-            }
-
-            rtn_type = StorageType::Local {
-                path: path.clone()
-            };
-
-            storage::Type::Local(storage::types::Local { path })
+            storage::types::Type::Local(storage::types::Local::build(path).await?)
         }
     };
 
-    if storage::name_check(&conn, initiator.user().id(), &json.name).await?.is_some() {
-        return Err(error::Error::new()
-            .status(StatusCode::BAD_REQUEST)
-            .kind("StorageNameExists")
-            .message("the requested name already exists"));
-    }
-
     let transaction = conn.transaction().await?;
 
-    let storage_json = PgJson(&s_data);
-    let _ = transaction.execute(
-        "\
-        insert into storage (id, user_id, name, s_type, s_data, created) values \
-        ($1, $2, $3, $4, $5)",
-        &[&id, &initiator.user().id(), &json.name, &storage_json, &created]
-    ).await?;
+    let mut builder = storage::Medium::builder(
+        state.ids().wait_storage_id()?,
+        initiator.user().id().clone(),
+        json.name,
+        type_
+    );
 
-    tags::create_tags(&transaction, "storage_tags", "storage_id", &id, &json.tags).await?;
+    builder.set_tags(json.tags);
+
+    let storage = builder.build(&transaction).await?;
+    let root = fs::Root::builder(
+        state.ids().wait_fs_id()?,
+        initiator.user().id().clone(),
+        &storage
+    ).build(&transaction).await?;
 
     transaction.commit().await?;
 
-    let rtn = lib::json::Wrapper::new(StorageItem {
-        id,
-        name: json.name,
-        user_id: initiator.user().id().clone(),
-        type_: rtn_type,
-        tags: json.tags,
-        created,
-        updated: None,
-        deleted: None
-    })
+    let rtn = lib::json::Wrapper::new(storage.into_model())
         .with_message("created storage");
 
     Ok(net::Json::new(rtn))

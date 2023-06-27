@@ -2,8 +2,6 @@ use std::marker::Sync;
 use std::convert::{From, Into};
 use std::time::SystemTime;
 
-use tokio_postgres::types::ToSql;
-
 pub fn utc_now() -> Option<u64> {
     match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
         Ok(d) => Some(d.as_secs()),
@@ -119,7 +117,17 @@ pub mod sql {
     use std::str::FromStr;
 
     use serde::Deserialize;
-    use tokio_postgres::types::Json as PgJson;
+    use tokio_postgres::types::{ToSql, Json as PgJson};
+
+    pub type ParamsVec<'a> = Vec<&'a (dyn ToSql + Sync)>;
+
+    pub fn push_param<'a, T>(params: &mut ParamsVec<'a>, v: &'a T) -> usize
+    where
+        T: ToSql + Sync
+    {
+        params.push(v);
+        params.len()
+    }
 
     pub fn pathbuf_from_sql(value: &str) -> PathBuf {
         PathBuf::from(value)
@@ -140,56 +148,5 @@ pub mod sql {
         T: Deserialize<'a>
     {
         value.0
-    }
-}
-
-pub type ParamsVec<'a> = Vec<&'a (dyn ToSql + Sync)>;
-
-pub struct PgParams<'a>(ParamsVec<'a>);
-
-impl<'a> PgParams<'a> {
-
-    pub fn with_capacity(size: usize) -> PgParams<'a> {
-        PgParams(Vec::with_capacity(size))
-    }
-
-    pub fn push<T>(&mut self, param: &'a T) -> usize
-    where
-        T: ToSql + Sync
-    {
-        self.0.push(param);
-        self.0.len()
-    }
-
-    pub fn as_slice(&self) -> &[&'a(dyn ToSql + Sync)] {
-        &self.0[..]
-    }
-
-    pub fn iter(&self) -> std::slice::Iter<'_, &'a (dyn ToSql + Sync)> {
-        self.0.iter()
-    }
-}
-
-impl<'a> From<Vec<&'a(dyn ToSql + Sync)>> for PgParams<'a> {
-    fn from(vec: Vec<&'a(dyn ToSql + Sync)>) -> PgParams<'a> {
-        PgParams(vec)
-    }
-}
-
-impl<'a, const N: usize> From<[&'a (dyn ToSql + Sync); N]> for PgParams<'a> {
-    fn from(array: [&'a (dyn ToSql + Sync); N]) -> PgParams<'a> {
-        PgParams(Vec::from(array))
-    }
-}
-
-impl<'a> From<&[&'a(dyn ToSql + Sync)]> for PgParams<'a> {
-    fn from(slice: &[&'a(dyn ToSql + Sync)]) -> PgParams<'a> {
-        PgParams(slice.to_vec())
-    }
-}
-
-impl<'a> Into<Vec<&'a(dyn ToSql + Sync)>> for PgParams<'a> {
-    fn into(self) -> Vec<&'a(dyn ToSql + Sync)> {
-        self.0
     }
 }

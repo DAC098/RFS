@@ -8,10 +8,13 @@ use snowcloud_flake::serde_ext::string_id;
 use crate::ids;
 
 #[derive(Serialize, Deserialize)]
+pub struct StorageLocal {
+    pub path: PathBuf
+}
+
+#[derive(Serialize, Deserialize)]
 pub enum StorageType {
-    Local {
-        path: PathBuf
-    },
+    Local(StorageLocal)
 }
 
 #[derive(Serialize, Deserialize)]

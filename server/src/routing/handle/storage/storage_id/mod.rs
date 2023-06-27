@@ -12,7 +12,7 @@ use crate::net;
 use crate::net::error;
 use crate::state::ArcShared;
 use crate::sec::authn::initiator;
-use crate::util::PgParams;
+use crate::util::sql;
 use crate::storage;
 use crate::tags;
 
@@ -32,7 +32,6 @@ pub async fn get(
 
     let Some(medium) = storage::Medium::retrieve(
         &conn,
-        initiator.user().id(),
         &storage_id
     ).await? else {
         return Err(error::Error::new()
@@ -48,22 +47,7 @@ pub async fn get(
             .message("requested storage item was not found"));
     }
 
-    let type_ = match medium.type_ {
-        storage::Type::Local(local) => StorageType::Local {
-            path: local.path
-        }
-    };
-
-    let rtn = lib::json::Wrapper::new(StorageItem {
-        id: medium.id,
-        name: medium.name,
-        user_id: medium.user_id,
-        type_,
-        tags: medium.tags,
-        created: medium.created,
-        updated: medium.updated,
-        deleted: medium.deleted
-    });
+    let rtn = lib::json::Wrapper::new(medium.into_model());
 
     Ok(net::Json::new(rtn))
 }
@@ -78,7 +62,6 @@ pub async fn put(
 
     let Some(medium) = storage::Medium::retrieve(
         &conn,
-        initiator.user().id(),
         &storage_id
     ).await? else {
         return Err(error::Error::new()
@@ -106,7 +89,7 @@ pub async fn put(
     if json.name.is_some() || json.type_.is_some() {
         let updated = chrono::Utc::now();
         let mut update_query = String::from("update storage set updated = $2");
-        let mut update_params = PgParams::with_capacity(2);
+        let mut update_params = sql::ParamsVec::with_capacity(2);
         update_params.push(&storage_id);
         update_params.push(&updated);
 
@@ -120,7 +103,11 @@ pub async fn put(
                 }
             }
 
-            write!(&mut update_query, "name = ${} ", update_params.push(name)).unwrap();
+            write!(
+                &mut update_query,
+                "name = ${} ",
+                sql::push_param(&mut update_params, name)
+            ).unwrap();
         }
 
         if let Some(type_) = &json.type_ {
@@ -158,7 +145,6 @@ pub async fn delete(
 
     let Some(medium) = storage::Medium::retrieve(
         &conn,
-        initiator.user().id(),
         &storage_id
     ).await? else {
         return Err(error::Error::new()

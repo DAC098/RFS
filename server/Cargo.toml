@@ -44,6 +44,6 @@ tower = { version = "0.4.13", features = ["timeout"] }
 tower-http = { version = "0.4.0", features = ["trace"] }
 mime = { version = "0.3.17" }
 
-axum = { version = "0.6.18", features = ["macros"] }
+axum = { version = "0.6.18", features = ["macros", "query"] }
 
 handlebars = { version = "4.3.7" }

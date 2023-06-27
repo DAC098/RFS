@@ -6,25 +6,27 @@ use tokio_postgres::Error as PgError;
 use tokio_postgres::types::Json as PgJson;
 use deadpool_postgres::GenericClient;
 use serde::{Serialize, Deserialize};
+use chrono::{DateTime, Utc};
 use lib::ids;
 use lib::models;
 
 use crate::net;
 use crate::storage;
 use crate::tags;
-use crate::util::{sql, PgParams};
+use crate::util::sql;
 
+use super::consts;
+use super::traits;
 use super::error::{StreamError, BuilderError};
 use super::checksum;
 use super::stream;
-use super::{FILE_TYPE, name_check, name_gen, IdOption};
-use super::directory::Directory;
+use super::{name_check, name_gen};
 
 pub struct Builder<'a, 'b> {
     id: ids::FSId,
     user_id: ids::UserId,
     storage: &'a storage::Medium,
-    parent: Option<&'b Directory>,
+    parent: &'b dyn traits::Container,
     basename: Option<String>,
     mime: Option<mime::Mime>,
     checksums: checksum::ChecksumBuilder,
@@ -33,20 +35,6 @@ pub struct Builder<'a, 'b> {
 }
 
 impl<'a, 'b> Builder<'a, 'b> {
-    pub fn parent<'c>(mut self, parent: &'c Directory) -> Builder<'a, 'c> {
-        Builder {
-            id: self.id,
-            user_id: self.user_id,
-            storage: self.storage,
-            parent: Some(parent),
-            basename: self.basename,
-            mime: self.mime,
-            checksums: self.checksums,
-            tags: self.tags,
-            comment: self.comment,
-        }
-    }
-
     pub fn basename<B>(&mut self, basename: B) -> ()
     where
         B: Into<String>
@@ -94,30 +82,19 @@ impl<'a, 'b> Builder<'a, 'b> {
         S::Ok: AsRef<[u8]>,
         StreamError: From<<S as TryStream>::Error>
     {
-        let created = chrono::Utc::now();
+        let created = Utc::now();
         let mime = self.mime.unwrap_or(mime::APPLICATION_OCTET_STREAM);
-        let id_opt: IdOption;
-        let path: PathBuf;
-        let parent: Option<ids::FSId>;
-
-        if let Some(dir) = self.parent {
-            id_opt = IdOption::Parent(&dir.id);
-            path = dir.path.join(&dir.basename);
-            parent = Some(dir.id.clone());
-        } else {
-            id_opt = IdOption::Storage(&self.storage.id);
-            path = PathBuf::new();
-            parent = None;
-        }
+        let path = self.parent.full_path();
+        let parent = self.parent.id().clone();
 
         let basename = if let Some(given) = self.basename {
-            if !name_check(conn, &id_opt, &given).await?.is_some() {
+            if !name_check(conn, &parent, &given).await?.is_some() {
                 return Err(BuilderError::BasenameExists);
             }
 
             given
         } else {
-            let Some(gen) = name_gen(conn, &id_opt, 100).await? else {
+            let Some(gen) = name_gen(conn, &parent, 100).await? else {
                 return Err(BuilderError::BasenameGenFailed);
             };
 
@@ -157,7 +134,7 @@ impl<'a, 'b> Builder<'a, 'b> {
                     &self.user_id,
                     &parent,
                     &basename,
-                    &FILE_TYPE,
+                    &consts::FILE_TYPE,
                     &path_display,
                     &storage_json,
                     &mime_type,
@@ -192,29 +169,33 @@ pub struct File {
     pub id: ids::FSId,
     pub user_id: ids::UserId,
     pub storage: storage::fs::Storage,
-    pub parent: Option<ids::FSId>,
+    pub parent: ids::FSId,
     pub path: PathBuf,
     pub basename: String,
     pub mime: mime::Mime,
     pub size: u64,
     pub tags: tags::TagMap,
     pub comment: Option<String>,
-    pub created: chrono::DateTime<chrono::Utc>,
-    pub updated: Option<chrono::DateTime<chrono::Utc>>,
-    pub deleted: Option<chrono::DateTime<chrono::Utc>>,
+    pub created: DateTime<Utc>,
+    pub updated: Option<DateTime<Utc>>,
+    pub deleted: Option<DateTime<Utc>>,
 }
 
 impl File {
-    pub fn builder<'a>(
-        id: ids::FSId, 
-        user_id: ids::UserId, 
-        storage: &'a storage::Medium
-    ) -> Builder<'a, 'static> {
+    pub fn builder<'a, 'b, P>(
+        id: ids::FSId,
+        user_id: ids::UserId,
+        storage: &'a storage::Medium,
+        parent: &'b P
+    ) -> Builder<'a, 'b>
+    where
+        P: traits::Container
+    {
         Builder {
             id,
             user_id,
             storage,
-            parent: None,
+            parent,
             basename: None,
             mime: None,
             checksums: checksum::ChecksumBuilder::new(),
@@ -227,8 +208,8 @@ impl File {
         conn: &impl GenericClient,
         id: &ids::FSId
     ) -> Result<Option<Self>, PgError> {
-        let mut record_params = PgParams::with_capacity(1);
-        record_params.push(id);
+        let record_params: sql::ParamsVec = vec![id];
+        let tags_params: sql::ParamsVec = vec![id];
 
         let record_query = conn.query_opt(
             "\
@@ -249,7 +230,7 @@ impl File {
             where fs.id = $1 and fs_type = 1",
             record_params.as_slice()
         );
-        let tags_query = conn.query(
+        let tags_query = conn.query_raw(
             "\
             select fs_tags.tag, \
                    fs_tags.value \
@@ -258,17 +239,11 @@ impl File {
                     fs_tags.fs_id = fs.id \
             where fs.id = $1 and \
                   fs.fs_type = 1",
-            record_params.as_slice()
+            tags_params
         );
 
         match tokio::try_join!(record_query, tags_query) {
-            Ok((Some(row), tags_list)) => {
-                let mut tags = tags::TagMap::with_capacity(tags_list.len());
-
-                for tag_row in tags_list {
-                    tags.insert(tag_row.get(0), tag_row.get(1));
-                }
-
+            Ok((Some(row), tags_stream)) => {
                 Ok(Some(File {
                     id: row.get(0),
                     user_id: row.get(1),
@@ -278,7 +253,7 @@ impl File {
                     basename: row.get(4),
                     mime: sql::mime_from_sql(row.get(7), row.get(8)),
                     size: sql::u64_from_sql(row.get(6)),
-                    tags: tags,
+                    tags: tags::from_row_stream(tags_stream).await?,
                     comment: row.get(9),
                     created: row.get(10),
                     updated: row.get(11),
@@ -311,5 +286,15 @@ impl File {
 
     pub fn into_model_item(self) -> models::fs::Item {
         models::fs::Item::File(self.into_model())
+    }
+}
+
+impl traits::Common for File {
+    fn id(&self) -> &ids::FSId {
+        &self.id
+    }
+
+    fn full_path(&self) -> PathBuf {
+        self.path.join(&self.basename)
     }
 }
