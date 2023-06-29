@@ -8,7 +8,7 @@ use deadpool_postgres::GenericClient;
 use serde::{Serialize, Deserialize};
 use chrono::{DateTime, Utc};
 use lib::ids;
-use lib::models;
+use lib::schema;
 
 use crate::net;
 use crate::storage;
@@ -265,8 +265,8 @@ impl File {
         }
     }
 
-    pub fn into_model(self) -> models::fs::File {
-        models::fs::File {
+    pub fn into_schema(self) -> schema::fs::File {
+        schema::fs::File {
             id: self.id,
             user_id: self.user_id,
             parent: self.parent,
@@ -277,15 +277,11 @@ impl File {
             tags: self.tags,
             comment: self.comment,
             checksums: Vec::new(),
-            storage: self.storage.into_model(),
+            storage: self.storage.into_schema(),
             created: self.created,
             updated: self.updated,
             deleted: self.deleted,
         }
-    }
-
-    pub fn into_model_item(self) -> models::fs::Item {
-        models::fs::Item::File(self.into_model())
     }
 }
 

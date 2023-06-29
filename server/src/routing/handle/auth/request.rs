@@ -1,4 +1,4 @@
-use lib::models;
+use lib::schema;
 use lib::actions;
 use axum::debug_handler;
 use axum::http::{HeaderMap, StatusCode};
@@ -42,7 +42,7 @@ pub async fn post(
 
     let mut builder = session::Session::builder(user.id().clone());
 
-    let mut json_auth_method = models::auth::AuthMethod::None;
+    let mut json_auth_method = schema::auth::AuthMethod::None;
     let mut json_message = String::from("session authenticated");
 
     if let Some(auth_method) = Authenticate::retrieve_primary(&conn, user.id()).await? {
@@ -50,7 +50,7 @@ pub async fn post(
             Authenticate::Password(_) => {
                 builder.auth_method(session::AuthMethod::Password);
 
-                json_auth_method = models::auth::AuthMethod::Password;
+                json_auth_method = schema::auth::AuthMethod::Password;
                 json_message = String::from("proceed with requested auth method");
             }
         }

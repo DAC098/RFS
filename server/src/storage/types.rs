@@ -1,6 +1,6 @@
 use std::path::{PathBuf, Path};
 
-use lib::models::storage::{StorageItem, StorageType, StorageLocal};
+use lib::schema::storage::{StorageItem, StorageType, StorageLocal};
 use serde::{Serialize, Deserialize};
 
 use super::error::BuilderError;
@@ -23,7 +23,7 @@ impl Local {
         Ok(Local { path })
     }
 
-    pub fn into_model(self) -> StorageLocal {
+    pub fn into_schema(self) -> StorageLocal {
         StorageLocal {
             path: self.path
         }
@@ -36,9 +36,9 @@ pub enum Type {
 }
 
 impl Type {
-    pub fn into_model(self) -> StorageType {
+    pub fn into_schema(self) -> StorageType {
         match self {
-            Type::Local(local) => StorageType::Local(local.into_model())
+            Type::Local(local) => StorageType::Local(local.into_schema())
         }
     }
 }

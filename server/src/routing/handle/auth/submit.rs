@@ -1,4 +1,4 @@
-use lib::models;
+use lib::schema;
 use lib::actions;
 use axum::http::{HeaderMap, StatusCode};
 use axum::extract::State;
@@ -84,7 +84,7 @@ pub async fn post(
         VerifyMethod::None => {
             session.verified = true;
 
-            models::auth::VerifyMethod::None
+            schema::auth::VerifyMethod::None
         },
         VerifyMethod::Totp => {
             let Some(totp) = totp::Totp::retrieve(
@@ -95,7 +95,7 @@ pub async fn post(
                     .source("session required user totp but user totp was not found"));
             };
 
-            models::auth::VerifyMethod::Totp {
+            schema::auth::VerifyMethod::Totp {
                 digits: *totp.digits()
             }
         }

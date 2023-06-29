@@ -5,8 +5,9 @@ use serde::{Serialize, Deserialize};
 use snowcloud_flake::serde_ext::{option_string_id, string_id};
 
 use crate::ids;
-use crate::models::tags::Tags;
 use crate::serde::{mime_str, mime_opt_str};
+
+use super::tags::Tags;
 
 #[derive(Serialize, Deserialize)]
 pub enum Type {

@@ -10,7 +10,7 @@ use deadpool_postgres::GenericClient;
 use tokio_postgres::types::Json as PgJson;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use lib::{ids, models};
+use lib::{ids, schema};
 
 use crate::net;
 use crate::net::error;
@@ -433,7 +433,7 @@ pub async fn post(
 
     transaction.commit().await?;
 
-    let wrapper = lib::json::Wrapper::new(rtn.into_model());
+    let wrapper = lib::json::Wrapper::new(rtn.into_schema());
 
     Ok(net::Json::new(wrapper))
 }

@@ -9,7 +9,7 @@ use axum::response::IntoResponse;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use lib::ids;
-use lib::models::fs::{Storage, Type, ListItem, Item, File, Directory};
+use lib::schema::fs::{Storage, Type, ListItem, Item, File, Directory};
 
 use crate::net;
 use crate::net::error;

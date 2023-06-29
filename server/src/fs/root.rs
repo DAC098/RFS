@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use lib::ids;
-use lib::models;
+use lib::schema;
 use chrono::{DateTime, Utc};
 use tokio_postgres::Error as PgError;
 use tokio_postgres::types::Json as PgJson;
@@ -165,11 +165,11 @@ impl Root {
         }
     }
 
-    pub fn into_model(self) -> models::fs::Root {
-        models::fs::Root {
+    pub fn into_schema(self) -> schema::fs::Root {
+        schema::fs::Root {
             id: self.id,
             user_id: self.user_id,
-            storage: self.storage.into_model(),
+            storage: self.storage.into_schema(),
             tags: self.tags,
             comment: self.comment,
             created: self.created,

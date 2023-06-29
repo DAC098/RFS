@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use lib::ids;
-use lib::models::storage::{StorageItem, StorageType};
+use lib::schema::storage::{StorageItem, StorageType};
 use chrono::{DateTime, Utc};
 use tokio_postgres::Error as PgError;
 use tokio_postgres::types::Json as PgJson;
@@ -207,12 +207,12 @@ impl Medium {
         }
     }
 
-    pub fn into_model(self) -> StorageItem {
+    pub fn into_schema(self) -> StorageItem {
         StorageItem {
             id: self.id,
             name: self.name,
             user_id: self.user_id,
-            type_: self.type_.into_model(),
+            type_: self.type_.into_schema(),
             tags: self.tags,
             created: self.created,
             updated: self.updated,

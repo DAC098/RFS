@@ -1,6 +1,6 @@
 use serde::{Serialize, Deserialize};
 use lib::ids;
-use lib::models;
+use lib::schema;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Local {
@@ -19,9 +19,9 @@ impl Storage {
         }
     }
 
-    pub fn into_model(self) -> models::fs::Storage {
+    pub fn into_schema(self) -> schema::fs::Storage {
         match self {
-            Storage::Local(local) => models::fs::Storage::Local {
+            Storage::Local(local) => schema::fs::Storage::Local {
                 id: local.id
             }
         }

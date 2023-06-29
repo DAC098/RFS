@@ -11,7 +11,6 @@ use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
 use unicode_width::UnicodeWidthStr;
 use clap::{ArgMatches};
 use reqwest::Url;
-use reqwest::cookie::Jar;
 
 mod error;
 mod input;
@@ -100,7 +99,7 @@ impl AppState {
     }
 }
 
-fn main_subcommands(mut command: clap::Command) -> clap::Command {
+fn main_subcommands(command: clap::Command) -> clap::Command {
     use clap::{Command, Arg, ArgAction, value_parser};
 
     command
@@ -152,7 +151,7 @@ pub fn app_commands() -> clap::Command {
 }
 
 pub fn interactive_commands() -> clap::Command {
-    use clap::{Command, Arg, ArgAction, value_parser};
+    use clap::Command;
 
     let command = Command::new("")
         .subcommand_required(true)
@@ -225,7 +224,7 @@ fn run() -> error::Result<()> {
                 };
 
                 let result = match matches.subcommand() {
-                    Some(("quit", quit_matches)) => {
+                    Some(("quit", _quit_matches)) => {
                         return Ok(());
                     },
                     Some((cmd, cmd_matches)) => run_subcommand(&mut state, cmd, cmd_matches),
@@ -260,7 +259,7 @@ fn run_subcommand(state: &mut AppState, command: &str, matches: &ArgMatches) -> 
 
 fn submit_user(
     state: &mut AppState
-) -> error::Result<Option<lib::models::auth::AuthMethod>> {
+) -> error::Result<Option<lib::schema::auth::AuthMethod>> {
     loop {
         let username = input::read_stdin_trimmed("username: ")?;
 
@@ -292,7 +291,7 @@ fn submit_user(
 
         state.save_store()?;
 
-        let json = res.json::<lib::json::Wrapper<Option<lib::models::auth::AuthMethod>>>()?;
+        let json = res.json::<lib::json::Wrapper<Option<lib::schema::auth::AuthMethod>>>()?;
 
         return Ok(json.into_payload());
     }
@@ -300,11 +299,11 @@ fn submit_user(
 
 fn submit_auth(
     state: &mut AppState,
-    auth_method: lib::models::auth::AuthMethod
-) -> error::Result<Option<lib::models::auth::VerifyMethod>> {
+    auth_method: lib::schema::auth::AuthMethod
+) -> error::Result<Option<lib::schema::auth::VerifyMethod>> {
     match auth_method {
-        lib::models::auth::AuthMethod::None => {}
-        lib::models::auth::AuthMethod::Password => {
+        lib::schema::auth::AuthMethod::None => {}
+        lib::schema::auth::AuthMethod::Password => {
             println!("AuthMethod::Password");
 
             let prompt = "password: ";
@@ -333,7 +332,7 @@ fn submit_auth(
                         .source(format!("{:?}", json)));
                 }
 
-                let json = res.json::<lib::json::Wrapper<Option<lib::models::auth::VerifyMethod>>>()?;
+                let json = res.json::<lib::json::Wrapper<Option<lib::schema::auth::VerifyMethod>>>()?;
 
                 return Ok(json.into_payload());
             }
@@ -345,11 +344,11 @@ fn submit_auth(
 
 fn submit_verify(
     state: &mut AppState,
-    verify_method: lib::models::auth::VerifyMethod
+    verify_method: lib::schema::auth::VerifyMethod
 ) -> error::Result<()> {
     match verify_method {
-        lib::models::auth::VerifyMethod::None => {},
-        lib::models::auth::VerifyMethod::Totp{ digits } => {
+        lib::schema::auth::VerifyMethod::None => {},
+        lib::schema::auth::VerifyMethod::Totp{ digits } => {
             let prompt = format!("totp({}) code: ", digits);
 
             'input_loop: loop {
@@ -391,9 +390,6 @@ fn submit_verify(
 }
 
 fn connect(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
-    use lib::actions;
-    use lib::models;
-
     let host = args.get_one::<String>("host").unwrap();
     let port = args.get_one("port")
         .map(|v: &u16| v.clone())

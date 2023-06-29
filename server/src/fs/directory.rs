@@ -7,7 +7,7 @@ use tokio_postgres::types::Json as PgJson;
 use deadpool_postgres::GenericClient;
 use serde::{Serialize, Deserialize};
 use lib::ids;
-use lib::models;
+use lib::schema;
 
 use crate::net;
 use crate::storage;
@@ -229,11 +229,11 @@ impl Directory {
         }
     }
 
-    pub fn into_model(self) -> models::fs::Directory {
-        models::fs::Directory {
+    pub fn into_schema(self) -> schema::fs::Directory {
+        schema::fs::Directory {
             id: self.id,
             user_id: self.user_id,
-            storage: self.storage.into_model(),
+            storage: self.storage.into_schema(),
             parent: self.parent,
             basename: self.basename,
             path: self.path,

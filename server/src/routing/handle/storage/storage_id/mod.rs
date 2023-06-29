@@ -5,7 +5,7 @@ use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use serde::{Deserialize, Serialize};
 use lib::ids;
-use lib::models::storage::{StorageItem, StorageType};
+use lib::schema::storage::{StorageItem, StorageType};
 use lib::actions::storage::{UpdateStorage, UpdateStorageType};
 
 use crate::net;
@@ -47,7 +47,7 @@ pub async fn get(
             .message("requested storage item was not found"));
     }
 
-    let rtn = lib::json::Wrapper::new(medium.into_model());
+    let rtn = lib::json::Wrapper::new(medium.into_schema());
 
     Ok(net::Json::new(rtn))
 }

@@ -8,7 +8,7 @@ use tokio_postgres::types::Json as PgJson;
 use futures::TryStreamExt;
 use serde::{Deserialize, Serialize};
 use lib::ids;
-use lib::models::storage::{StorageItem, StorageType, StorageListItem};
+use lib::schema::storage::{StorageItem, StorageType, StorageListItem};
 use lib::actions::storage::{CreateStorage, CreateStorageType};
 
 use crate::net;
@@ -144,7 +144,7 @@ pub async fn post(
 
     transaction.commit().await?;
 
-    let rtn = lib::json::Wrapper::new(storage.into_model())
+    let rtn = lib::json::Wrapper::new(storage.into_schema())
         .with_message("created storage");
 
     Ok(net::Json::new(rtn))

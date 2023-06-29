@@ -6,7 +6,7 @@ use deadpool_postgres::GenericClient;
 use tokio_postgres::Error as PgError;
 use serde::{Serialize, Deserialize};
 use lib::ids;
-use lib::models;
+use lib::schema;
 
 use crate::net;
 use crate::storage;
@@ -235,11 +235,11 @@ impl Item {
         }
     }
 
-    pub fn into_model(self) -> models::fs::Item {
+    pub fn into_schema(self) -> schema::fs::Item {
         match self {
-            Self::Root(root) => models::fs::Item::Root(root.into_model()),
-            Self::Directory(dir) => models::fs::Item::Directory(dir.into_model()),
-            Self::File(file) => models::fs::Item::File(file.into_model()),
+            Self::Root(root) => schema::fs::Item::Root(root.into_schema()),
+            Self::Directory(dir) => schema::fs::Item::Directory(dir.into_schema()),
+            Self::File(file) => schema::fs::Item::File(file.into_schema()),
         }
     }
 }
