@@ -304,36 +304,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2da6da31387c7e4ef160ffab6d5e7f00c42626fe39aea70a7b0f1773f7dd6c1b"
 
 [[package]]
-name = "cli"
-version = "0.1.0"
-dependencies = [
- "base64 0.21.2",
- "blake3",
- "chrono",
- "clap",
- "crossterm",
- "futures",
- "lib",
- "pin-project",
- "ratatui",
- "reqwest",
- "reqwest_cookie_store",
- "rpassword",
- "serde",
- "serde_json",
- "sha1",
- "sha2",
- "sha3",
- "shell-words",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
- "unicode-width",
- "url",
-]
-
-[[package]]
 name = "colorchoice"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -458,23 +428,6 @@ name = "data-encoding"
 version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2e66c9d817f1720209181c316d28635c050fa304f9c79e47a520882661b7308"
-
-[[package]]
-name = "db"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "clap",
- "futures",
- "lib",
- "rpassword",
- "snowcloud-cloud",
- "snowcloud-core",
- "tokio",
- "tokio-postgres",
- "tracing",
- "tracing-subscriber",
-]
 
 [[package]]
 name = "deadpool"
@@ -948,17 +901,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
-name = "lib"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "mime",
- "serde",
- "serde_json",
- "snowcloud-flake",
-]
-
-[[package]]
 name = "libc"
 version = "0.2.146"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1414,6 +1356,103 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4389f1d5789befaf6029ebd9f7dac4af7f7e3d61b69d4f30e2ac02b57e7712b0"
 
 [[package]]
+name = "rfs-cli"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.2",
+ "blake3",
+ "chrono",
+ "clap",
+ "crossterm",
+ "futures",
+ "pin-project",
+ "ratatui",
+ "reqwest",
+ "reqwest_cookie_store",
+ "rfs-lib",
+ "rpassword",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sha2",
+ "sha3",
+ "shell-words",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "unicode-width",
+ "url",
+]
+
+[[package]]
+name = "rfs-db"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "clap",
+ "futures",
+ "rfs-lib",
+ "rpassword",
+ "snowcloud-cloud",
+ "snowcloud-core",
+ "tokio",
+ "tokio-postgres",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "rfs-lib"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "mime",
+ "serde",
+ "serde_json",
+ "snowcloud-flake",
+]
+
+[[package]]
+name = "rfs-server"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.21.2",
+ "blake3",
+ "bytes",
+ "chrono",
+ "clap",
+ "data-encoding",
+ "deadpool-postgres",
+ "futures",
+ "handlebars",
+ "hkdf",
+ "hmac",
+ "hyper",
+ "lazy_static",
+ "mime",
+ "pin-project",
+ "rand",
+ "rfs-lib",
+ "rust-argon2",
+ "rust-otp",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sha2",
+ "sha3",
+ "snowcloud-cloud",
+ "tokio",
+ "tokio-postgres",
+ "tokio-util",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "rpassword"
 version = "7.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1539,45 +1578,6 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
-]
-
-[[package]]
-name = "server"
-version = "0.1.0"
-dependencies = [
- "axum",
- "base64 0.21.2",
- "blake3",
- "bytes",
- "chrono",
- "clap",
- "data-encoding",
- "deadpool-postgres",
- "futures",
- "handlebars",
- "hkdf",
- "hmac",
- "hyper",
- "lazy_static",
- "lib",
- "mime",
- "pin-project",
- "rand",
- "rust-argon2",
- "rust-otp",
- "serde",
- "serde_json",
- "sha1",
- "sha2",
- "sha3",
- "snowcloud-cloud",
- "tokio",
- "tokio-postgres",
- "tokio-util",
- "tower",
- "tower-http",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
