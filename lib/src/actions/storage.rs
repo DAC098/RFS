@@ -3,14 +3,14 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum CreateStorageType {
     Local {
         path: PathBuf
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CreateStorage {
     pub name: String,
     #[serde(rename(serialize = "type", deserialize = "type"))]
@@ -18,12 +18,12 @@ pub struct CreateStorage {
     pub tags: HashMap<String, Option<String>>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum UpdateStorageType {
     Local {}
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct UpdateStorage {
     pub name: Option<String>,
     #[serde(rename(serialize = "type", deserialize = "type"))]

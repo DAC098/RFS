@@ -197,9 +197,9 @@ impl Medium {
                     name: row.get(2),
                     type_: sql::de_from_sql(row.get(3)),
                     tags: tags::from_row_stream(tags_stream).await?,
-                    created: row.get(5),
-                    updated: row.get(6),
-                    deleted: row.get(7),
+                    created: row.get(4),
+                    updated: row.get(5),
+                    deleted: row.get(6),
                 }))
             },
             Ok((None, _)) => Ok(None),

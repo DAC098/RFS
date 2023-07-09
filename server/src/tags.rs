@@ -22,7 +22,7 @@ pub async fn from_row_stream(
     let mut tags = TagMap::new();
 
     while let Some(row) = stream.try_next().await? {
-        if tags.len() == tags.capacity() - 1 {
+        if tags.len() == tags.capacity() {
             tags.reserve(5);
         }
 
@@ -126,8 +126,9 @@ where
                 returning tag\
             ) \
             delete from {table} \
-            where {id_field} = $1 and \
-                  tag not in insert_values.tag",
+            using insert_values \
+            where {table}.{id_field} = $1 and \
+                  {table}.tag not in (insert_values.tag)",
             insert_query
         );
 

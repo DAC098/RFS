@@ -3,3 +3,5 @@
 *.swp
 
 rfs_cookies.json
+*.ignore
+*.ignore.*

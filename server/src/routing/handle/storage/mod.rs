@@ -116,7 +116,14 @@ pub async fn post(
     initiator: initiator::Initiator,
     axum::Json(json): axum::Json<CreateStorage>,
 ) -> error::Result<impl IntoResponse> {
+    tracing::event!(
+        tracing::Level::DEBUG,
+        "creating new storage medium"
+    );
+
     let mut conn = state.pool().get().await?;
+
+    conn.execute("select * from users", &[]).await?;
 
     let type_: storage::types::Type = match json.type_ {
         CreateStorageType::Local { path } => {

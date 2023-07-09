@@ -1,3 +1,5 @@
+use bytes::{BufMut, BytesMut};
+use axum::body::Full;
 use axum::http::StatusCode;
 use axum::http::header::{HeaderMap, ACCEPT};
 use axum::response::{Response, IntoResponse};
@@ -12,24 +14,24 @@ fn box_into_inner<T>(b: Box<T>) -> T {
 }
 
 fn handle_error_json(inner: Inner) -> Response {
-    let mut body = String::new();
-    body.push_str("{\"error\":\"");
-    body.push_str(&inner.kind);
-    body.push('"');
+    let mut json = lib::json::Error::new(inner.kind);
 
     if let Some(msg) = inner.msg {
-        body.push_str(",\"message\":\"");
-        body.push_str(&msg);
-        body.push('"');
+        json.set_message(msg);
     }
 
-    body.push('}');
+    let buf = {
+        let mut buf = BytesMut::with_capacity(128).writer();
+        serde_json::to_writer(&mut buf, &json).unwrap();
+
+        buf.into_inner().freeze()
+    };
 
     Response::builder()
         .status(inner.status)
         .header("content-type", "application/json")
-        .header("content-length", body.len())
-        .body(body)
+        .header("content-length", buf.len())
+        .body(Full::new(buf))
         .unwrap()
         .into_response()
 }

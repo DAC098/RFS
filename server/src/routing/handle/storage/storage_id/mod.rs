@@ -60,7 +60,7 @@ pub async fn put(
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    let Some(medium) = storage::Medium::retrieve(
+    let Some(mut medium) = storage::Medium::retrieve(
         &conn,
         &storage_id
     ).await? else {
@@ -108,6 +108,8 @@ pub async fn put(
                 "name = ${} ",
                 sql::push_param(&mut update_params, name)
             ).unwrap();
+
+            medium.name = name.clone();
         }
 
         if let Some(type_) = &json.type_ {
@@ -129,11 +131,16 @@ pub async fn put(
             &storage_id,
             &tags
         ).await?;
+
+        medium.tags = tags;
     }
 
     transaction.commit().await?;
 
-    Ok(net::Json::new(()))
+    let rtn = lib::json::Wrapper::new(medium.into_schema())
+        .with_message("updated storage");
+
+    Ok(net::Json::new(rtn))
 }
 
 pub async fn delete(

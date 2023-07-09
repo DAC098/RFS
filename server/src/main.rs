@@ -82,12 +82,10 @@ struct CommandArgs {
 fn main() {
     use tokio::runtime::Builder;
 
-    let subscriber = FmtSubscriber::builder()
+    FmtSubscriber::builder()
         .with_env_filter(EnvFilter::from_default_env())
-        .finish();
-
-    tracing::subscriber::set_global_default(subscriber)
-        .expect("failed to initalize global tracing subscriber");
+        .try_init()
+        .expect("failed to initialize global tracing subscriber");
 
     let matches = CommandArgs::parse();
 

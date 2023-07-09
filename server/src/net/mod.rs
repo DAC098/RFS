@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use bytes::{BufMut, BytesMut};
 use axum::body::Full;
 use axum::http::{
@@ -61,12 +63,27 @@ impl<T> Json<T> {
 }
 
 impl<T> Json<lib::json::Wrapper<T>> {
+    pub fn with_kind<K>(mut self, kind: K) -> Self
+    where
+        K: Into<String>
+    {
+        self.root = self.root.with_kind(kind);
+        self
+    }
+
     pub fn with_message<M>(mut self, message: M) -> Self
     where
         M: Into<String>
     {
         self.root = self.root.with_message(message);
         self
+    }
+
+    pub fn with_payload<P>(self, payload: P) -> Json<lib::json::Wrapper<P>> {
+        Json {
+            builder: self.builder,
+            root: self.root.with_payload(payload)
+        }
     }
 }
 

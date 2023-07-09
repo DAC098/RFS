@@ -41,17 +41,18 @@ pub async fn post(
     };
 
     let mut builder = session::Session::builder(user.id().clone());
-
-    let mut json_auth_method = schema::auth::AuthMethod::None;
-    let mut json_message = String::from("session authenticated");
+    let mut json = lib::json::Wrapper::new(schema::auth::AuthMethod::None)
+        .with_kind("Authenticated")
+        .with_message("session authenticated");
 
     if let Some(auth_method) = Authenticate::retrieve_primary(&conn, user.id()).await? {
         match auth_method {
             Authenticate::Password(_) => {
                 builder.auth_method(session::AuthMethod::Password);
 
-                json_auth_method = schema::auth::AuthMethod::Password;
-                json_message = String::from("proceed with requested auth method");
+                json = json.with_payload(schema::auth::AuthMethod::Password)
+                    .with_kind("AuthRequired")
+                    .with_message("proceed with requested auth method");
             }
         }
 
@@ -64,21 +65,19 @@ pub async fn post(
         }
     }
 
-    let session;
-
-    {
+    let session = {
         let transaction = conn.transaction().await?;
 
-        session = builder.build(&transaction).await?;
+        let s = builder.build(&transaction).await?;
 
         transaction.commit().await?;
-    }
+
+        s
+    };
 
     let session_cookie = session::create_session_cookie(state.auth(), &session);
-    let json_root = lib::json::Wrapper::new(json_auth_method)
-        .with_message(json_message);
 
-    Ok(net::Json::new(json_root)
+    Ok(net::Json::new(json)
         .with_header("set-cookie", session_cookie)
         .into_response())
 }

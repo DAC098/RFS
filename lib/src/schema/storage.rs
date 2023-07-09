@@ -7,17 +7,17 @@ use snowcloud_flake::serde_ext::string_id;
 
 use crate::ids;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct StorageLocal {
     pub path: PathBuf
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum StorageType {
     Local(StorageLocal)
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct StorageListItem {
     #[serde(with = "string_id")]
     pub id: ids::StorageId,
@@ -29,7 +29,7 @@ pub struct StorageListItem {
     pub tags: HashMap<String, Option<String>>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct StorageItem {
     #[serde(with = "string_id")]
     pub id: ids::StorageId,

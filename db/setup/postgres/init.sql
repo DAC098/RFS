@@ -82,10 +82,10 @@ create table fs (
 
     basename varchar,
 
-    fs_type varchar not null,
-
+    fs_type smallint not null,
     fs_path varchar,
     fs_size bigint not null default 0,
+
     mime_type varchar,
     mime_subtype varchar,
 
