@@ -4,7 +4,7 @@ use serde::{Serialize, Deserialize};
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UpdateMetadata {
     pub tags: Option<HashMap<String, Option<String>>>,
-    pub comment: Option<Option<String>>,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -22,7 +22,7 @@ pub fn command() -> Command {
                 .value_parser(value_parser!(i64))
                 .required(true)
                 .help("the parent fs item to create the new fs item under")
-                .long_help("the parent fs item to create the new fs item under. if the given item is a file then it will be updated with the new contents")
+                .long_help("the parent fs item to create the new fs item under")
             )
             .arg(Arg::new("tag")
                 .short('t')
@@ -69,6 +69,46 @@ pub fn command() -> Command {
                 )
             )
         )
+        .subcommand(Command::new("update")
+            .about("updates existing fs items with new data")
+            .arg(util::default_help_arg())
+            .arg(Arg::new("id")
+                .long("id")
+                .value_parser(value_parser!(i64))
+                .required(true)
+                .help("the id of the fs item to update")
+            )
+            .arg(Arg::new("tag")
+                .short('t')
+                .long("tag")
+                .action(ArgAction::Append)
+                .help("tags to apply to the fs item. overrides currently set tags")
+                .conflicts_with_all(["add-tag", "drop-tag"])
+            )
+            .arg(Arg::new("add-tag")
+                .long("add-tag")
+                .action(ArgAction::Append)
+                .help("adds a tag to the given fs item")
+                .conflicts_with("tag")
+            )
+            .arg(Arg::new("drop-tag")
+                .long("drop-tag")
+                .action(ArgAction::Append)
+                .help("drops a tag from the given fs item")
+                .conflicts_with("tag")
+            )
+            .arg(Arg::new("comment")
+                .long("comment")
+                .help("updates the comment of the given fs item")
+                .conflicts_with("drop-comment")
+            )
+            .arg(Arg::new("drop-comment")
+                .long("drop-comment")
+                .action(ArgAction::SetTrue)
+                .help("removes the comment of the given fs item")
+                .conflicts_with("comment")
+            )
+        )
 }
 
 pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
@@ -76,6 +116,7 @@ pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
     let path = format!("/fs/{}", id);
 
     let tags = util::tags_from_args("tag", args)?;
+    let comment = args.get_one::<String>().cloned();
 
     match args.subcommand() {
         Some(("dir", dir_args)) => {
@@ -207,7 +248,8 @@ pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
                     .kind("StdIoError")
                     .message("failed to open the desired file")
                     .source(e))?;
-            let res = state.client.put(state.server.url.join(&path)?)
+            let url = state.server.url.join(&path)?;
+            let res = state.client.put(url)
                 .header("x-basename", basename)
                 .header("content-type", mime.as_ref())
                 .header("content-length", metadata.len())
@@ -227,10 +269,143 @@ pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
 
             let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::fs::Item>>()?;
 
-            println!("{:?}", result);
+            let action = rfs_lib::actions::fs::UpdateMetadata {
+                tags,
+                comment
+            };
+
+            if action.has_work() {
+                let url = state.server.url.join(&path)?;
+                let res = stats.client.patch(url)
+                    .json(&action)
+                    .send()?;
+
+                let status = res.status();
+
+                if status != reqwest::StatusCode::OK {
+                    let json = res.json::<rfs_lib::json::Error>()?;
+
+                    return Err(error::Error::new()
+                        .kind("FailedUpdateFs")
+                        .message("updated file to server buf failed to update metadata")
+                        .source(format!("{:?}", json)));
+                }
+
+                let update_result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::fs::Item>>()?;
+
+                println!("{:?}", update_result);
+            } else {
+                println!("{:?}", result);
+            }
         },
         _ => unreachable!()
     }
+
+    Ok(())
+}
+
+pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
+    let id = args.get_one::<i64>("id").cloned().unwrap();
+    let path = format!("/fs/{}", id);
+
+    let tags = util::tags_from_args("tag", args)?;
+    let add_tags = util::tags_from_args("add-tag", args)?;
+    let drop_tags = if let Some(given) = args.get_many::<String>("drop-tag") {
+        given.collect()
+    } else {
+        Vec::new()
+    };
+
+    let mut current = {
+        let url = state.server.url.join(&path)?;
+        let res = state.client.get(url).send()?;
+
+        let status = res.status();
+
+        if status != reqwest::StatusCode::OK {
+            let json = res.json::<rfs_lib::json::Error>()?;
+
+            return Err(error::Error::new()
+                .kind("FailedFsLookup")
+                .message("failed to get the desired fs item")
+                .source(format!("{:?}", json)));
+        }
+
+        let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::fs::Item>>()?;
+
+        tracing::debug!(
+            "currnet fs item: {:?}",
+            result
+        );
+
+        result.into_payload()
+    };
+
+    let new_tags = {
+        if tags.len() > 0 {
+            Some(tags)
+        } else if drop_tags.len() > 0 || add_tags.len() > 0 {
+            let mut current_tags = match current {
+                rfs_lib::schema::fs::Item::Root(root) => root.tags,
+                rfs_lib::schema::fs::Item::Directory(dir) => dir.tags,
+                rfs_lib::schema::fs::Item::File(file) => file.tags,
+            };
+
+            for tag in drop_tags {
+                current_tags.remove(tag);
+            }
+
+            for (tag, value) in add_tags {
+                current_tags.insert(tag, value);
+            }
+
+            Some(current_tags)
+        } else {
+            None
+        }
+    };
+
+    let new_comment = if let Some(comment) = args.get_one::<String>("comment").cloned() {
+        Some(comment)
+    } else if args.get_flag("drop-comment") {
+        Some(String::new())
+    } else {
+        None
+    };
+
+    let action = rfs_lib::actions::fs::UpdateMetadata {
+        tags: new_tags,
+        comment: new_comment
+    };
+
+    if !action.has_work() {
+        println!("no changes have been specified");
+        return Ok(());
+    }
+
+    tracing::debug!("sending patch request to server: {:?}", action);
+
+    let url = state.server.url.join(&path)?;
+    let res = state.client.patch(url)
+        .json(&action)
+        .send()?;
+
+    tracing::debug!("response: {:#?}", res);
+
+    let status = res.status();
+
+    if status != reqwest::StatusCode::OK {
+        let json = res.json::<rfs_lib::json::Error>()?;
+
+        return Err(error::Error::new()
+            .kind("FailedUpdateFs")
+            .message("failed to update the fs item")
+            .source(format!("{:?}", json)));
+    }
+
+    let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::fs::Item>>()?;
+
+    println!("{:?}", result);
 
     Ok(())
 }

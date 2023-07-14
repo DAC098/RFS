@@ -260,6 +260,22 @@ impl Item {
             Self::File(file) => schema::fs::Item::File(file.into_schema()),
         }
     }
+
+    pub fn set_comment(&mut self, comment: Option<String>) -> Option<String> {
+        match self {
+            Self::Root(root) => std::mem::replace(&mut root.comment, comment),
+            Self::Directory(dir) => std::mem::replace(&mut dir.comment, comment),
+            Self::File(file) => std::mem::replace(&mut file.comment, comment),
+        }
+    }
+
+    pub fn set_tags(&mut self, tags: tags::TagMap) -> tags::TagMap {
+        match self {
+            Self::Root(root) => std::mem::replace(&mut root.tags, tags),
+            Self::Directory(dir) => std::mem::replace(&mut dir.tags, tags),
+            Self::File(file) => std::mem::replace(&mut file.tags, tags),
+        }
+    }
 }
 
 impl traits::Common for Item {

@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::str::FromStr;
 use std::path::PathBuf;
 
@@ -17,6 +18,7 @@ use crate::net::error;
 use crate::state::ArcShared;
 use crate::sec::authn::initiator;
 use crate::util;
+use crate::util::sql;
 use crate::storage;
 use crate::fs;
 use crate::tags;
@@ -73,7 +75,21 @@ pub async fn get(
     initiator: initiator::Initiator,
     Path(PathParams { fs_id }): Path<PathParams>,
 ) -> error::Result<impl IntoResponse> {
-    Ok(net::Json::empty())
+    let conn = state.pool().get().await?;
+
+    let Some(item) = fs::Item::retrieve(
+        &conn,
+        &fs_id
+    ).await? else {
+        return Err(error::Error::new()
+            .status(StatusCode::NOT_FOUND)
+            .kind("FSItemNotFound")
+            .message("requested fs item was not found"));
+    };
+
+    let wrapper = rfs_lib::json::Wrapper::new(item.into_schema());
+
+    Ok(net::Json::new(wrapper))
 }
 
 #[debug_handler]
@@ -461,13 +477,86 @@ pub async fn put(
 
 pub async fn patch(
     State(state): State<ArcShared>,
+    initiator: initiator::Initiator,
     Path(PathParams { fs_id }): Path<PathParams>,
+    axum::Json(json): axum::Json<rfs_lib::actions::fs::UpdateMetadata>,
 ) -> error::Result<impl IntoResponse> {
-    Ok(net::Json::empty())
+    let mut conn = state.pool().get().await?;
+
+    let Some(mut item) = fs::Item::retrieve(
+        &conn,
+        &fs_id
+    ).await? else {
+        return Err(error::Error::new()
+            .status(StatusCode::NOT_FOUND)
+            .kind("FSItemNotFound")
+            .message("requested fs item was not found"));
+    };
+
+    if !json.has_work() {
+        return Err(error::Error::new()
+            .status(StatusCode::BAD_REQUEST)
+            .kind("NoWork")
+            .message("requested update with no changes"));
+    }
+
+    tracing::debug!("action {:?}", json);
+
+    let transaction = conn.transaction().await?;
+
+    {
+        let updated = chrono::Utc::now();
+        let mut update_query = String::from("update fs set updated = $2");
+        let mut update_params = sql::ParamsVec::with_capacity(2);
+        update_params.push(&fs_id);
+        update_params.push(&updated);
+
+        if let Some(comment) = &json.comment {
+            if comment.len() == 0 {
+                write!(
+                    &mut update_query,
+                    ", comment = null",
+                ).unwrap();
+
+                item.set_comment(None);
+            } else {
+                write!(
+                    &mut update_query,
+                    ", comment = ${}",
+                    sql::push_param(&mut update_params, comment)
+                ).unwrap();
+
+                item.set_comment(Some(comment.clone()));
+            }
+        }
+
+        write!(&mut update_query, " where id = $1").unwrap();
+
+        transaction.execute(update_query.as_str(), update_params.as_slice()).await?;
+    }
+
+    if let Some(tags) = json.tags {
+        tags::update_tags(
+            &transaction,
+            "fs_tags",
+            "fs_id",
+            &fs_id,
+            &tags
+        ).await?;
+
+        item.set_tags(tags);
+    }
+
+    transaction.commit().await?;
+
+    let wrapper = rfs_lib::json::Wrapper::new(item.into_schema());
+
+    Ok(net::Json::new(wrapper))
 }
 
 pub async fn delete(
     State(state): State<ArcShared>,
+    initiator: initiator::Initiator,
     Path(PathParams { fs_id }): Path<PathParams>,
 ) -> error::Result<impl IntoResponse> {
     Ok(net::Json::empty())

@@ -108,6 +108,7 @@ pub fn storage(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
 pub fn fs(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
     match args.subcommand() {
         Some(("create", create_args)) => fs::create(state, create_args)?,
+        Some(("update", update_args)) => fs::update(state, update_args)?,
         _ => unreachable!()
     }
 
