@@ -7,7 +7,7 @@ pub async fn run(args: &ArgMatches) -> error::Result<()> {
     let mut conn = conn::postgres(args).await?;
     let current_dir = std::env::current_dir()?;
 
-    let setup_dir = current_dir.join("db/setup/postgres");
+    let setup_dir = current_dir.join("rfs-db/setup/postgres");
     let read_dir = std::fs::read_dir(&setup_dir)?;
 
     let mut failed = false;

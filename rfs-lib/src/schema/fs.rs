@@ -9,20 +9,21 @@ use crate::serde::{mime_str, mime_opt_str};
 
 use super::tags::Tags;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum Type {
+    Root,
     File,
     Directory,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum Storage {
     Local {
         id: ids::StorageId,
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Root {
     pub id: ids::FSId,
     pub user_id: ids::UserId,
@@ -34,7 +35,7 @@ pub struct Root {
     pub deleted: Option<DateTime<Utc>>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum Checksum {
     Blake3(String),
 
@@ -45,7 +46,7 @@ pub enum Checksum {
     Sha3_512(String),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct File {
     #[serde(with = "string_id")]
     pub id: ids::FSId,
@@ -67,7 +68,7 @@ pub struct File {
     pub deleted: Option<DateTime<Utc>>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ListItem {
     #[serde(with = "string_id")]
     pub id: ids::FSId,
@@ -84,7 +85,7 @@ pub struct ListItem {
     pub mime: Option<mime::Mime>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Directory {
     #[serde(with = "string_id")]
     pub id: ids::FSId,
@@ -102,7 +103,7 @@ pub struct Directory {
     pub deleted: Option<DateTime<Utc>>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum Item {
     Root(Root),
     File(File),

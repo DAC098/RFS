@@ -31,6 +31,7 @@ impl Local {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
 pub enum Type {
     Local(Local)
 }

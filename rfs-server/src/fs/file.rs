@@ -22,6 +22,7 @@ use super::checksum;
 use super::stream;
 use super::{name_check, name_gen};
 
+/*
 pub struct Builder<'a, 'b> {
     id: ids::FSId,
     user_id: ids::UserId,
@@ -164,6 +165,7 @@ impl<'a, 'b> Builder<'a, 'b> {
         })
     }
 }
+*/
 
 pub struct File {
     pub id: ids::FSId,
@@ -174,6 +176,7 @@ pub struct File {
     pub basename: String,
     pub mime: mime::Mime,
     pub size: u64,
+    pub hash: blake3::Hash,
     pub tags: tags::TagMap,
     pub comment: Option<String>,
     pub created: DateTime<Utc>,
@@ -182,6 +185,7 @@ pub struct File {
 }
 
 impl File {
+    /*
     pub fn builder<'a, 'b, P>(
         id: ids::FSId,
         user_id: ids::UserId,
@@ -203,13 +207,13 @@ impl File {
             comment: None
         }
     }
+    */
 
     pub async fn retrieve(
         conn: &impl GenericClient,
         id: &ids::FSId
     ) -> Result<Option<Self>, PgError> {
         let record_params: sql::ParamsVec = vec![id];
-        let tags_params: sql::ParamsVec = vec![id];
 
         let record_query = conn.query_opt(
             "\
@@ -221,6 +225,7 @@ impl File {
                    fs.fs_size, \
                    fs.mime_type, \
                    fs.mime_subtype, \
+                   fs.hash, \
                    fs.comment, \
                    fs.s_data, \
                    fs.created, \
@@ -230,20 +235,14 @@ impl File {
             where fs.id = $1 and fs_type = 1",
             record_params.as_slice()
         );
-        let tags_query = conn.query_raw(
-            "\
-            select fs_tags.tag, \
-                   fs_tags.value \
-            from fs_tags \
-                join fs on \
-                    fs_tags.fs_id = fs.id \
-            where fs.id = $1 and \
-                  fs.fs_type = 1",
-            tags_params
-        );
+        let options = tags::GetTagsOptions::new()
+            .with_join("join fs on fs_tags.fs_id = fs.id")
+            .with_where("and fs.fs_type = 1")
+            .with_id_field("fs_id", id);
+        let tags_query = tags::get_tags_options(conn, "fs_tags", options);
 
         match tokio::try_join!(record_query, tags_query) {
-            Ok((Some(row), tags_stream)) => {
+            Ok((Some(row), tags)) => {
                 Ok(Some(File {
                     id: row.get(0),
                     user_id: row.get(1),
@@ -253,11 +252,12 @@ impl File {
                     basename: row.get(4),
                     mime: sql::mime_from_sql(row.get(7), row.get(8)),
                     size: sql::u64_from_sql(row.get(6)),
-                    tags: tags::from_row_stream(tags_stream).await?,
-                    comment: row.get(9),
-                    created: row.get(10),
-                    updated: row.get(11),
-                    deleted: row.get(12),
+                    hash: sql::blake3_hash_from_sql(row.get(9)),
+                    tags,
+                    comment: row.get(10),
+                    created: row.get(11),
+                    updated: row.get(12),
+                    deleted: row.get(13),
                 }))
             },
             Ok((None, _)) => Ok(None),

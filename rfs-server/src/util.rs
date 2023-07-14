@@ -116,6 +116,7 @@ pub mod sql {
     use std::path::PathBuf;
     use std::str::FromStr;
 
+    use blake3::Hash;
     use serde::Deserialize;
     use tokio_postgres::types::{ToSql, Json as PgJson};
 
@@ -139,8 +140,39 @@ pub mod sql {
         mime::Mime::from_str(joined.as_str()).unwrap()
     }
 
+    pub fn try_u64_from_sql(value: i64) -> Option<u64> {
+        if value >= 0 {
+            Some(value as u64)
+        } else {
+            None
+        }
+    }
+
+    #[inline]
     pub fn u64_from_sql(value: i64) -> u64 {
-        value as u64
+        try_u64_from_sql(value).expect("i64 is not a positive value")
+    }
+
+    pub fn try_blake3_hash_from_sql(mut value: Vec<u8>) -> Option<Hash> {
+        if value.len() != 32 {
+            None
+        } else {
+            let mut index = 0;
+            let mut bytes = [0u8; 32];
+            let mut drain = value.drain(..);
+
+            while let Some(byte) = drain.next() {
+                bytes[index] = byte;
+                index += 1;
+            }
+
+            Some(blake3::Hash::from(bytes))
+        }
+    }
+
+    #[inline]
+    pub fn blake3_hash_from_sql(value: Vec<u8>) -> Hash {
+        try_blake3_hash_from_sql(value).expect("invalid byte vector length")
     }
 
     pub fn de_from_sql<'a, T>(value: PgJson<T>) -> T

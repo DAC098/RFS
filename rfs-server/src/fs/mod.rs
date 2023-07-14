@@ -123,12 +123,71 @@ pub enum Item {
 }
 
 impl Item {
+    fn query_to_item(
+        row: tokio_postgres::Row, 
+        tags: tags::TagMap
+    ) -> Result<Item, PgError> {
+        let fs_type = row.get(4);
+
+        let item = match fs_type {
+            consts::ROOT_TYPE => {
+                Item::Root(Root {
+                    id: row.get(0),
+                    user_id: row.get(1),
+                    storage: sql::de_from_sql(row.get(10)),
+                    tags,
+                    comment: row.get(11),
+                    created: row.get(12),
+                    updated: row.get(13),
+                    deleted: row.get(14)
+                })
+            },
+            consts::FILE_TYPE => {
+                Item::File(File {
+                    id: row.get(0),
+                    user_id: row.get(1),
+                    storage: sql::de_from_sql(row.get(10)),
+                    parent: row.get(2),
+                    path: sql::pathbuf_from_sql(row.get(5)),
+                    basename: row.get(3),
+                    mime: sql::mime_from_sql(row.get(7), row.get(8)),
+                    size: sql::u64_from_sql(row.get(6)),
+                    hash: sql::blake3_hash_from_sql(row.get(9)),
+                    tags,
+                    comment: row.get(11),
+                    created: row.get(12),
+                    updated: row.get(13),
+                    deleted: row.get(14),
+                })
+            },
+            consts::DIR_TYPE => {
+                Item::Directory(Directory {
+                    id: row.get(0),
+                    user_id: row.get(1),
+                    storage: sql::de_from_sql(row.get(10)),
+                    parent: row.get(2),
+                    path: sql::pathbuf_from_sql(row.get(5)),
+                    basename: row.get(3),
+                    tags,
+                    comment: row.get(11),
+                    created: row.get(12),
+                    updated: row.get(13),
+                    deleted: row.get(14),
+                })
+            },
+            _ => {
+                panic!("unexpected fs_type when retrieving fs Item. type: {}", fs_type);
+            }
+        };
+
+        Ok(item)
+    }
+
     pub async fn retrieve(
         conn: &impl GenericClient,
         id: &ids::FSId
     ) -> Result<Option<Item>, PgError> {
         let record_params: sql::ParamsVec = vec![id];
-        let tags_params: sql::ParamsVec = vec![id];
 
         let record_query = conn.query_opt(
             "\
@@ -141,6 +200,7 @@ impl Item {
                    fs.fs_size, \
                    fs.mime_type, \
                    fs.mime_subtype, \
+                   fs.hash, \
                    fs.s_data, \
                    fs.comment, \
                    fs.created, \
@@ -150,73 +210,20 @@ impl Item {
             where fs.id = $1",
             record_params.as_slice()
         );
-        let tags_query = conn.query_raw(
-            "\
-            select fs_tags.tag, \
-                   fs_tags.value \
-            from fs_tags \
-                join fs on \
-                    fs_tags.fs_id = fs.id \
-            where fs.id = $1",
-            tags_params
-        );
+        let tags_query = tags::get_tags(conn, "fs_tags", "fs_id", id);
 
         match tokio::try_join!(record_query, tags_query) {
-            Ok((Some(row), tags_stream)) => {
-                let fs_type = row.get(4);
-
-                match fs_type {
-                    consts::ROOT_TYPE => {
-                        Ok(Some(Item::Root(Root {
-                            id: row.get(0),
-                            user_id: row.get(1),
-                            storage: sql::de_from_sql(row.get(9)),
-                            tags: tags::from_row_stream(tags_stream).await?,
-                            comment: row.get(10),
-                            created: row.get(11),
-                            updated: row.get(12),
-                            deleted: row.get(13)
-                        })))
-                    },
-                    consts::FILE_TYPE => {
-                        Ok(Some(Item::File(File {
-                            id: row.get(0),
-                            user_id: row.get(1),
-                            storage: sql::de_from_sql(row.get(9)),
-                            parent: row.get(2),
-                            path: sql::pathbuf_from_sql(row.get(5)),
-                            basename: row.get(3),
-                            mime: sql::mime_from_sql(row.get(7), row.get(8)),
-                            size: sql::u64_from_sql(row.get(6)),
-                            tags: tags::from_row_stream(tags_stream).await?,
-                            comment: row.get(10),
-                            created: row.get(11),
-                            updated: row.get(12),
-                            deleted: row.get(13),
-                        })))
-                    },
-                    consts::DIR_TYPE => {
-                        Ok(Some(Item::Directory(Directory {
-                            id: row.get(0),
-                            user_id: row.get(1),
-                            storage: sql::de_from_sql(row.get(9)),
-                            parent: row.get(2),
-                            path: sql::pathbuf_from_sql(row.get(5)),
-                            basename: row.get(3),
-                            tags: tags::from_row_stream(tags_stream).await?,
-                            comment: row.get(10),
-                            created: row.get(11),
-                            updated: row.get(12),
-                            deleted: row.get(13),
-                        })))
-                    },
-                    _ => {
-                        panic!("unexpected fs_type when retrieving fs Item. type: {}", fs_type);
-                    }
-                }
-            },
+            Ok((Some(row), tags)) => Ok(Some(Self::query_to_item(row, tags)?)),
             Ok((None, _)) => Ok(None),
             Err(err) => Err(err)
+        }
+    }
+
+    pub fn id(&self) -> &ids::FSId {
+        match self {
+            Self::Root(root) => &root.id,
+            Self::Directory(dir) => &dir.id,
+            Self::File(file) => &file.id,
         }
     }
 
@@ -225,6 +232,17 @@ impl Item {
             Self::File(_) => true,
             _ => false
         }
+    }
+
+    pub fn try_into_file(self) -> Option<File> {
+        match self {
+            Self::File(file) => Some(file),
+            _ => None
+        }
+    }
+
+    pub fn into_file(self) -> File {
+        self.try_into_file().expect("fs Item did not contain a file")
     }
 
     pub fn storage_id(&self) -> &ids::StorageId {
@@ -246,11 +264,7 @@ impl Item {
 
 impl traits::Common for Item {
     fn id(&self) -> &ids::FSId {
-        match self {
-            Self::Root(root) => &root.id,
-            Self::Directory(dir) => &dir.id,
-            Self::File(file) => &file.id,
-        }
+        Self::id(self)
     }
 
     fn full_path(&self) -> PathBuf {

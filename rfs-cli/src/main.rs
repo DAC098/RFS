@@ -117,7 +117,9 @@ fn run_subcommand(state: &mut state::AppState, command: &str, matches: &ArgMatch
     match command {
         "connect" => commands::connect(state, matches),
         "disconnect" => commands::disconnect(state, matches),
+        "hash" => commands::hash(state, matches),
         "storage" => commands::storage(state, matches),
+        "fs" => commands::fs(state, matches),
         _ => {
             println!("uknown command");
 

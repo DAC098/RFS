@@ -291,53 +291,43 @@ async fn init(arg: CommandArgs) -> error::Result<()> {
                 .delete(routing::handle::storage::storage_id::delete)
         )
         .route(
-            "/storage/:storage_id/fs",
-            get(routing::handle::storage::storage_id::fs::get)
-                .post(routing::handle::storage::storage_id::fs::post)
+            "/storage/:storage_id/root",
+            get(routing::handle::storage::storage_id::root::get)
         )
         .route(
-            "/storage/:storage_id/fs/:fs_id",
-            get(routing::handle::storage::storage_id::fs::fs_id::get)
-                .post(routing::handle::storage::storage_id::fs::fs_id::post)
-                .put(routing::handle::storage::storage_id::fs::fs_id::put)
-                .delete(routing::handle::storage::storage_id::fs::fs_id::delete)
+            "/fs/:fs_id",
+            get(routing::handle::fs::fs_id::get)
+                .post(routing::handle::fs::fs_id::post)
+                .put(routing::handle::fs::fs_id::put)
+                .patch(routing::handle::fs::fs_id::patch)
+                .delete(routing::handle::fs::fs_id::delete)
         )
         .route(
-            "/storage/:storage_id/fs/:fs_id/download",
+            "/fs/:fs_id/contents",
             get(routing::okay)
         )
         .route(
-            "/stroage/:stroage_id/fs/:fs_id/contents",
+            "/fs/:fs_id/data",
             get(routing::okay)
         )
         .route(
-            "/storage/:storage_id/fs/:fs_id/checksum",
-            get(routing::okay)
-                .post(routing::okay)
-        )
-        .route(
-            "/storage/:storage_id/fs/:fs_id/checksum/:type",
-            get(routing::okay)
-                .delete(routing::okay)
-        )
-        .route(
-            "/users",
+            "/user",
             get(routing::okay)
                 .post(routing::okay)
         )
         .route(
-            "/users/:user_id",
+            "/user/:user_id",
             get(routing::okay)
                 .put(routing::okay)
                 .delete(routing::okay)
         )
         .route(
-            "/users/:user_id/bot",
+            "/user/:user_id/bot",
             get(routing::okay)
                 .post(routing::okay)
         )
         .route(
-            "/users/:user_id/bot/:bot_id",
+            "/user/:user_id/bot/:bot_id",
             get(routing::okay)
                 .put(routing::okay)
                 .delete(routing::okay)
@@ -345,7 +335,12 @@ async fn init(arg: CommandArgs) -> error::Result<()> {
         .route("/ping", get(routing::handle::ping::get))
         .fallback(routing::serve_file::handle)
         .layer(ServiceBuilder::new()
-            .layer(TraceLayer::new_for_http())
+            .layer(net::layer::request_id::RIDLayer::new())
+            .layer(TraceLayer::new_for_http()
+                .make_span_with(net::layer::trace::make_span_with)
+                .on_request(net::layer::trace::on_request)
+                .on_response(net::layer::trace::on_response)
+                .on_failure(net::layer::trace::on_failure))
             .layer(HandleErrorLayer::new(net::error::handle_error))
             .layer(net::layer::timeout::TimeoutLayer::new(Duration::new(90, 0)))
         )

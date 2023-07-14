@@ -144,6 +144,6 @@ pub fn connect(state: &mut AppState) -> error::Result<()> {
     Ok(())
 }
 
-pub fn disconnect(state: &mut AppState) -> error::Result<()> {
+pub fn disconnect(_state: &mut AppState) -> error::Result<()> {
     Ok(())
 }

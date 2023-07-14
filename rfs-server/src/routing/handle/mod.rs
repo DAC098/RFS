@@ -9,6 +9,7 @@ use crate::state::ArcShared;
 pub mod ping;
 pub mod auth;
 pub mod storage;
+pub mod fs;
 
 #[derive(Serialize)]
 pub struct RootContext {}

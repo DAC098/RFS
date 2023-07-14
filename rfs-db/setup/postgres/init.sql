@@ -89,6 +89,8 @@ create table fs (
     mime_type varchar,
     mime_subtype varchar,
 
+    hash bytea,
+
     comment varchar,
 
     s_data jsonb not null,

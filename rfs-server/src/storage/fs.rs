@@ -8,6 +8,7 @@ pub struct Local {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
 pub enum Storage {
     Local(Local)
 }
@@ -25,5 +26,11 @@ impl Storage {
                 id: local.id
             }
         }
+    }
+}
+
+impl From<Local> for Storage {
+    fn from(v: Local) -> Storage {
+        Storage::Local(v)
     }
 }

@@ -16,7 +16,7 @@ use crate::util::sql;
 use crate::storage;
 use crate::tags;
 
-pub mod fs;
+pub mod root;
 
 #[derive(Deserialize)]
 pub struct PathParams {
