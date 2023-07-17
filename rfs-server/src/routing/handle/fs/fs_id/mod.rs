@@ -248,6 +248,11 @@ pub async fn put(
             .message("requested fs item was not found"));
     };
 
+    tracing::debug!(
+        "retrieved fs item: {:#?}",
+        item
+    );
+
     let Some(medium) = storage::Medium::retrieve(
         &conn,
         item.storage_id()

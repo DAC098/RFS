@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::io::ErrorKind;
+use std::ffi::OsStr;
 
 use clap::{Command, Arg, ArgAction, ArgMatches, value_parser};
 
@@ -16,9 +17,8 @@ pub fn command() -> Command {
         .subcommand(Command::new("create")
             .subcommand_required(true)
             .about("creates new fs items")
-            .arg(util::default_help_arg())
-            .arg(Arg::new("id")
-                .long("id")
+            .arg(Arg::new("parent")
+                .long("parent")
                 .value_parser(value_parser!(i64))
                 .required(true)
                 .help("the parent fs item to create the new fs item under")
@@ -35,43 +35,20 @@ pub fn command() -> Command {
                 .long("comment")
                 .help("comment to apply to the fs item")
             )
+            .arg(util::default_help_arg())
             .subcommand(Command::new("dir")
                 .about("creates a new directory at the given container")
                 .arg(Arg::new("basename")
                     .short('n')
                     .long("basename")
-                    .help("basename of the fs item.")
+                    .help("basename of the directory.")
                     .required(true)
                 )
-            )
-            .subcommand(Command::new("file")
-                .about("creates a new file at the given container")
                 .arg(util::default_help_arg())
-                .arg(Arg::new("path")
-                    .long("path")
-                    .value_parser(value_parser!(PathBuf))
-                    .required(true)
-                    .help("the file path to upload")
-                )
-                .arg(Arg::new("basename")
-                    .short('n')
-                    .long("basename")
-                    .help("basename of the fs item.")
-                    .long_help("basename of the fs item. if uploading a file then the basename of the file will be used if one is not provided")
-                )
-                .arg(Arg::new("mime")
-                    .long("mime")
-                    .help("manually specify the mime type of the provided file")
-                )
-                .arg(Arg::new("fallback-mime")
-                    .long("fallback-mime")
-                    .help("the fallback mime if one cannot be deduced from the file extension")
-                )
             )
         )
         .subcommand(Command::new("update")
             .about("updates existing fs items with new data")
-            .arg(util::default_help_arg())
             .arg(Arg::new("id")
                 .long("id")
                 .value_parser(value_parser!(i64))
@@ -108,23 +85,161 @@ pub fn command() -> Command {
                 .help("removes the comment of the given fs item")
                 .conflicts_with("comment")
             )
+            .arg(util::default_help_arg())
+        )
+        .subcommand(Command::new("upload")
+            .about("uploads a file to the server")
+            .arg(Arg::new("path")
+                .long("path")
+                .value_parser(value_parser!(PathBuf))
+                .required(true)
+                .help("the file path to upload")
+            )
+            .arg(util::default_help_arg())
+            .subcommand(Command::new("new")
+                .about("uploads a new file to the server")
+                .arg(Arg::new("parent")
+                    .long("parent")
+                    .value_parser(value_parser!(i64))
+                    .required(true)
+                    .help("parent id to upload the file to")
+                )
+                .arg(Arg::new("basename")
+                    .short('n')
+                    .long("basename")
+                    .help("basename of the fs item.")
+                    .long_help("basename of the fs item. if one is not specified it will use the basename of the file")
+                )
+                .arg(Arg::new("mime")
+                    .long("mime")
+                    .value_parser(mime_value_parser)
+                    .help("manually specify the mime type of the provided file")
+                    .conflicts_with("fallback-mime")
+                )
+                .arg(Arg::new("fallback-mime")
+                    .long("fallback-mime")
+                    .value_parser(mime_value_parser)
+                    .help("the fallback mime if one cannot be deduced from the file extension")
+                    .conflicts_with("mime")
+                )
+                .arg(util::default_help_arg())
+            )
+            .subcommand(Command::new("existing")
+                .about("uploads to an existing file on the server")
+                .arg(Arg::new("id")
+                    .long("id")
+                    .value_parser(value_parser!(i64))
+                    .required(true)
+                    .help("the id of the fs item to update")
+                )
+                .arg(Arg::new("mime")
+                    .long("mime")
+                    .value_parser(mime_value_parser)
+                    .help("manually specify the mime type of the provided file")
+                    .conflicts_with("fallback-mime")
+                )
+                .arg(Arg::new("fallback-mime")
+                    .long("fallback-mime")
+                    .value_parser(mime_value_parser)
+                    .help("the fallback mime if one cannot be deduced from the file extension")
+                    .conflicts_with("mime")
+                )
+                .arg(util::default_help_arg())
+            )
         )
 }
 
+fn cwd() -> error::Result<PathBuf> {
+    std::env::current_dir().map_err(|e| error::Error::new()
+        .kind("StdIoError")
+        .message("failed to retrieve the current working directory")
+        .source(e)
+    )
+}
+
+fn canonicalize_file_path(file_path: PathBuf, cwd: &PathBuf) -> error::Result<PathBuf> {
+    let rtn = if !file_path.is_absolute() {
+        cwd.join(&file_path)
+            .canonicalize()
+            .map_err(|e| error::Error::new()
+                .kind("StdIoError")
+                .message("failed to canonicalize file path")
+                .source(e))?
+    } else {
+        file_path
+    };
+
+    Ok(rtn)
+}
+
+fn path_metadata(file_path: &PathBuf) -> error::Result<std::fs::Metadata> {
+    match file_path.metadata() {
+        Ok(m) => Ok(m),
+        Err(err) => {
+            match err.kind() {
+                ErrorKind::NotFound => {
+                    Err(error::Error::new()
+                        .kind("PathNotFound")
+                        .message("requested file system item was not found"))
+                },
+                _ => {
+                    Err(error::Error::new()
+                        .kind("StdIoError")
+                        .message("failed to read data about desired file system item")
+                        .source(err))
+                }
+            }
+        }
+    }
+}
+
+fn mime_value_parser(value: &str) -> Result<mime::Mime, String> {
+    match mime::Mime::from_str(value) {
+        Ok(mime) => Ok(mime),
+        Err(_err) => Err(format!("provided string is not a valid mime"))
+    }
+}
+
+fn path_basename(fs_path: &PathBuf) -> error::Result<Option<String>> {
+    let Some(file_name) = fs_path.file_name() else {
+        return Ok(None)
+    };
+
+    let rtn = file_name.to_str()
+        .ok_or(error::Error::new()
+            .kind("InvalidUTF8Characters")
+            .message("the provided file contains invalid utf-8 characters in the name"))?
+        .to_owned();
+
+    Ok(Some(rtn))
+}
+
+fn ext_mime(ext: &OsStr, fallback: Option<mime::Mime>) -> error::Result<mime::Mime> {
+    let ext_str = ext.to_str().ok_or(error::Error::new()
+        .kind("InvalidUTF8Characters")
+        .message("the provided file extension contains invalid UTF-8 characters in the name"))?;
+
+    let guess = mime_guess::MimeGuess::from_ext(ext_str);
+
+    if let Some(fb) = fallback {
+        Ok(guess.first().unwrap_or(fb))
+    } else {
+        Ok(guess.first_or_octet_stream())
+    }
+}
+
 pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
-    let id = args.get_one::<i64>("id").cloned().unwrap();
-    let path = format!("/fs/{}", id);
+    let parent = args.get_one::<i64>("parent").cloned().unwrap();
+    let path = format!("/fs/{}", parent);
 
     let tags = util::tags_from_args("tag", args)?;
-    let comment = args.get_one::<String>().cloned();
+    let _comment = args.get_one::<String>("comment").cloned();
 
     match args.subcommand() {
         Some(("dir", dir_args)) => {
-            let Some(basename) = dir_args.get_one::<String>("basename").cloned() else {
-                return Err(error::Error::new()
-                    .kind("MissingBasename")
-                    .message("basename is required when creating a directory"));
-            };
+            let basename = dir_args.get_one::<String>("basename")
+                .cloned()
+                .unwrap();
 
             let tags = if tags.len() > 0 {
                 Some(tags)
@@ -138,7 +253,8 @@ pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
                 comment: args.get_one::<String>("comment").cloned()
             };
 
-            let res = state.client.post(state.server.url.join(&path)?)
+            let url = state.server.url.join(&path)?;
+            let res = state.client.post(url)
                 .json(&action)
                 .send()?;
 
@@ -157,147 +273,6 @@ pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
 
             println!("{:?}", result.into_payload());
         },
-        Some(("file", file_args)) => {
-            let mut file_path = file_args.get_one::<PathBuf>("path").cloned().unwrap();
-
-            if !file_path.is_absolute() {
-                let mut cwd = std::env::current_dir()?;
-                cwd.push(&file_path);
-
-                file_path = cwd.canonicalize()?;
-            }
-
-            let metadata = match file_path.metadata() {
-                Ok(m) => m,
-                Err(err) => {
-                    match err.kind() {
-                        ErrorKind::NotFound => {
-                            return Err(error::Error::new()
-                                .kind("FileNotFound")
-                                .message("requested file was not found"));
-                        },
-                        _ => {
-                            return Err(error::Error::new()
-                                .kind("StdIoError")
-                                .message("failed to read data about desired file")
-                                .source(err));
-                        }
-                    }
-                }
-            };
-
-            if !metadata.is_file() {
-                return Err(error::Error::new()
-                    .kind("NotAFile")
-                    .message("requested file path is not a file"));
-            }
-
-            let basename = if let Some(given) = file_args.get_one::<String>("basename").cloned() {
-                given
-            } else {
-                let Some(file_name) = file_path.file_name() else {
-                    return Err(error::Error::new()
-                        .kind("NoFileNameProvided")
-                        .message("no basename was provided and the current file did not contain a file name"));
-                };
-
-                file_name.to_str()
-                    .ok_or(error::Error::new()
-                        .kind("InvalidUTF8Characters")
-                        .message("the provided file contains invalid utf-8 characters in the name"))?
-                    .to_owned()
-            };
-
-            let mime = if let Some(given) = file_args.get_one::<String>("mime").cloned() {
-                mime::Mime::from_str(&given).map_err(|e| error::Error::new()
-                    .kind("InvalidMime")
-                    .message("the provided mime type was not valid")
-                    .source(e))?
-            } else {
-                if let Some(ext) = file_path.extension() {
-                    let ext_str = ext.to_str().ok_or(error::Error::new()
-                        .kind("InvalidUTF8Characters")
-                        .message("the provided file contains invalid utf-8 characters in the name"))?;
-
-                    let guess = mime_guess::MimeGuess::from_ext(ext_str);
-
-                    if let Some(given) = file_args.get_one::<String>("fallback-mime").cloned() {
-                        let fallback = mime::Mime::from_str(&given).map_err(|e| error::Error::new()
-                            .kind("InvalidMime")
-                            .message("the provided fallback mime type was not valid")
-                            .source(e))?;
-
-                        guess.first().unwrap_or(fallback)
-                    } else {
-                        guess.first_or_octet_stream()
-                    }
-                } else if let Some(given) = file_args.get_one::<String>("fallback-mime").cloned() {
-                    mime::Mime::from_str(&given).map_err(|e| error::Error::new()
-                        .kind("InvalidMime")
-                        .message("the provided fallback mime type was not valid")
-                        .source(e))?
-                } else {
-                    mime::APPLICATION_OCTET_STREAM.clone()
-                }
-            };
-
-            let file = std::fs::OpenOptions::new()
-                .read(true)
-                .open(&file_path)
-                .map_err(|e| error::Error::new()
-                    .kind("StdIoError")
-                    .message("failed to open the desired file")
-                    .source(e))?;
-            let url = state.server.url.join(&path)?;
-            let res = state.client.put(url)
-                .header("x-basename", basename)
-                .header("content-type", mime.as_ref())
-                .header("content-length", metadata.len())
-                .body(file)
-                .send()?;
-
-            let status = res.status();
-
-            if status != reqwest::StatusCode::OK {
-                let json = res.json::<rfs_lib::json::Error>()?;
-
-                return Err(error::Error::new()
-                    .kind("FailedFileUpload")
-                    .message("failed to upload the desired file the server")
-                    .source(format!("{:?}", json)));
-            }
-
-            let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::fs::Item>>()?;
-
-            let action = rfs_lib::actions::fs::UpdateMetadata {
-                tags,
-                comment
-            };
-
-            if action.has_work() {
-                let url = state.server.url.join(&path)?;
-                let res = stats.client.patch(url)
-                    .json(&action)
-                    .send()?;
-
-                let status = res.status();
-
-                if status != reqwest::StatusCode::OK {
-                    let json = res.json::<rfs_lib::json::Error>()?;
-
-                    return Err(error::Error::new()
-                        .kind("FailedUpdateFs")
-                        .message("updated file to server buf failed to update metadata")
-                        .source(format!("{:?}", json)));
-                }
-
-                let update_result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::fs::Item>>()?;
-
-                println!("{:?}", update_result);
-            } else {
-                println!("{:?}", result);
-            }
-        },
         _ => unreachable!()
     }
 
@@ -305,7 +280,7 @@ pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
 }
 
 pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
-    let id = args.get_one::<i64>("id").cloned().unwrap();
+    let id: i64 = args.get_one("id").cloned().unwrap();
     let path = format!("/fs/{}", id);
 
     let tags = util::tags_from_args("tag", args)?;
@@ -316,7 +291,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
         Vec::new()
     };
 
-    let mut current = {
+    let current = {
         let url = state.server.url.join(&path)?;
         let res = state.client.get(url).send()?;
 
@@ -365,7 +340,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
         }
     };
 
-    let new_comment = if let Some(comment) = args.get_one::<String>("comment").cloned() {
+    let new_comment = if let Some(comment) = args.get_one("comment").cloned() {
         Some(comment)
     } else if args.get_flag("drop-comment") {
         Some(String::new())
@@ -405,7 +380,120 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
 
     let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::fs::Item>>()?;
 
-    println!("{:?}", result);
+    println!("{:#?}", result);
+
+    Ok(())
+}
+
+pub fn upload(state: &mut AppState, upload_args: &ArgMatches) -> error::Result<()> {
+    let arg_path = upload_args.get_one("path")
+        .cloned()
+        .unwrap();
+    let cwd = cwd()?;
+    let file_path = canonicalize_file_path(arg_path, &cwd)?;
+    let metadata = path_metadata(&file_path)?;
+
+    if !metadata.is_file() {
+        return Err(error::Error::new()
+            .kind("NotAFile")
+            .message("requested file path is not a file"));
+    }
+
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .open(&file_path)
+        .map_err(|e| error::Error::new()
+            .kind("StdIoError")
+            .message("failed to open the desired file")
+            .source(e))?;
+
+    let res = match upload_args.subcommand() {
+        Some(("new", new_args)) => {
+            let parent: i64 = new_args.get_one("parent")
+                .cloned()
+                .unwrap();
+            let url_path = format!("/fs/{}", parent);
+
+            let basename = if let Some(given) = new_args.get_one("basename").cloned() {
+                given
+            } else {
+                let Some(found) = path_basename(&file_path)? else {
+                    return Err(error::Error::new()
+                        .kind("NoBasenameProvided")
+                        .message("no basename was provided and the current file did not contain a file name"));
+                };
+
+                found
+            };
+
+            let mime: mime::Mime = if let Some(given) = new_args.get_one("mime").cloned() {
+                given
+            } else {
+                if let Some(ext) = file_path.extension() {
+                    let fallback = new_args.get_one("fallback-mime").cloned();
+
+                    ext_mime(ext, fallback)?
+                } else if let Some(given) = new_args.get_one("fallback-mime").cloned() {
+                    given
+                } else {
+                    mime::APPLICATION_OCTET_STREAM.clone()
+                }
+            };
+
+            let url = state.server.url.join(&url_path)?;
+
+            state.client.put(url)
+                .header("x-basename", basename)
+                .header("content-type", mime.as_ref())
+                .header("content-length", metadata.len())
+                .body(file)
+                .send()?
+        },
+        Some(("existing", existing_args)) => {
+            let id: i64 = existing_args.get_one("id")
+                .cloned()
+                .unwrap();
+            let url_path = format!("/fs/{}", id);
+
+            let mime: mime::Mime = if let Some(given) = existing_args.get_one("mime").cloned() {
+                given
+            } else {
+                if let Some(ext) = file_path.extension() {
+                    let fallback = existing_args.get_one("fallback-mime").cloned();
+
+                    ext_mime(ext, fallback)?
+                } else if let Some(given) = existing_args.get_one("fallback-mime").cloned() {
+                    given
+                } else {
+                    mime::APPLICATION_OCTET_STREAM.clone()
+                }
+            };
+
+            let url = state.server.url.join(&url_path)?;
+
+            state.client.put(url)
+                .header("content-type", mime.as_ref())
+                .header("content-length", metadata.len())
+                .body(file)
+                .send()?
+        },
+        _ => unreachable!()
+    };
+
+    let status = res.status();
+
+    if status != reqwest::StatusCode::OK {
+        let json = res.json::<rfs_lib::json::Error>()?;
+
+        return Err(error::Error::new()
+            .kind("FailedFileUpload")
+            .message("failed to upload the desired file the server")
+            .source(format!("{:?}", json)));
+    }
+
+    let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::fs::Item>>()?;
+
+    println!("{:#?}", result.into_payload());
 
     Ok(())
 }

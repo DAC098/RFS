@@ -116,6 +116,7 @@ where
     Ok(rtn)
 }
 
+#[derive(Debug)]
 pub enum Item {
     Root(Root),
     Directory(Directory),

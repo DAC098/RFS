@@ -167,6 +167,7 @@ impl<'a, 'b> Builder<'a, 'b> {
 }
 */
 
+#[derive(Debug)]
 pub struct File {
     pub id: ids::FSId,
     pub user_id: ids::UserId,
