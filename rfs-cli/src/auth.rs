@@ -7,16 +7,14 @@ fn submit_user(
 ) -> error::Result<Option<rfs_lib::schema::auth::AuthMethod>> {
     loop {
         let username = input::read_stdin_trimmed("username: ")?;
-
-        let res = {
-            let body = rfs_lib::actions::auth::RequestUser {
-                username: username.clone()
-            };
-
-            state.client.post(state.server.url.join("/auth/request")?)
-                .json(&body)
-                .send()?
+        let body = rfs_lib::actions::auth::RequestUser {
+            username: username.clone()
         };
+
+        let url = state.server.url.join("/auth/request")?;
+        let res = state.client.post(url)
+            .json(&body)
+            .send()?;
 
         let status = res.status();
 
@@ -26,6 +24,10 @@ fn submit_user(
             if json.kind() == "UserNotFound" {
                 println!("requested username was not found");
                 continue;
+            }
+
+            if json.kind() == "AlreadyAuthenticated" {
+                return Ok(None);
             }
 
             return Err(error::Error::new()
@@ -55,7 +57,8 @@ fn submit_auth(
                 let password = rpassword::prompt_password(&prompt)?;
                 let auth_method = rfs_lib::actions::auth::SubmitAuth::Password(password);
 
-                let res = state.client.post(state.server.url.join("/auth/submit")?)
+                let url = state.server.url.join("/auth/submit")?;
+                let res = state.client.post(url)
                     .json(&auth_method)
                     .send()?;
 
@@ -67,6 +70,10 @@ fn submit_auth(
                     if json.kind() == "InvalidPassword" {
                         println!("invalid password provided");
                         continue;
+                    }
+
+                    if json.kind() == "AlreadyAuthenticated" {
+                        return Ok(None);
                     }
 
                     return Err(error::Error::new()
@@ -107,7 +114,8 @@ fn submit_verify(
                     }
                 }
 
-                let res = state.client.post(state.server.url.join("/auth/verify")?)
+                let url = state.server.url.join("/auth/verify")?;
+                let res = state.client.post(url)
                     .json(&verify_method)
                     .send()?;
 
@@ -115,6 +123,10 @@ fn submit_verify(
 
                 if status != reqwest::StatusCode::OK {
                     let json = res.json::<rfs_lib::json::Error>()?;
+
+                    if json.kind() == "AlreadyAuthenticated" {
+                        break;
+                    }
 
                     return Err(error::Error::new()
                         .kind("FailedVerification")

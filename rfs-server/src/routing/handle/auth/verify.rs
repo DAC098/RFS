@@ -18,14 +18,17 @@ pub async fn post(
 
     let mut session = match initiator::lookup_header_map(state.auth(), &conn, &headers).await {
         Ok(initiator) => {
-            return Ok(net::Json::empty()
-                .with_message("session already verified")
-                .into_response());
+            return Err(error::Error::new()
+                .status(StatusCode::BAD_REQUEST)
+                .kind("AlreadyAuthenticated")
+                .message("session already verified"));
         },
         Err(err) => match err {
             LookupError::SessionUnverified(session) => session,
             LookupError::SessionUnauthenticated(_) => {
                 return Err(error::Error::new()
+                    .status(StatusCode::UNAUTHORIZED)
+                    .kind("AuthRequired")
                     .message("session must be authenticated"));
             },
             _ => {

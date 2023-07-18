@@ -21,9 +21,10 @@ pub async fn post(
 
     match initiator::lookup_header_map(state.auth(), &conn, &headers).await {
         Ok(_) => {
-            return Ok(net::Json::empty()
-                .with_message("session already authenticated")
-                .into_response());
+            return Err(error::Error::new()
+                .status(StatusCode::BAD_REQUEST)
+                .kind("AlreadyAuthenticated")
+                .message("session already authenticated"));
         },
         Err(err) => match err {
             LookupError::MechanismNotFound => {},
