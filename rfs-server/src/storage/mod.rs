@@ -7,7 +7,6 @@ use deadpool_postgres::GenericClient;
 use crate::util::sql;
 use crate::tags;
 
-pub mod error;
 pub mod fs;
 pub mod types;
 
@@ -27,40 +26,6 @@ where
     } else {
         Ok(None)
     }
-}
-
-pub async fn exists_check(
-    conn: &impl GenericClient,
-    user_id: &ids::UserId,
-    id: &ids::StorageId,
-    deleted: Option<bool>,
-) -> Result<bool, PgError> {
-    let check = if let Some(b) = deleted {
-        let query = if b {
-            "\
-            select id \
-            from storage \
-            where id = $1 and \
-                  user_id = $2 and \
-                  deleted is null"
-        } else {
-            "\
-            select id \
-            from storage \
-            where id = $1 and \
-                  user_id = $2 and \
-                  deleted is not null"
-        };
-
-        conn.execute(query, &[id, user_id]).await?
-    } else {
-        conn.execute(
-            "select id from storage where id = $1 and user_id = $2",
-            &[id, user_id]
-        ).await?
-    };
-
-    Ok(check == 1)
 }
 
 pub struct Medium {

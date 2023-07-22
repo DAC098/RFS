@@ -72,17 +72,6 @@ impl<T> Wrapper<T> {
     }
 }
 
-impl Wrapper<()> {
-    fn empty() -> Self {
-        Self {
-            kind: None,
-            message: None,
-            timestamp: None,
-            payload: ()
-        }
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ListWrapper<T> {
     kind: Option<String>,

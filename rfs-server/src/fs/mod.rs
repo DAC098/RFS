@@ -10,7 +10,6 @@ use crate::util::sql;
 
 pub mod consts;
 pub mod traits;
-pub mod error;
 //pub mod checksum;
 //pub mod stream;
 

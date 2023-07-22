@@ -124,7 +124,40 @@ pub async fn post(
 
     let type_: storage::types::Type = match json.type_ {
         CreateStorageType::Local { path } => {
-            storage::types::Type::Local(storage::types::Local::build(path).await?)
+            if !path.is_absolute() {
+                return Err(error::Error::new()
+                    .status(StatusCode::BAD_REQUEST)
+                    .kind("NotAbsolutePath")
+                    .source("the requested path is not absolute"));
+            }
+
+            let metadata = match path.metadata() {
+                Ok(m) => m,
+                Err(err) => {
+                    match err.kind() {
+                        std::io::ErrorKind::NotFound => {
+                            return Err(error::Error::new()
+                                .status(StatusCode::NOT_FOUND)
+                                .kind("DirectoryNotFound")
+                                .message("the requested directory was not found on the system"));
+                        },
+                        _ => {
+                            return Err(err.into())
+                        }
+                    }
+                }
+            };
+
+            if !metadata.is_dir() {
+                return Err(error::Error::new()
+                    .status(StatusCode::BAD_REQUEST)
+                    .kind("PathNotDirectory")
+                    .message("the requested path is not a directory"));
+            }
+
+            tokio::fs::create_dir_all(&path).await?;
+
+            storage::types::Type::Local(storage::types::Local { path })
         }
     };
 

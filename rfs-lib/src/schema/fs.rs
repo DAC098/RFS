@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
 use serde::{Serialize, Deserialize};
-use snowcloud_flake::serde_ext::{option_string_id, string_id};
+use snowcloud_flake::serde_ext::string_id;
 
 use crate::ids;
 use crate::serde::{mime_str, mime_opt_str};
