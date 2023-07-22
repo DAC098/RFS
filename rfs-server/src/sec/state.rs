@@ -16,61 +16,43 @@ pub enum SessionHash {
 }
 
 #[derive(Debug)]
-pub struct Builder {
-    session_hash: Option<SessionHash>,
-    session_secret: Option<String>,
-    session_domain: Option<String>,
-    session_secure: bool,
-    secret_manager: secret::Manager,
+pub struct SessionInfoBuilder {
+    hash: Option<SessionHash>,
+    secret: Option<String>,
+    domain: Option<String>,
+    secure: bool
 }
 
-impl Builder {
-    pub fn set_session_secret(&mut self, key: String) -> &mut Self {
-        self.session_secret = Some(key);
+impl SessionInfoBuilder {
+    pub fn set_secret(&mut self, key: String) -> &mut Self {
+        self.secret = Some(key);
         self
     }
 
-    pub fn with_session_secret(mut self, key: String) -> Self {
-        self.session_secret = Some(key);
+    pub fn set_hash(&mut self, hash: SessionHash) -> &mut Self {
+        self.hash = Some(hash);
         self
     }
 
-    pub fn set_session_hash(&mut self, hash: SessionHash) -> &mut Self {
-        self.session_hash = Some(hash);
+    pub fn set_secure(&mut self, secure: bool) -> &mut Self {
+        self.secure = secure;
         self
     }
 
-    pub fn with_session_hash(mut self, hash: SessionHash) -> Self {
-        self.session_hash = Some(hash);
-        self
-    }
+    pub fn build(self) -> error::Result<SessionInfo> {
+        let secret = self.secret.unwrap_or(String::from("secret"));
+        let domain = self.domain;
+        let secure = self.secure;
 
-    pub fn set_session_secure(&mut self, secure: bool) -> &mut Self {
-        self.session_secure = secure;
-        self
-    }
-
-    pub fn with_session_secure(mut self, secure: bool) -> Self {
-        self.session_secure = secure;
-        self
-    }
-
-    pub fn add_secret(&mut self, version: u32, bytes: Vec<u8>) -> bool {
-        self.secret_manager.add(secret::Secret::new(version, bytes))
-    }
-
-    pub fn build(self) -> error::Result<Sec> {
-        let session_secret = self.session_secret.unwrap_or(String::from("secret"));
-
-        let session_key = match self.session_hash.unwrap_or(SessionHash::Blake3) {
+        let key = match self.hash.unwrap_or(SessionHash::Blake3) {
             SessionHash::Blake3 => {
                 SessionKey::Blake3(blake3::derive_key(
                     BLAKE3_CONTEXT,
-                    session_secret.as_bytes()
+                    secret.as_bytes()
                 ))
             },
             SessionHash::HS256 => {
-                let hk = hkdf::Hkdf::<sha3::Sha3_256>::new(None, session_secret.as_bytes());
+                let hk = hkdf::Hkdf::<sha3::Sha3_256>::new(None, secret.as_bytes());
                 let mut bytes = [0u8; 32];
 
                 hk.expand(&[], &mut bytes)?;
@@ -78,7 +60,7 @@ impl Builder {
                 SessionKey::HS256(bytes)
             },
             SessionHash::HS384 => {
-                let hk = hkdf::Hkdf::<sha3::Sha3_384>::new(None, session_secret.as_bytes());
+                let hk = hkdf::Hkdf::<sha3::Sha3_384>::new(None, secret.as_bytes());
                 let mut bytes = [0u8; 32];
 
                 hk.expand(&[], &mut bytes)?;
@@ -86,7 +68,7 @@ impl Builder {
                 SessionKey::HS384(bytes)
             },
             SessionHash::HS512 => {
-                let hk = hkdf::Hkdf::<sha3::Sha3_512>::new(None, session_secret.as_bytes());
+                let hk = hkdf::Hkdf::<sha3::Sha3_512>::new(None, secret.as_bytes());
                 let mut bytes = [0u8; 32];
 
                 hk.expand(&[], &mut bytes)?;
@@ -95,12 +77,32 @@ impl Builder {
             }
         };
 
+        Ok(SessionInfo {
+            key,
+            domain,
+            secure,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct Builder {
+    session_info: SessionInfoBuilder,
+    secret_manager: secret::Manager,
+}
+
+impl Builder {
+    pub fn session_info(&mut self) -> &mut SessionInfoBuilder {
+        &mut self.session_info
+    }
+
+    pub fn add_secret(&mut self, version: u32, bytes: Vec<u8>) -> bool {
+        self.secret_manager.add(secret::Secret::new(version, bytes))
+    }
+
+    pub fn build(self) -> error::Result<Sec> {
         Ok(Sec {
-            session_info: SessionInfo {
-                key: session_key,
-                domain: self.session_domain,
-                secure: self.session_secure,
-            },
+            session_info: self.session_info.build()?,
             secrets: self.secret_manager,
         })
     }
@@ -144,10 +146,12 @@ pub struct Sec {
 impl Sec {
     pub fn builder() -> Builder {
         Builder {
-            session_hash: None,
-            session_secret: None,
-            session_domain: None,
-            session_secure: false,
+            session_info: SessionInfoBuilder {
+                hash: None,
+                secret: None,
+                domain: None,
+                secure: false,
+            },
             secret_manager: secret::Manager::new(),
         }
     }

@@ -76,7 +76,11 @@ struct CommandArgs {
 
     /// session secret for hashing session ids
     #[arg(long)]
-    session_secret: Option<String>
+    session_secret: Option<String>,
+
+    /// inidicates that the session cookie should only be available in a secure context
+    #[arg(long)]
+    session_secure: bool,
 }
 
 fn main() {
@@ -206,12 +210,18 @@ fn get_shared_state(arg: &CommandArgs) -> error::Result<state::Shared> {
     {
         let sec = state_builder.sec();
 
-        if let Some(session_secret) = &arg.session_secret {
-            sec.set_session_secret(session_secret.clone());
-        }
+        {
+            let session_info = sec.session_info();
 
-        if let Some(session_hash) = &arg.session_hash { 
-            sec.set_session_hash(session_hash.clone());
+            if let Some(session_secret) = &arg.session_secret {
+                session_info.set_secret(session_secret.clone());
+            }
+
+            if let Some(session_hash) = &arg.session_hash { 
+                session_info.set_hash(session_hash.clone());
+            }
+
+            session_info.set_secure(arg.session_secure);
         }
     }
 
