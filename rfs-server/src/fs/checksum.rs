@@ -2,7 +2,7 @@ use std::task::{Context, Poll};
 use std::pin::Pin;
 
 use base64::{Engine, engine::general_purpose::URL_SAFE};
-use futures::{Stream, TryStream};
+use futures::Stream;
 use pin_project::pin_project;
 
 pub enum Checksum {
@@ -104,7 +104,7 @@ where
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Self::Item>> {
-        let mut this = self.project();
+        let this = self.project();
 
         match this.source.poll_next(cx) {
             Poll::Ready(next) => {

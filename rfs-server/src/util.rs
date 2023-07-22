@@ -1,5 +1,4 @@
-use std::marker::Sync;
-use std::convert::{From, Into};
+use std::convert::From;
 use std::time::SystemTime;
 
 pub fn utc_now() -> Option<u64> {
@@ -38,12 +37,14 @@ impl<T> HistoryField<T> {
         self.updated.as_ref()
     }
 
+    #[allow(dead_code)]
     pub fn is_updated(&self) -> bool {
         self.updated.is_some()
     }
 
+    #[allow(dead_code)]
     pub fn rollback(&mut self) -> bool {
-        if let Some(v) = self.updated.take() {
+        if let Some(_) = self.updated.take() {
             true
         } else {
             false
@@ -59,20 +60,24 @@ impl<T> HistoryField<T> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn into_inner(self) -> T {
         self.updated.unwrap_or(self.original)
     }
 
+    #[allow(dead_code)]
     pub fn into_original(self) -> T {
         self.original
     }
 
+    #[allow(dead_code)]
     pub fn into_updated(self) -> Option<T> {
         self.updated
     }
 }
 
 impl HistoryField<String> {
+    #[allow(dead_code)]
     pub fn get_str(&self) -> &str {
         if let Some(v) = self.updated.as_ref() {
             v.as_str()
@@ -115,10 +120,13 @@ where
 pub mod sql {
     use std::path::PathBuf;
     use std::str::FromStr;
+    use std::fmt::Debug;
 
     use blake3::Hash;
-    use serde::Deserialize;
-    use tokio_postgres::types::{ToSql, Json as PgJson};
+    use serde::{Serialize, Deserialize};
+    use tokio_postgres::types::{self, ToSql};
+
+    pub type PgJson<T> = types::Json<T>;
 
     pub type ParamsVec<'a> = Vec<&'a (dyn ToSql + Sync)>;
 
@@ -175,10 +183,19 @@ pub mod sql {
         try_blake3_hash_from_sql(value).expect("invalid byte vector length")
     }
 
+    #[inline]
     pub fn de_from_sql<'a, T>(value: PgJson<T>) -> T
     where
         T: Deserialize<'a>
     {
         value.0
+    }
+
+    #[inline]
+    pub fn ser_to_sql<'a, T>(value: &'a T) -> PgJson<&'a T>
+    where
+        T: Serialize + Debug
+    {
+        types::Json(value)
     }
 }

@@ -1,12 +1,11 @@
 use std::fmt::Write;
 
+use rfs_lib::ids;
+use rfs_lib::actions::storage::{UpdateStorage, UpdateStorageType};
 use axum::http::StatusCode;
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
-use serde::{Deserialize, Serialize};
-use rfs_lib::ids;
-use rfs_lib::schema::storage::{StorageItem, StorageType};
-use rfs_lib::actions::storage::{UpdateStorage, UpdateStorageType};
+use serde::Deserialize;
 
 use crate::net;
 use crate::net::error;
@@ -16,7 +15,7 @@ use crate::util::sql;
 use crate::storage;
 use crate::tags;
 
-pub mod root;
+//pub mod root;
 
 #[derive(Deserialize)]
 pub struct PathParams {
@@ -25,7 +24,7 @@ pub struct PathParams {
 
 pub async fn get(
     State(state): State<ArcShared>,
-    initiator: initiator::Initiator,
+    _initiator: initiator::Initiator,
     Path(PathParams { storage_id }): Path<PathParams>,
 ) -> error::Result<impl IntoResponse> {
     let conn = state.pool().get().await?;
@@ -145,12 +144,12 @@ pub async fn put(
 
 pub async fn delete(
     State(state): State<ArcShared>,
-    initiator: initiator::Initiator,
+    _initiator: initiator::Initiator,
     Path(PathParams { storage_id }): Path<PathParams>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    let Some(medium) = storage::Medium::retrieve(
+    let Some(_medium) = storage::Medium::retrieve(
         &conn,
         &storage_id
     ).await? else {

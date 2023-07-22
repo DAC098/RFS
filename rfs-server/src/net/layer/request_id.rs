@@ -12,10 +12,6 @@ pub struct RequestId {
 }
 
 impl RequestId {
-    pub fn empty() -> Self {
-        RequestId { id: 0 }
-    }
-
     pub fn try_get<'a, B>(req: &'a Request<B>) -> Option<&'a Self> {
         req.extensions().get()
     }

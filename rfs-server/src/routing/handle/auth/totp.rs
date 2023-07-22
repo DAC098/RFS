@@ -15,7 +15,7 @@ pub async fn post(
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    if let Some(existing) = Totp::retrieve(&conn, initiator.user().id()).await? {
+    if let Some(_existing) = Totp::retrieve(&conn, initiator.user().id()).await? {
         return Err(error::Error::new()
             .status(StatusCode::BAD_REQUEST)
             .kind("TotpExists")

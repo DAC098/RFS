@@ -1,14 +1,11 @@
 use std::collections::HashMap;
-use std::fmt::Write;
 
 use axum::http::{StatusCode, HeaderMap};
 use axum::extract::State;
 use axum::response::IntoResponse;
-use tokio_postgres::types::Json as PgJson;
 use futures::TryStreamExt;
-use serde::{Deserialize, Serialize};
 use rfs_lib::ids;
-use rfs_lib::schema::storage::{StorageItem, StorageType, StorageListItem};
+use rfs_lib::schema::storage::StorageListItem;
 use rfs_lib::actions::storage::{CreateStorage, CreateStorageType};
 
 use crate::net;
@@ -25,7 +22,7 @@ pub mod storage_id;
 pub async fn get(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    headers: HeaderMap,
+    _headers: HeaderMap,
 ) -> error::Result<impl IntoResponse> {
     let conn = state.pool().get().await?;
     let params = [initiator.user().id()];
@@ -54,7 +51,7 @@ pub async fn get(
         &params
     );
 
-    let (mut result, mut tags_result) = tokio::try_join!(fut, tags_fut)?;
+    let (result, tags_result) = tokio::try_join!(fut, tags_fut)?;
 
     futures::pin_mut!(result);
     futures::pin_mut!(tags_result);
@@ -72,7 +69,7 @@ pub async fn get(
             tags: HashMap::new()
         };
 
-        if let Some((ref_id, tag, value)) = &current {
+        if let Some((ref_id, _tag, _value)) = &current {
             if item.id == *ref_id {
                 let taken = current.take().unwrap();
                 item.tags.insert(taken.1, taken.2);
@@ -133,26 +130,60 @@ pub async fn post(
 
     let transaction = conn.transaction().await?;
 
-    let mut builder = storage::Medium::builder(
-        state.ids().wait_storage_id()?,
-        initiator.user().id().clone(),
-        json.name,
-        type_
-    );
+    let id = state.ids().wait_storage_id()?;
+    let created = chrono::Utc::now();
 
-    builder.set_tags(json.tags);
+    if storage::name_check(&transaction, &initiator.user().id(), &json.name).await?.is_some() {
+        return Err(error::Error::new()
+            .status(StatusCode::BAD_REQUEST)
+            .kind("NameExists")
+            .message("the requested name already exists"));
+    }
 
-    let storage = builder.build(&transaction).await?;
-    let root = fs::Root::builder(
-        state.ids().wait_fs_id()?,
-        initiator.user().id().clone(),
-        &storage
-    ).build(&transaction).await?;
+    {
+        let pg_type = sql::ser_to_sql(&type_);
+
+        transaction.execute(
+            "\
+            insert into storage (id, user_id, name, s_data, created) values \
+            ($1, $2, $3, $4, $5)",
+            &[&id, initiator.user().id(), &json.name, &pg_type, &created]
+        ).await?;
+
+        tags::create_tags(&transaction, "storage_tags", "storage_id", &id, &json.tags).await?;
+    }
+
+    let medium = storage::Medium {
+        id,
+        name: json.name,
+        user_id: initiator.user().id().clone(),
+        type_,
+        tags: json.tags,
+        created,
+        updated: None,
+        deleted: None,
+    };
+
+    let created = chrono::Utc::now();
+    let id = state.ids().wait_fs_id()?;
+    let storage = storage::fs::Storage::Local(storage::fs::Local {
+        id: medium.id.clone()
+    });
+
+    {
+        let pg_s_data = sql::ser_to_sql(&storage);
+
+        transaction.execute(
+            "\
+            insert into fs (id, user_id, fs_type, s_data, created) values \
+            ($1, $2, $3, $4, $5)",
+            &[&id, initiator.user().id(), &fs::consts::ROOT_TYPE, &pg_s_data, &created]
+        ).await?;
+    }
 
     transaction.commit().await?;
 
-    let rtn = rfs_lib::json::Wrapper::new(storage.into_schema())
-        .with_message("created storage");
+    let rtn = rfs_lib::json::Wrapper::new(medium.into_schema());
 
     Ok(net::Json::new(rtn))
 }

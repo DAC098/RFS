@@ -18,7 +18,7 @@ pub async fn post(
     let mut conn = state.pool().get().await?;
 
     let mut session = match initiator::lookup_header_map(state.auth(), &conn, &headers).await {
-        Ok(initiator) => {
+        Ok(_initiator) => {
             return Err(error::Error::new()
                 .status(StatusCode::BAD_REQUEST)
                 .kind("AlreadyAuthenticated")

@@ -4,90 +4,13 @@ use rfs_lib::ids;
 use rfs_lib::schema;
 use chrono::{DateTime, Utc};
 use tokio_postgres::Error as PgError;
-use tokio_postgres::types::Json as PgJson;
 use deadpool_postgres::GenericClient;
 
 use crate::storage;
 use crate::util::sql;
 use crate::tags;
 
-use super::consts;
 use super::traits;
-use super::error::{BuilderError};
-
-pub struct Builder<'a> {
-    id: ids::FSId,
-    user_id: ids::UserId,
-    storage: &'a storage::Medium,
-    tags: tags::TagMap,
-    comment: Option<String>,
-}
-
-impl<'a> Builder<'a> {
-    pub fn add_tag<T, V>(&mut self, tag: T, value: Option<V>) -> ()
-    where
-        T: Into<String>,
-        V: Into<String>,
-    {
-        if let Some(v) = value {
-            self.tags.insert(tag.into(), Some(v.into()));
-        } else {
-            self.tags.insert(tag.into(), None);
-        }
-    }
-
-    pub fn comment<C>(&mut self, comment: C) -> ()
-    where
-        C: Into<String>
-    {
-        self.comment = Some(comment.into());
-    }
-
-    pub async fn build(self, conn: &impl GenericClient) -> Result<Root, BuilderError> {
-        let created = Utc::now();
-        let storage = storage::fs::Storage::Local(storage::fs::Local {
-            id: self.storage.id.clone()
-        });
-
-        {
-            let storage_json = PgJson(&storage);
-
-            let _ = conn.execute(
-                "\
-                insert into fs(\
-                    id, \
-                    user_id, \
-                    fs_type, \
-                    s_data, \
-                    comment, \
-                    created\
-                ) values \
-                ($1, $2, $3, $4, $5, $6)",
-                &[
-                    &self.id,
-                    &self.user_id,
-                    &consts::ROOT_TYPE,
-                    &storage_json,
-                    &self.comment,
-                    &created
-                ]
-            ).await?;
-
-            tags::create_tags(conn, "fs_tags", "fs_id", &self.id, &self.tags).await?;
-        }
-
-        Ok(Root {
-            id: self.id,
-            user_id: self.user_id,
-            storage,
-            tags: self.tags,
-            comment: self.comment,
-            created,
-            updated: None,
-            deleted: None
-        })
-    }
-}
 
 #[derive(Debug)]
 pub struct Root {
@@ -102,20 +25,6 @@ pub struct Root {
 }
 
 impl Root {
-    pub fn builder<'a>(
-        id: ids::FSId,
-        user_id: ids::UserId,
-        storage: &'a storage::Medium
-    ) -> Builder<'a> {
-        Builder {
-            id,
-            user_id,
-            storage,
-            tags: tags::TagMap::new(),
-            comment: None
-        }
-    }
-
     pub async fn storage_id_retrieve(
         conn: &impl GenericClient,
         id: &ids::StorageId

@@ -2,22 +2,19 @@ use std::fmt::Write;
 use std::str::FromStr;
 use std::path::PathBuf;
 
+use rfs_lib::ids;
 use tokio::io::{AsyncWriteExt, BufWriter};
 use axum::debug_handler;
 use axum::http::{StatusCode, HeaderMap};
 use axum::extract::{Path, Query, State, BodyStream};
 use axum::response::IntoResponse;
 use deadpool_postgres::GenericClient;
-use tokio_postgres::types::Json as PgJson;
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use rfs_lib::{ids, schema};
+use serde::Deserialize;
 
 use crate::net;
 use crate::net::error;
 use crate::state::ArcShared;
 use crate::sec::authn::initiator;
-use crate::util;
 use crate::util::sql;
 use crate::storage;
 use crate::fs;
@@ -72,7 +69,7 @@ pub struct PathParams {
 
 pub async fn get(
     State(state): State<ArcShared>,
-    initiator: initiator::Initiator,
+    _initiator: initiator::Initiator,
     Path(PathParams { fs_id }): Path<PathParams>,
 ) -> error::Result<impl IntoResponse> {
     let conn = state.pool().get().await?;
@@ -96,7 +93,7 @@ pub async fn get(
 pub async fn post(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    headers: HeaderMap,
+    _headers: HeaderMap,
     Path(PathParams { fs_id }): Path<PathParams>,
     axum::Json(json): axum::Json<rfs_lib::actions::fs::CreateDir>,
 ) -> error::Result<impl IntoResponse> {
@@ -165,7 +162,7 @@ pub async fn post(
 
     {
         let pg_path = path.to_str().unwrap();
-        let pg_storage = PgJson(&storage);
+        let pg_storage = sql::ser_to_sql(&storage);
 
         let _ = transaction.execute(
             "\
@@ -236,7 +233,7 @@ pub async fn put(
     initiator: initiator::Initiator,
     headers: HeaderMap,
     Path(PathParams { fs_id }): Path<PathParams>,
-    Query(PutQuery { basename, overwrite }): Query<PutQuery>,
+    Query(PutQuery { basename, overwrite: _ }): Query<PutQuery>,
     stream: BodyStream,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
@@ -294,7 +291,7 @@ pub async fn put(
                 .message("no basename was provided"));
         };
 
-        if let Some(id) = fs::name_check(&transaction, item.id(), &basename).await? {
+        if let Some(_id) = fs::name_check(&transaction, item.id(), &basename).await? {
             return Err(error::Error::new()
                 .status(StatusCode::BAD_REQUEST)
                 .kind("AlreadyExists")
@@ -349,7 +346,7 @@ pub async fn put(
 
         {
             let pg_path = path.to_str().unwrap();
-            let pg_storage = PgJson(&storage);
+            let pg_storage = sql::ser_to_sql(&storage);
             let pg_mime_type = mime.type_().as_str();
             let pg_mime_subtype = mime.subtype().as_str();
             let pg_hash = hash.as_bytes().as_slice();
@@ -482,7 +479,7 @@ pub async fn put(
 
 pub async fn patch(
     State(state): State<ArcShared>,
-    initiator: initiator::Initiator,
+    _initiator: initiator::Initiator,
     Path(PathParams { fs_id }): Path<PathParams>,
     axum::Json(json): axum::Json<rfs_lib::actions::fs::UpdateMetadata>,
 ) -> error::Result<impl IntoResponse> {
@@ -560,9 +557,9 @@ pub async fn patch(
 }
 
 pub async fn delete(
-    State(state): State<ArcShared>,
-    initiator: initiator::Initiator,
-    Path(PathParams { fs_id }): Path<PathParams>,
+    State(_state): State<ArcShared>,
+    _initiator: initiator::Initiator,
+    Path(PathParams { fs_id: _ }): Path<PathParams>,
 ) -> error::Result<impl IntoResponse> {
     Ok(net::Json::empty())
 }

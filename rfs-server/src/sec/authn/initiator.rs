@@ -81,20 +81,20 @@ impl From<LookupError> for error::Error {
                 .status(StatusCode::NOT_FOUND)
                 .kind("SessionNotFound")
                 .message("session was not found"),
-            LookupError::SessionExpired(session) => error::Error::new()
+            LookupError::SessionExpired(_session) => error::Error::new()
                 .status(StatusCode::UNAUTHORIZED)
                 .kind("SessionExpired")
                 .message("session has expired"),
-            LookupError::SessionUnauthenticated(session) => error::Error::new()
+            LookupError::SessionUnauthenticated(_session) => error::Error::new()
                 .status(StatusCode::UNAUTHORIZED)
                 .kind("SessionUnauthenticated")
                 .message("session has not been authenticated"),
-            LookupError::SessionUnverified(session) => error::Error::new()
+            LookupError::SessionUnverified(_session) => error::Error::new()
                 .status(StatusCode::UNAUTHORIZED)
                 .kind("SessionUnverified")
                 .message("session has not been verified"),
 
-            LookupError::UserNotFound(authorization) => error::Error::new()
+            LookupError::UserNotFound(_authorization) => error::Error::new()
                 .status(StatusCode::NOT_FOUND)
                 .kind("UserNotFound")
                 .message("authorization user was not found"),
@@ -118,7 +118,7 @@ pub async fn lookup_session_id<S>(
 where
     S: AsRef<[u8]>
 {
-    let (token, hash) = match session::decode_base64(auth, session_id) {
+    let (token, _hash) = match session::decode_base64(auth, session_id) {
         Ok(p) => p,
         Err(err) => {
             return Err(match err {

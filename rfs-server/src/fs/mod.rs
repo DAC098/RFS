@@ -1,24 +1,18 @@
 use std::path::{PathBuf, Path};
-use std::fmt::Write;
 
-use futures::TryStream;
-use deadpool_postgres::GenericClient;
-use tokio_postgres::Error as PgError;
-use serde::{Serialize, Deserialize};
 use rfs_lib::ids;
 use rfs_lib::schema;
+use deadpool_postgres::GenericClient;
+use tokio_postgres::Error as PgError;
 
-use crate::net;
-use crate::storage;
 use crate::tags;
-use crate::util;
 use crate::util::sql;
 
 pub mod consts;
 pub mod traits;
 pub mod error;
-pub mod checksum;
-pub mod stream;
+//pub mod checksum;
+//pub mod stream;
 
 pub mod root;
 pub use root::Root;
@@ -41,31 +35,6 @@ where
     ).await?;
 
     Ok(check.map(|row| row.get(0)))
-}
-
-pub async fn name_gen(
-    conn: &impl GenericClient,
-    id: &ids::FSId,
-    mut attempts: usize
-) -> Result<Option<String>, tokio_postgres::Error> {
-    let now = util::utc_now().expect("failed to get utc now");
-    let mut count = 1;
-    let mut name = format!("{}_{}", now, count);
-
-    while attempts != 0 {
-        if name_check(conn, id, &name).await?.is_none() {
-            return Ok(Some(name));
-        }
-
-        count += 1;
-
-        name.clear();
-        write!(&mut name, "{}_{}", now, count).unwrap();
-
-        attempts -= 1;
-    }
-
-    Ok(None)
 }
 
 pub fn validate_dir<P>(name: &str, cwd: &PathBuf, path: P) -> std::io::Result<PathBuf>

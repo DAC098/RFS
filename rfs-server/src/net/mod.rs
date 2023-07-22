@@ -1,5 +1,3 @@
-use std::fmt::Debug;
-
 use bytes::{BufMut, BytesMut};
 use axum::body::Full;
 use axum::http::{
@@ -33,10 +31,12 @@ impl<T> Json<T> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn root(&self) -> &T {
         &self.root
     }
 
+    #[allow(dead_code)]
     pub fn root_mut(&mut self) -> &mut T {
         &mut self.root
     }
@@ -63,6 +63,7 @@ impl<T> Json<T> {
 }
 
 impl<T> Json<rfs_lib::json::Wrapper<T>> {
+    #[allow(dead_code)]
     pub fn with_kind<K>(mut self, kind: K) -> Self
     where
         K: Into<String>
@@ -79,6 +80,7 @@ impl<T> Json<rfs_lib::json::Wrapper<T>> {
         self
     }
 
+    #[allow(dead_code)]
     pub fn with_payload<P>(self, payload: P) -> Json<rfs_lib::json::Wrapper<P>> {
         Json {
             builder: self.builder,

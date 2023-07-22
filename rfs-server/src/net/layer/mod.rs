@@ -4,12 +4,11 @@ pub mod request_id;
 pub mod trace {
     use std::time::Duration;
 
-    use axum::http::{Request, Response, HeaderMap, StatusCode};
+    use axum::http::{Request, Response};
     use axum::body::BoxBody;
     use hyper::Body;
     use tracing::Span;
-    use tower_http::trace::TraceLayer;
-    use tower_http::classify::{SharedClassifier, ServerErrorsFailureClass};
+    use tower_http::classify::ServerErrorsFailureClass;
 
     use super::request_id::RequestId;
 

@@ -1,9 +1,6 @@
-use axum::http::StatusCode;
-
 use crate::net::error;
 
 pub enum StreamError {
-    MaxFileSize,
     Axum(axum::Error),
     Io(std::io::Error),
 }
@@ -23,10 +20,6 @@ impl From<std::io::Error> for StreamError {
 impl From<StreamError> for error::Error {
     fn from(err: StreamError) -> Self {
         match err {
-            StreamError::MaxFileSize => error::Error::new()
-                .status(StatusCode::BAD_REQUEST)
-                .kind("MaxFileSize")
-                .message("provided file is too large"),
             StreamError::Io(err) => err.into(),
             StreamError::Axum(err) => err.into(),
         }
@@ -34,8 +27,6 @@ impl From<StreamError> for error::Error {
 }
 
 pub enum BuilderError {
-    BasenameExists,
-    BasenameGenFailed,
     Io(std::io::Error),
     Pg(tokio_postgres::Error),
     Axum(axum::Error),
@@ -69,13 +60,6 @@ impl From<StreamError> for BuilderError {
 impl From<BuilderError> for error::Error {
     fn from(err: BuilderError) -> Self {
         match err {
-            BuilderError::BasenameExists => error::Error::new()
-                .status(StatusCode::BAD_REQUEST)
-                .kind("BasenameExists")
-                .message("basename already exists in this directory"),
-            BuilderError::BasenameGenFailed => error::Error::new()
-                .kind("BasenameGenFailed")
-                .message("failed to generate basename"),
             BuilderError::Io(err) => err.into(),
             BuilderError::Pg(err) => err.into(),
             BuilderError::Axum(err) => err.into(),

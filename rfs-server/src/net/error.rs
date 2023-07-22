@@ -9,10 +9,6 @@ const DEFAULT_ACCEPT_VALUE: &str = "application/json";
 
 type BoxDynError = Box<dyn std::error::Error + Send + Sync>;
 
-fn box_into_inner<T>(b: Box<T>) -> T {
-    *b
-}
-
 fn handle_error_json(inner: Inner) -> Response {
     let mut json = rfs_lib::json::Error::new(inner.kind);
 
@@ -190,7 +186,7 @@ impl axum::response::IntoResponse for Error {
 }
 
 impl From<std::convert::Infallible> for Error {
-    fn from(infallible: std::convert::Infallible) -> Self {
+    fn from(_infallible: std::convert::Infallible) -> Self {
         // this should not happen
         Error::new()
             .source("Infallible. how did this happen")

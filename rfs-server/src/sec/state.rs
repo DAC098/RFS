@@ -64,7 +64,6 @@ impl Builder {
 
         let session_key = match self.session_hash.unwrap_or(SessionHash::Blake3) {
             SessionHash::Blake3 => {
-
                 SessionKey::Blake3(blake3::derive_key(
                     BLAKE3_CONTEXT,
                     session_secret.as_bytes()
@@ -72,7 +71,7 @@ impl Builder {
             },
             SessionHash::HS256 => {
                 let hk = hkdf::Hkdf::<sha3::Sha3_256>::new(None, session_secret.as_bytes());
-                let mut bytes = [0u8; 64];
+                let mut bytes = [0u8; 32];
 
                 hk.expand(&[], &mut bytes)?;
 
@@ -80,7 +79,7 @@ impl Builder {
             },
             SessionHash::HS384 => {
                 let hk = hkdf::Hkdf::<sha3::Sha3_384>::new(None, session_secret.as_bytes());
-                let mut bytes = [0u8; 64];
+                let mut bytes = [0u8; 32];
 
                 hk.expand(&[], &mut bytes)?;
 
@@ -88,7 +87,7 @@ impl Builder {
             },
             SessionHash::HS512 => {
                 let hk = hkdf::Hkdf::<sha3::Sha3_512>::new(None, session_secret.as_bytes());
-                let mut bytes = [0u8; 64];
+                let mut bytes = [0u8; 32];
 
                 hk.expand(&[], &mut bytes)?;
 
@@ -110,9 +109,9 @@ impl Builder {
 #[derive(Debug)]
 pub enum SessionKey {
     Blake3([u8; 32]),
-    HS256([u8; 64]),
-    HS384([u8; 64]),
-    HS512([u8; 64]),
+    HS256([u8; 32]),
+    HS384([u8; 32]),
+    HS512([u8; 32]),
 }
 
 #[derive(Debug)]

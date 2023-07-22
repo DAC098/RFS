@@ -51,7 +51,7 @@ impl<'a> PasswordBuilder<'a> {
         self
     }
 
-    pub fn with_secret<'b>(mut self, secret: &'b Secret) -> PasswordBuilder<'b> {
+    pub fn with_secret<'b>(self, secret: &'b Secret) -> PasswordBuilder<'b> {
         PasswordBuilder {
             user_id: self.user_id,
             salt_len: self.salt_len,

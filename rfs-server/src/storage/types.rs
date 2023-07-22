@@ -1,6 +1,6 @@
-use std::path::{PathBuf, Path};
+use std::path::PathBuf;
 
-use rfs_lib::schema::storage::{StorageItem, StorageType, StorageLocal};
+use rfs_lib::schema::storage::{StorageType, StorageLocal};
 use serde::{Serialize, Deserialize};
 
 use super::error::BuilderError;

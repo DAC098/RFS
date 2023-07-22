@@ -1,7 +1,6 @@
 use rand::RngCore;
 use tokio_postgres::{Error as PgError};
 use deadpool_postgres::GenericClient;
-use hmac::Mac;
 
 use crate::net::error;
 
@@ -37,28 +36,8 @@ impl From<UniqueError> for error::Error {
 pub struct SessionToken([u8; SESSION_ID_BYTES]);
 
 impl SessionToken {
-    pub fn new() -> Result<Self, rand::Error> {
-        let mut array = [0; SESSION_ID_BYTES];
-
-        rand::thread_rng().try_fill_bytes(&mut array)?;
-
-        Ok(SessionToken(array))
-    }
-
-    pub fn from_array(array: [u8; SESSION_ID_BYTES]) -> Self {
-        SessionToken(array)
-    }
-
     pub fn from_vec(mut vec: Vec<u8>) -> Self {
-        let mut array = [0; SESSION_ID_BYTES];
-        let mut index = 0;
-
-        for v in vec.drain(0..SESSION_ID_BYTES) {
-            array[index] = v;
-            index += 1;
-        }
-
-        SessionToken(array)
+        SessionToken::drain_vec(&mut vec)
     }
 
     pub fn drain_vec(vec: &mut Vec<u8>) -> Self {
@@ -73,12 +52,11 @@ impl SessionToken {
         SessionToken(array)
     }
 
-
-    pub async fn unique(conn: &impl GenericClient) -> Result<Option<Self>, UniqueError> {
+    pub async fn unique(conn: &impl GenericClient, mut attempts: usize) -> Result<Option<Self>, UniqueError> {
         let mut rtn = [0; SESSION_ID_BYTES];
-        let mut count = 0;
+        let mut count;
 
-        loop {
+        while attempts > 0 {
             rand::thread_rng().try_fill_bytes(&mut rtn)?;
 
             count = conn.execute(
@@ -91,6 +69,8 @@ impl SessionToken {
             } else {
                 rtn.fill(0);
             }
+
+            attempts -= 1;
         }
 
         Ok(None)

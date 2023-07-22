@@ -1,12 +1,8 @@
 use std::fmt::Write;
 use std::collections::HashMap;
-use std::future::Future;
-use std::pin::Pin;
-use std::task::{Context, Poll};
 
-use pin_project::pin_project;
 use futures::TryStreamExt;
-use tokio_postgres::{RowStream, Row, Error as PgError};
+use tokio_postgres::{RowStream, Error as PgError};
 use tokio_postgres::types::ToSql;
 use deadpool_postgres::GenericClient;
 
@@ -15,7 +11,7 @@ use crate::util::sql;
 pub type TagMap = HashMap<String, Option<String>>;
 
 pub async fn from_row_stream(
-    mut stream: RowStream
+    stream: RowStream
 ) -> Result<TagMap, PgError> {
     futures::pin_mut!(stream);
 
@@ -141,7 +137,7 @@ pub async fn get_tags_options<'a, 'b, 'c, 'd, 'e>(
         } else {
             write!(&mut query, " where {}", where_).unwrap();
 
-            where_set = true;
+            //where_set = true;
         }
     }
 

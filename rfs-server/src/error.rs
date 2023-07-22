@@ -93,7 +93,7 @@ impl From<deadpool_postgres::BuildError> for Error {
 }
 
 impl From<hkdf::InvalidLength> for Error {
-    fn from(err: hkdf::InvalidLength) -> Self {
+    fn from(_err: hkdf::InvalidLength) -> Self {
         Error::new()
             .kind("hkdf::InvalidLength")
             .source("invalid output length when deriving key")

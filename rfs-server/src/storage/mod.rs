@@ -1,13 +1,8 @@
-use std::path::PathBuf;
-
 use rfs_lib::ids;
-use rfs_lib::schema::storage::{StorageItem, StorageType};
+use rfs_lib::schema::storage::StorageItem;
 use chrono::{DateTime, Utc};
 use tokio_postgres::Error as PgError;
-use tokio_postgres::types::Json as PgJson;
 use deadpool_postgres::GenericClient;
-use futures::TryStreamExt;
-use serde::{Serialize, Deserialize};
 
 use crate::util::sql;
 use crate::tags;
@@ -15,8 +10,6 @@ use crate::tags;
 pub mod error;
 pub mod fs;
 pub mod types;
-
-use error::BuilderError;
 
 pub async fn name_check<N>(
     conn: &impl GenericClient,
@@ -70,64 +63,6 @@ pub async fn exists_check(
     Ok(check == 1)
 }
 
-pub struct MediumBuilder {
-    id: ids::StorageId,
-    name: String,
-    user_id: ids::UserId,
-    tags: tags::TagMap,
-    type_: types::Type,
-}
-
-impl MediumBuilder {
-    pub fn add_tag<T, V>(&mut self, tag: T, value: Option<V>) -> ()
-    where
-        T: Into<String>,
-        V: Into<String>,
-    {
-        if let Some(v) = value {
-            self.tags.insert(tag.into(), Some(v.into()));
-        } else {
-            self.tags.insert(tag.into(), None);
-        }
-    }
-
-    pub fn set_tags(&mut self, tags: tags::TagMap) -> () {
-        self.tags = tags;
-    }
-
-    pub async fn build(self, conn: &impl GenericClient) -> Result<Medium, BuilderError> {
-        let created = Utc::now();
-
-        if name_check(conn, &self.user_id, &self.name).await?.is_some() {
-            return Err(BuilderError::NameExists);
-        }
-
-        {
-            let storage_json = PgJson(&self.type_);
-
-            conn.execute(
-                "\
-                insert into storage (id, user_id, name, s_data, created) values \
-                ($1, $2, $3, $4, $5)",
-                &[&self.id, &self.user_id, &self.name, &storage_json, &created]
-            ).await?;
-
-            tags::create_tags(conn, "storage_tags", "storage_id", &self.id, &self.tags).await?;
-        }
-
-        Ok(Medium {
-            id: self.id,
-            name: self.name,
-            user_id: self.user_id,
-            type_: self.type_,
-            tags: self.tags,
-            created,
-            updated: None,
-            deleted: None
-        })
-    }
-}
-
 pub struct Medium {
     pub id: ids::StorageId,
     pub name: String,
@@ -140,24 +75,6 @@ pub struct Medium {
 }
 
 impl Medium {
-    pub fn builder<T>(
-        id: ids::StorageId,
-        user_id: ids::UserId,
-        name: String,
-        type_: T,
-    ) -> MediumBuilder
-    where
-        T: Into<types::Type>
-    {
-        MediumBuilder {
-            id,
-            name,
-            user_id,
-            type_: type_.into(),
-            tags: tags::TagMap::new(),
-        }
-    }
-
     pub async fn retrieve(
         conn: &impl GenericClient,
         id: &ids::StorageId,

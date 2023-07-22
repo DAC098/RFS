@@ -1,5 +1,4 @@
 use rfs_lib::ids;
-use axum::http::StatusCode;
 use chrono::{DateTime, Utc};
 use base64::{Engine, engine::general_purpose::URL_SAFE};
 use tokio_postgres::{Error as PgError};
@@ -159,7 +158,7 @@ impl SessionBuilder {
 
             token
         } else {
-            token::SessionToken::unique(conn).await?.unwrap()
+            token::SessionToken::unique(conn, 10).await?.unwrap()
         };
         let expires = if let Some(expires) = self.expires {
             if expires <= issued_on {
@@ -320,40 +319,6 @@ impl Session {
         } else {
             Ok(None)
         }
-    }
-
-    pub async fn create(&self, conn: &impl GenericClient) -> Result<(), PgError> {
-        let auth_method = self.auth_method.as_i16();
-        let verify_method = self.verify_method.as_i16();
-
-        let _ = conn.execute(
-            "\
-            insert into auth_session (\
-                token, \
-                user_id, \
-                dropped, \
-                issued_on, \
-                expires, \
-                authenticated, \
-                verified, \
-                auth_method, \
-                verify_method\
-            ) values \
-            ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
-            &[
-                &self.token.as_slice(),
-                &self.user_id,
-                &self.dropped,
-                &self.issued_on,
-                &self.expires,
-                &self.authenticated,
-                &self.verified,
-                &auth_method,
-                &verify_method,
-            ]
-        ).await?;
-
-        Ok(())
     }
 
     pub async fn update(&self, conn: &impl GenericClient) -> Result<(), PgError> {
