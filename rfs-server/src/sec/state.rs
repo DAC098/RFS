@@ -1,10 +1,12 @@
+use serde::Deserialize;
+
 use crate::error;
 
 use super::secret;
 
 const BLAKE3_CONTEXT: &str = "rust-file-server 2023-05-12 12:35:00 session tokens";
 
-#[derive(clap::ValueEnum, Clone, Debug)]
+#[derive(clap::ValueEnum, Clone, Debug, Deserialize)]
 pub enum SessionHash {
     Blake3,
     /// hmac SHA3-256

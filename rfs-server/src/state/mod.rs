@@ -16,7 +16,6 @@ pub mod db;
 pub struct SharedBuilder {
     primary_id: Option<i64>,
     assets: Option<PathBuf>,
-    pages: Option<PathBuf>,
     pg_options: db::Builder,
     templates: template::state::Builder,
     sec: sec::state::Builder,
@@ -33,24 +32,6 @@ impl SharedBuilder {
 
     pub fn pg_options(&mut self) -> &mut db::Builder {
         &mut self.pg_options
-    }
-
-    /// assigns a new directory for assets lookup
-    pub fn set_assets<P>(&mut self, path: P) -> &mut Self 
-    where
-        P: Into<PathBuf>
-    {
-        self.assets = Some(path.into());
-        self
-    }
-
-    /// assigns a new directory for html page lookup
-    pub fn set_pages<P>(&mut self, path: P) -> &mut Self
-    where
-        P: Into<PathBuf>
-    {
-        self.pages = Some(path.into());
-        self
     }
 
     pub fn set_primary_id(&mut self, primary: i64) -> &mut Self {
@@ -70,7 +51,7 @@ impl SharedBuilder {
         let pages = fs::validate_dir(
             "pages",
             &cwd,
-            self.pages.unwrap_or("pages".into())
+            "pages"
         )?;
 
         let primary_id = self.primary_id.unwrap_or(1);
@@ -103,7 +84,6 @@ impl Shared {
         SharedBuilder {
             primary_id: None,
             assets: None,
-            pages: None,
             pg_options: db::Builder::new(),
             templates: template::state::Templates::builder(),
             sec: sec::state::Sec::builder(),
@@ -126,12 +106,13 @@ impl Shared {
         &self.templates
     }
 
-    pub fn auth(&self) -> &sec::state::Sec {
+    pub fn sec(&self) -> &sec::state::Sec {
         &self.sec
     }
 
-    pub fn sec(&self) -> &sec::state::Sec {
-        &self.sec
+    #[inline]
+    pub fn auth(&self) -> &sec::state::Sec {
+        self.sec()
     }
 
     pub fn ids(&self) -> &ids::Ids {

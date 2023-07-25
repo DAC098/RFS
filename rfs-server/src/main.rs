@@ -1,6 +1,3 @@
-use std::path::PathBuf;
-use std::str::FromStr;
-use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -22,66 +19,7 @@ mod state;
 mod tags;
 mod storage;
 mod routing;
-
-#[derive(clap::Parser, Debug)]
-#[command(author, version, version, about, long_about = None)]
-struct CommandArgs {
-    /// ip address to bind the server to
-    #[arg(short, long)]
-    ip: Option<String>,
-
-    /// port for the server to listen on
-    #[arg(short, long)]
-    port: Option<u16>,
-
-    /// specified the directory to load assets from
-    #[arg(long)]
-    assets: Option<PathBuf>,
-
-    /// specifies the directory to load html pages from
-    #[arg(long)]
-    pages: Option<PathBuf>,
-
-    /// specified the directory to load handlebars templates from
-    #[arg(long)]
-    templates: Option<PathBuf>,
-
-    /// enabled dev mode for handlebars templates
-    #[arg(long)]
-    hbs_dev_mode: bool,
-
-    /// postgres username for connecting to database
-    #[arg(long)]
-    pg_user: Option<String>,
-
-    /// postgres user password for connecting to database
-    #[arg(long)]
-    pg_password: Option<String>,
-
-    /// postgres host address for database
-    #[arg(long)]
-    pg_host: Option<String>,
-
-    /// postgres port for connecting to host
-    #[arg(long)]
-    pg_port: Option<u16>,
-
-    /// postgres database name
-    #[arg(long)]
-    pg_dbname: Option<String>,
-
-    /// hashing algorithm to use for session key
-    #[arg(long)]
-    session_hash: Option<sec::state::SessionHash>,
-
-    /// session secret for hashing session ids
-    #[arg(long)]
-    session_secret: Option<String>,
-
-    /// inidicates that the session cookie should only be available in a secure context
-    #[arg(long)]
-    session_secure: bool,
-}
+mod config;
 
 fn main() {
     use tokio::runtime::Builder;
@@ -91,7 +29,7 @@ fn main() {
         .try_init()
         .expect("failed to initialize global tracing subscriber");
 
-    let matches = CommandArgs::parse();
+    let matches = config::CliArgs::parse();
 
     let rt = match Builder::new_multi_thread()
         .enable_io()
@@ -147,104 +85,12 @@ fn main() {
     }
 }
 
-fn get_sock_addr(arg: &CommandArgs) -> error::Result<SocketAddr> {
-    use std::net::IpAddr;
-
-    let ip_addr = if let Some(ip) = &arg.ip {
-        IpAddr::from_str(&ip).map_err(|_|
-            error::Error::new()
-                .message("invalid ip address provided")
-        )?
-    } else {
-        IpAddr::from([0,0,0,0])
-    };
-
-    Ok(SocketAddr::new(ip_addr, arg.port.unwrap_or(0)))
-}
-
-fn get_shared_state(arg: &CommandArgs) -> error::Result<state::Shared> {
-    let mut state_builder = state::Shared::builder();
-
-    if let Some(path) = &arg.assets {
-        state_builder.set_assets(path);
-    }
-
-    if let Some(path) = &arg.pages {
-        state_builder.set_pages(path.clone());
-    }
-
-    {
-        let templates = state_builder.templates();
-
-        if let Some(path) = &arg.templates {
-            templates.set_templates(path.clone());
-        }
-
-        templates.set_dev_mode(arg.hbs_dev_mode);
-    }
-
-    {
-        let pg_options = state_builder.pg_options();
-
-        if let Some(user) = &arg.pg_user {
-            pg_options.set_user(user);
-        }
-
-        if let Some(password) = &arg.pg_password {
-            pg_options.set_password(password);
-        }
-
-        if let Some(host) = &arg.pg_host {
-            pg_options.set_host(host);
-        }
-
-        if let Some(port) = &arg.pg_port {
-            pg_options.set_port(*port);
-        }
-
-        if let Some(dbname) = &arg.pg_dbname {
-            pg_options.set_dbname(dbname);
-        }
-    }
-
-    {
-        let sec = state_builder.sec();
-
-        {
-            let session_info = sec.session_info();
-
-            if let Some(session_secret) = &arg.session_secret {
-                session_info.set_secret(session_secret.clone());
-            }
-
-            if let Some(session_hash) = &arg.session_hash { 
-                session_info.set_hash(session_hash.clone());
-            }
-
-            session_info.set_secure(arg.session_secure);
-        }
-    }
-
-    tracing::event!(
-        tracing::Level::DEBUG,
-        "shared state builder {:#?}",
-        state_builder
-    );
-
-    Ok(state_builder.build()?)
-}
-
-async fn init(arg: CommandArgs) -> error::Result<()> {
+async fn init(arg: config::CliArgs) -> error::Result<()> {
     use axum::routing::{get, post, put};
 
-    let sock_addr = get_sock_addr(&arg)?;
-    let state = get_shared_state(&arg)?;
-
-    tracing::event!(
-        tracing::Level::DEBUG,
-        "shared state {:#?}",
-        state
-    );
+    let config = config::get_config(arg)?;
+    let sock_addr = config.socket;
+    let state = config.state;
 
     let router = Router::new()
         .route(
