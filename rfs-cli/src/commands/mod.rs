@@ -9,11 +9,13 @@ use crate::state::AppState;
 
 mod storage;
 mod fs;
+mod user;
 
 fn append_subcommands(command: Command) -> Command {
     command
         .subcommand(storage::command())
         .subcommand(fs::command())
+        .subcommand(user::command())
         .subcommand(Command::new("connect")
             .alias("login")
             .about("logs in into the desired server")
@@ -110,6 +112,16 @@ pub fn fs(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
         Some(("create", create_args)) => fs::create(state, create_args)?,
         Some(("update", update_args)) => fs::update(state, update_args)?,
         Some(("upload", upload_args)) => fs::upload(state, upload_args)?,
+        _ => unreachable!()
+    }
+
+    Ok(())
+}
+
+pub fn user(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
+    match args.subcommand() {
+        Some(("create", create_args)) => user::create(state, create_args)?,
+        Some(("update", update_args)) => user::update(state, update_args)?,
         _ => unreachable!()
     }
 

@@ -98,7 +98,7 @@ pub async fn patch(
 
             write!(
                 &mut update_query,
-                " name = ${}",
+                " username = ${}",
                 sql::push_param(&mut update_params, &user.username)
             ).unwrap();
         }
