@@ -163,14 +163,14 @@ async fn init(arg: config::CliArgs) -> error::Result<()> {
         )
         .route(
             "/user",
-            get(routing::okay)
-                .post(routing::okay)
+            get(routing::handle::user::get)
+                .post(routing::handle::user::post)
         )
         .route(
             "/user/:user_id",
-            get(routing::okay)
-                .put(routing::okay)
-                .delete(routing::okay)
+            get(routing::handle::user::user_id::get)
+                .patch(routing::handle::user::user_id::patch)
+                .delete(routing::handle::user::user_id::delete)
         )
         .route(
             "/user/:user_id/bot",
@@ -204,8 +204,7 @@ async fn init(arg: config::CliArgs) -> error::Result<()> {
         )?
         .serve(router.into_make_service());
 
-    tracing::event!(
-        tracing::Level::INFO,
+    tracing::info!(
         addr = %server.local_addr(),
         "server listening",
     );

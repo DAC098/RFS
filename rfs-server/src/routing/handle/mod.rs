@@ -10,6 +10,7 @@ pub mod ping;
 pub mod auth;
 pub mod storage;
 pub mod fs;
+pub mod user;
 
 #[derive(Serialize)]
 pub struct RootContext {}
