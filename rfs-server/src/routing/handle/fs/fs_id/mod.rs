@@ -121,9 +121,29 @@ pub async fn post(
     let user_id = initiator.user().id().clone();
     let created = chrono::Utc::now();
     let basename = json.basename;
-    let comment = json.comment;
+
+    let comment = if let Some(given) = json.comment {
+        if !rfs_lib::fs::comment_valid(&given) {
+            return Err(error::Error::new()
+                .status(StatusCode::BAD_REQUEST)
+                .kind("InvalidComment")
+                .message("the provided comment is an invalid format"));
+        }
+
+        Some(given)
+    } else {
+        None
+    };
+
     let path;
     let parent;
+
+    if !rfs_lib::fs::basename_valid(&basename) {
+        return Err(error::Error::new()
+            .status(StatusCode::BAD_REQUEST)
+            .kind("InvalidBasename")
+            .message("the provided basename is an invalid format"));
+    }
 
     match item {
         fs::Item::Root(root) => {
@@ -193,6 +213,13 @@ pub async fn post(
     }
 
     let tags = if let Some(tags) = json.tags {
+        if !tags::validate_map(&tags) {
+            return Err(error::Error::new()
+                .status(StatusCode::BAD_REQUEST)
+                .kind("InvalidTags")
+                .message("the provided tags contain invalid values"));
+        }
+
         tags::create_tags(&transaction, "fs_tags", "fs_id", &id, &tags).await?;
 
         tags
@@ -290,6 +317,13 @@ pub async fn put(
                 .kind("NoBasename")
                 .message("no basename was provided"));
         };
+
+        if !rfs_lib::fs::basename_valid(&basename) {
+            return Err(error::Error::new()
+                .status(StatusCode::BAD_REQUEST)
+                .kind("InvalidBasename")
+                .message("the provided basename is an invalid format"));
+        }
 
         if let Some(_id) = fs::name_check(&transaction, item.id(), &basename).await? {
             return Err(error::Error::new()
@@ -538,6 +572,13 @@ pub async fn patch(
     }
 
     if let Some(tags) = json.tags {
+        if !tags::validate_map(&tags) {
+            return Err(error::Error::new()
+                .status(StatusCode::BAD_REQUEST)
+                .kind("InvalidTags")
+                .message("the provided tags are in an invalid format"));
+        }
+
         tags::update_tags(
             &transaction,
             "fs_tags",

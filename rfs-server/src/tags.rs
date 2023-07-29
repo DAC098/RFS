@@ -10,6 +10,22 @@ use crate::util::sql;
 
 pub type TagMap = HashMap<String, Option<String>>;
 
+pub fn validate_map(map: &TagMap) -> bool {
+    for (key, value) in map {
+        if !rfs_lib::tags::key_valid(key) {
+            return false;
+        }
+
+        if let Some(v) = value {
+            if !rfs_lib::tags::value_valid(v) {
+                return false;
+            }
+        }
+    }
+
+    true
+}
+
 pub async fn from_row_stream(
     stream: RowStream
 ) -> Result<TagMap, PgError> {

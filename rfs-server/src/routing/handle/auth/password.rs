@@ -28,6 +28,13 @@ pub async fn post(
                 .message("current password is required"));
         };
 
+        if !rfs_lib::sec::authn::password_valid(&given) {
+            return Err(error::Error::new()
+                .status(StatusCode::BAD_REQUEST)
+                .kind("InvalidPassword")
+                .message("the current password is an invalid format"));
+        };
+
         if !current.verify(given, secret)? {
             return Err(error::Error::new()
                 .status(StatusCode::UNAUTHORIZED)
@@ -35,6 +42,13 @@ pub async fn post(
                 .message("provided password is invalid"));
         }
     }
+
+    if !rfs_lib::sec::authn::password_valid(&json.updated) {
+        return Err(error::Error::new()
+            .status(StatusCode::BAD_REQUEST)
+            .kind("InvalidPassword")
+            .message("the new password is an invalid format"));
+    };
 
     if json.updated != json.confirm {
         return Err(error::Error::new()

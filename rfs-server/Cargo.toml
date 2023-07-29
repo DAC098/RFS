@@ -16,6 +16,7 @@ chrono = { version = "0.4.24", features = ["serde"] }
 base64 = { version = "0.21.0" }
 data-encoding = { version = "2.4.0" }
 snowcloud-cloud = { git = "https://github.com/DAC098/snowcloud" }
+email_address = { version = "0.2.4" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }

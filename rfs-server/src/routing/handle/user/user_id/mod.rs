@@ -75,10 +75,10 @@ pub async fn patch(
         let mut update_params = sql::ParamsVec::with_capacity(2);
         update_params.push(&user_id);
 
-        if let Some(valid_username) = json.username.map(user::validate::username) {
+        if let Some(username) = json.username {
             use_comma = true;
 
-            let Some(username) = valid_username else {
+            if !rfs_lib::user::username_valid(&username) {
                 return Err(error::Error::new()
                     .status(StatusCode::BAD_REQUEST)
                     .kind("InvalidUsername")
@@ -110,8 +110,8 @@ pub async fn patch(
                 //use_comma = true;
             }
 
-            if let Some(valid_email) = opt_email.map(user::validate::email) {
-                let Some(email) = valid_email else {
+            if let Some(email) = opt_email {
+                if !rfs_lib::user::email_valid(&email) {
                     return Err(error::Error::new()
                         .status(StatusCode::BAD_REQUEST)
                         .kind("InvalidEmail")

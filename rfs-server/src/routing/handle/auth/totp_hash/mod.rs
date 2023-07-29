@@ -18,6 +18,13 @@ pub async fn post(
     let mut conn = state.pool().get().await?;
     let transaction = conn.transaction().await?;
 
+    if !rfs_lib::sec::authn::totp::recovery::key_valid(&json.key) {
+        return Err(error::Error::new()
+            .status(StatusCode::BAD_REQUEST)
+            .kind("InvalidKey")
+            .message("the provided key is an invalid format"));
+    };
+
     TotpHash::builder(initiator.user().id().clone(), json.key)
         .build(&transaction)
         .await?;

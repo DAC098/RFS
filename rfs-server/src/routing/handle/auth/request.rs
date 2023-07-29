@@ -34,6 +34,13 @@ pub async fn post(
         }
     }
 
+    if !rfs_lib::user::username_valid(&json.username) {
+        return Err(error::Error::new()
+            .status(StatusCode::BAD_REQUEST)
+            .kind("InvalidUsername")
+            .message("the requested username is an invalid format"));
+    };
+
     let Some(user) = user::User::query_with_username(&mut conn, &json.username).await? else {
         return Err(error::Error::new()
             .status(StatusCode::NOT_FOUND)

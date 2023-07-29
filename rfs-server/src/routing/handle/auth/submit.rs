@@ -52,6 +52,13 @@ pub async fn post(
         },
         actions::auth::SubmitAuth::Password(given) => match session.auth_method {
             AuthMethod::Password => {
+                if !rfs_lib::sec::authn::password_valid(&given) {
+                    return Err(error::Error::new()
+                        .status(StatusCode::BAD_REQUEST)
+                        .kind("InvalidPassword")
+                        .message("the provided password is an invalid format"));
+                };
+
                 let Some(user_password) = password::Password::retrieve(
                     &conn,
                     &session.user_id
@@ -112,8 +119,7 @@ pub async fn post(
         transaction.commit().await?;
     }
 
-    let json_root = rfs_lib::json::Wrapper::new(verify)
-        .with_message("proceed with request verify method");
+    let json_root = rfs_lib::json::Wrapper::new(verify);
 
     Ok(net::Json::new(json_root).into_response())
 }

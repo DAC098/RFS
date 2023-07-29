@@ -84,20 +84,6 @@ where
     Ok((username_id, email_id))
 }
 
-pub mod validate {
-    pub fn username(given: String) -> Option<String> {
-        let trimmed = given.trim();
-
-        Some(trimmed.to_owned())
-    }
-
-    pub fn email(given: String) -> Option<String> {
-        let trimmed = given.trim();
-
-        Some(trimmed.to_owned())
-    }
-}
-
 pub struct UserEmail {
     pub email: String,
     pub verified: bool

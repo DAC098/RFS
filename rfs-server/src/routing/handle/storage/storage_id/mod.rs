@@ -92,8 +92,15 @@ pub async fn put(
         update_params.push(&storage_id);
         update_params.push(&updated);
 
-        if let Some(name) = &json.name {
-            if let Some(found_id) = storage::name_check(&transaction, initiator.user().id(), name).await? {
+        if let Some(name) = json.name {
+            if !rfs_lib::storage::name_valid(&name) {
+                return Err(error::Error::new()
+                    .status(StatusCode::BAD_REQUEST)
+                    .kind("InvalidName")
+                    .message("the requested name is an invalid format"));
+            };
+
+            if let Some(found_id) = storage::name_check(&transaction, initiator.user().id(), &name).await? {
                 if found_id != storage_id {
                     return Err(error::Error::new()
                         .status(StatusCode::BAD_REQUEST)
@@ -102,13 +109,13 @@ pub async fn put(
                 }
             }
 
+            medium.name = name;
+
             write!(
                 &mut update_query,
                 "name = ${} ",
-                sql::push_param(&mut update_params, name)
+                sql::push_param(&mut update_params, &medium.name)
             ).unwrap();
-
-            medium.name = name.clone();
         }
 
         if let Some(type_) = &json.type_ {

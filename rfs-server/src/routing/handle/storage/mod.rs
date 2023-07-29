@@ -166,6 +166,13 @@ pub async fn post(
     let id = state.ids().wait_storage_id()?;
     let created = chrono::Utc::now();
 
+    if !rfs_lib::storage::name_valid(&json.name) {
+        return Err(error::Error::new()
+            .status(StatusCode::BAD_REQUEST)
+            .kind("InvalidName")
+            .message("the provided name is an invalid format"));
+    };
+
     if storage::name_check(&transaction, &initiator.user().id(), &json.name).await?.is_some() {
         return Err(error::Error::new()
             .status(StatusCode::BAD_REQUEST)
@@ -182,6 +189,13 @@ pub async fn post(
             ($1, $2, $3, $4, $5)",
             &[&id, initiator.user().id(), &json.name, &pg_type, &created]
         ).await?;
+
+        if !tags::validate_map(&json.tags) {
+            return Err(error::Error::new()
+                .status(StatusCode::BAD_REQUEST)
+                .kind("InvalidTags")
+                .message("the provided tags are in an invalid format"));
+        }
 
         tags::create_tags(&transaction, "storage_tags", "storage_id", &id, &json.tags).await?;
     }

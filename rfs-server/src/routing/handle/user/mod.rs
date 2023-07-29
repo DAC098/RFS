@@ -56,15 +56,17 @@ pub async fn post(
     let mut conn = state.pool().get().await?;
     let id = state.ids().wait_user_id()?;
 
-    let Some(username) = user::validate::username(json.username) else {
+    let username = json.username;
+
+    if !rfs_lib::user::username_valid(&username) {
         return Err(error::Error::new()
             .status(StatusCode::BAD_REQUEST)
             .kind("InvalidUsername")
             .message("the requested username is invalid"));
     };
 
-    let email = if let Some(valid_email) = json.email.map(user::validate::email) {
-        let Some(email) = valid_email else {
+    let email = if let Some(email) = json.email {
+        if !rfs_lib::user::email_valid(&email) {
             return Err(error::Error::new()
                 .status(StatusCode::BAD_REQUEST)
                 .kind("InvalidEmail")
