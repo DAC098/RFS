@@ -8,6 +8,7 @@ use crate::net;
 use crate::util::HistoryField;
 
 pub mod algo;
+pub mod recovery;
 
 pub use algo::Algo;
 
