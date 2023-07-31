@@ -77,7 +77,7 @@ pub async fn post(
         },
         SubmitVerify::TotpHash(hash) => match session.verify_method {
             VerifyMethod::Totp => {
-                let Some(mut totp_hash) = totp::TotpHash::retrieve_hash(
+                let Some(mut totp_hash) = totp::recovery::Hash::retrieve_hash(
                     &conn, 
                     &session.user_id, 
                     &hash
@@ -95,10 +95,10 @@ pub async fn post(
                         .message("given totp hash is not valid"));
                 }
 
+                totp_hash.set_used();
+
                 {
                     let transaction = conn.transaction().await?;
-
-                    totp_hash.set_used();
 
                     totp_hash.update(&transaction).await?;
 
@@ -114,10 +114,10 @@ pub async fn post(
         }
     }
 
+    session.verified = true;
+
     {
         let transaction = conn.transaction().await?;
-
-        session.verified = true;
 
         session.update(&transaction).await?;
 

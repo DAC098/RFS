@@ -12,116 +12,7 @@ pub mod recovery;
 
 pub use algo::Algo;
 
-pub enum TotpBuilderError {
-    Rand(rand::Error),
-    Pg(tokio_postgres::Error),
-}
-
-impl From<rand::Error> for TotpBuilderError {
-    fn from(err: rand::Error) -> Self {
-        TotpBuilderError::Rand(err)
-    }
-}
-
-impl From<tokio_postgres::Error> for TotpBuilderError {
-    fn from(err: tokio_postgres::Error) -> Self {
-        TotpBuilderError::Pg(err)
-    }
-}
-
-impl From<TotpBuilderError> for net::error::Error {
-    fn from(err: TotpBuilderError) -> Self {
-        match err {
-            TotpBuilderError::Rand(err) => err.into(),
-            TotpBuilderError::Pg(err) => err.into(),
-        }
-    }
-}
-
-pub struct TotpBuilder {
-    user_id: ids::UserId,
-    algo: Option<Algo>,
-    secret: Option<Vec<u8>>,
-    digits: Option<u32>,
-    step: Option<u64>,
-}
-
-impl TotpBuilder {
-    pub fn set_algo<A>(&mut self, algo: A) -> bool
-    where
-        A: TryInto<Algo>
-    {
-        let Ok(v) = algo.try_into() else {
-            return false;
-        };
-
-        self.algo = Some(v);
-
-        true
-    }
-
-    pub fn set_secret(&mut self, secret: Vec<u8>) {
-        self.secret = Some(secret);
-    }
-
-    pub fn set_digits(&mut self, digits: u32) -> bool {
-        if digits > 12 {
-            return false;
-        }
-
-        self.digits = Some(digits);
-
-        true
-    }
-
-    pub fn set_step(&mut self, step: u64) -> bool {
-        if step > 120 {
-            return false;
-        }
-
-        self.step = Some(step);
-
-        true
-    }
-
-    pub async fn build(self, conn: &impl GenericClient) -> Result<Totp, TotpBuilderError> {
-        let algo = self.algo.unwrap_or(Algo::SHA512);
-        let digits = self.digits.unwrap_or(8);
-        let step = self.step.unwrap_or(30);
-
-        let secret = if let Some(given) = self.secret {
-            given
-        } else {
-            let mut secret = [0u8; 25];
-
-            rand::thread_rng().try_fill_bytes(&mut secret)?;
-
-            secret.to_vec()
-        };
-
-        let algo_int = algo.as_i16();
-        let _ = conn.execute(
-            "\
-            insert into auth_totp (user_id, algo, secret, digits, step) values \
-            ($1, $2, $3, $4, $5)",
-            &[
-                &self.user_id,
-                &algo_int,
-                &secret,
-                &(digits as i32),
-                &(step as i32)
-            ]
-        ).await?;
-
-        Ok(Totp {
-            user_id: self.user_id,
-            algo,
-            secret,
-            digits,
-            step
-        })
-    }
-}
+pub const SECRET_LEN: usize = 25;
 
 pub struct Totp {
     user_id: ids::UserId,
@@ -132,16 +23,6 @@ pub struct Totp {
 }
 
 impl Totp {
-    pub fn builder(user_id: ids::UserId) -> TotpBuilder {
-        TotpBuilder {
-            user_id,
-            algo: None,
-            secret: None,
-            digits: None,
-            step: None,
-        }
-    }
-
     fn digits_from_db(v: i32) -> Option<u32> {
         if v < 0 {
             None

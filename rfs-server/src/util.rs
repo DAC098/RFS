@@ -37,7 +37,6 @@ impl<T> HistoryField<T> {
         self.updated.as_ref()
     }
 
-    #[allow(dead_code)]
     pub fn is_updated(&self) -> bool {
         self.updated.is_some()
     }
@@ -60,7 +59,6 @@ impl<T> HistoryField<T> {
         }
     }
 
-    #[allow(dead_code)]
     pub fn into_inner(self) -> T {
         self.updated.unwrap_or(self.original)
     }

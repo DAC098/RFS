@@ -7,48 +7,57 @@ use serde::Deserialize;
 use crate::net::{self, error};
 use crate::state::ArcShared;
 use crate::sec::authn::initiator::Initiator;
-use crate::sec::authn::totp::TotpHash;
+use crate::sec::authn::totp;
 
 #[derive(Deserialize)]
-pub struct TotpHashParams {
+pub struct PathParams {
     key_id: String
 }
 
 pub async fn patch(
     State(state): State<ArcShared>,
     initiator: Initiator,
-    Path(TotpHashParams { key_id }): Path<TotpHashParams>,
+    Path(PathParams { key_id }): Path<PathParams>,
     axum::Json(json): axum::Json<actions::auth::UpdateTotpHash>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    let Some(mut totp_hash) = TotpHash::retrieve_key(
+    let Some(mut hash) = totp::recovery::Hash::retrieve_key(
         &conn,
         initiator.user().id(),
         &key_id
     ).await? else {
         return Err(error::Error::new()
             .status(StatusCode::NOT_FOUND)
-            .kind("TotpHashNotFound")
-            .message("requested totp hash was not found"));
+            .kind("KeyNotFound")
+            .message("requested totp recovery hash was not found"));
     };
 
     if let Some(new_key) = json.key {
-        totp_hash.set_key(new_key);
+        if !rfs_lib::sec::authn::totp::recovery::key_valid(&new_key) {
+            return Err(error::Error::new()
+                .status(StatusCode::BAD_REQUEST)
+                .kind("InvalidKey")
+                .message("the provided key is an invalid format"));
+        }
+
+        if totp::recovery::key_exists(&conn, initiator.user().id(), &new_key).await? {
+            return Err(error::Error::new()
+                .status(StatusCode::BAD_REQUEST)
+                .kind("KeyExits")
+                .message("the provided key already exists"));
+        }
+
+        hash.set_key(new_key);
     }
 
     if json.regen {
-        totp_hash.regen_hash(None)?;
+        hash.regen_hash()?;
     }
 
     let transaction = conn.transaction().await?;
 
-    if !totp_hash.update(&transaction).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::BAD_REQUEST)
-            .kind("TotpHashKeyExists")
-            .message("requested totp hash key already exists"));
-    }
+    hash.update(&transaction).await?;
 
     transaction.commit().await?;
 
@@ -59,27 +68,27 @@ pub async fn patch(
 pub async fn delete(
     State(state): State<ArcShared>,
     initiator: Initiator,
-    Path(TotpHashParams { key_id }): Path<TotpHashParams>,
+    Path(PathParams { key_id }): Path<PathParams>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    let Some(totp_hash) = TotpHash::retrieve_key(
+    let Some(hash) = totp::recovery::Hash::retrieve_key(
         &conn,
         initiator.user().id(),
         &key_id
     ).await? else {
         return Err(error::Error::new()
             .status(StatusCode::NOT_FOUND)
-            .kind("TotpHashNotFound")
-            .message("requested totp hash was not found"));
+            .kind("KeyNotFound")
+            .message("requested totp recovery hash was not found"));
     };
 
     let transaction = conn.transaction().await?;
 
-    totp_hash.delete(&transaction).await?;
+    hash.delete(&transaction).await?;
 
     transaction.commit().await?;
 
     Ok(net::Json::empty()
-       .with_message("deleted totp hash"))
+        .with_message("deleted totp hash"))
 }
