@@ -14,7 +14,7 @@ pub struct TotpHashParams {
     key_id: String
 }
 
-pub async fn put(
+pub async fn patch(
     State(state): State<ArcShared>,
     initiator: Initiator,
     Path(TotpHashParams { key_id }): Path<TotpHashParams>,

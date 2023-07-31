@@ -8,6 +8,8 @@ use crate::state::ArcShared;
 use crate::sec::authn::initiator::Initiator;
 use crate::sec::authn::totp::Totp;
 
+pub mod recovery;
+
 pub async fn post(
     State(state): State<ArcShared>,
     initiator: Initiator,

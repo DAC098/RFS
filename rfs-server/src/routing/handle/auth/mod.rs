@@ -11,7 +11,6 @@ pub mod submit;
 pub mod verify;
 pub mod password;
 pub mod totp;
-pub mod totp_hash;
 
 #[derive(Serialize)]
 pub struct AuthContext {}

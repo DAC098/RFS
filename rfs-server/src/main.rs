@@ -86,7 +86,7 @@ fn main() {
 }
 
 async fn init(arg: config::CliArgs) -> error::Result<()> {
-    use axum::routing::{get, post, put};
+    use axum::routing::{get, post, patch};
 
     let config = config::get_config(arg)?;
     let sock_addr = config.socket;
@@ -125,14 +125,14 @@ async fn init(arg: config::CliArgs) -> error::Result<()> {
                 .delete(routing::handle::auth::totp::delete)
         )
         .route(
-            "/auth/totp_hash",
+            "/auth/totp/recovery",
             get(routing::okay)
-                .post(routing::handle::auth::totp_hash::post)
+                .post(routing::handle::auth::totp::recovery::post)
         )
         .route(
-            "/auth/totp_hash/:key_id",
-            put(routing::handle::auth::totp_hash::key_id::put)
-                .delete(routing::handle::auth::totp_hash::key_id::delete)
+            "/auth/totp/recovery/:key_id",
+            patch(routing::handle::auth::totp::recovery::key_id::patch)
+                .delete(routing::handle::auth::totp::recovery::key_id::delete)
         )
         .route(
             "/storage",
