@@ -1,9 +1,13 @@
 use rfs_lib::ids;
 use tokio_postgres::{Error as PgError};
 use deadpool_postgres::GenericClient;
+use argon2::Variant;
+use rand::RngCore;
 
 use crate::net;
-use crate::sec::secret::{EMPTY_SECRET, Secret};
+use crate::sec::secret::Secret;
+
+pub const SALT_LEN: usize = 32;
 
 pub enum PasswordError {
     Rand(rand::Error),
@@ -41,47 +45,25 @@ impl From<PasswordError> for net::error::Error {
 
 pub struct PasswordBuilder<'a> {
     user_id: ids::UserId,
-    salt_len: usize,
-    secret: Option<&'a Secret>
+    password: String,
+    secret: &'a Secret
 }
 
 impl<'a> PasswordBuilder<'a> {
-    pub fn with_salt_len(mut self, len: usize) -> Self {
-        self.salt_len = len;
-        self
-    }
-
-    pub fn with_secret<'b>(self, secret: &'b Secret) -> PasswordBuilder<'b> {
-        PasswordBuilder {
-            user_id: self.user_id,
-            salt_len: self.salt_len,
-            secret: Some(secret)
-        }
-    }
-
     pub async fn build(self, conn: &impl GenericClient) -> Result<Password, PasswordError> {
-        use argon2::{Variant};
-        use rand::RngCore;
-
-        let secret = self.secret.unwrap_or(&EMPTY_SECRET);
-        let version = *secret.version();
+        let version = *self.secret.version();
 
         let mut config = argon2::Config::default();
         config.mem_cost = 19456;
-        config.secret = secret.as_slice();
         config.variant = Variant::Argon2id;
+        config.secret = self.secret.as_slice();
 
-        let mut salt = Vec::with_capacity(self.salt_len);
+        let mut salt = [0u8; SALT_LEN];
 
-        for _ in 0..salt.len() {
-            salt.push(0);
-        }
-
-        rand::thread_rng()
-            .try_fill_bytes(salt.as_mut_slice())?;
+        rand::thread_rng().try_fill_bytes(salt.as_mut_slice())?;
 
         let hash = argon2::hash_encoded(
-            secret.as_slice(),
+            self.password.as_bytes(),
             &salt.as_slice(),
             &config
         )?;
@@ -90,11 +72,7 @@ impl<'a> PasswordBuilder<'a> {
             "\
             insert into auth_password (user_id, version, hash) values
             ($1, $2, $3)",
-            &[
-                &self.user_id,
-                &(version as i32),
-                &hash
-            ]
+            &[&self.user_id, &(version as i32), &hash]
         ).await?;
 
         Ok(Password {
@@ -112,11 +90,15 @@ pub struct Password {
 }
 
 impl Password {
-    pub fn builder(user_id: ids::UserId) -> PasswordBuilder<'static> {
+    pub fn builder<'a>(
+        user_id: ids::UserId,
+        password: String,
+        secret: &'a Secret,
+    ) -> PasswordBuilder<'a> {
         PasswordBuilder {
             user_id,
-            salt_len: 32,
-            secret: None,
+            password,
+            secret,
         }
     }
 
@@ -161,6 +143,40 @@ impl Password {
         )?;
 
         Ok(result)
+    }
+
+    pub async fn update<P>(
+        &mut self,
+        conn: &impl GenericClient,
+        password: P,
+        secret: &Secret
+    ) -> Result<(), PasswordError>
+    where
+        P: AsRef<[u8]>
+    {
+        self.version = *secret.version();
+
+        let mut config = argon2::Config::default();
+        config.mem_cost = 19456;
+        config.variant = Variant::Argon2id;
+        config.secret = secret.as_slice();
+
+        let mut salt = [0u8; SALT_LEN];
+
+        rand::thread_rng().try_fill_bytes(salt.as_mut_slice())?;
+
+        let hash = argon2::hash_encoded(
+            password.as_ref(),
+            &salt,
+            &config
+        )?;
+
+        let _ = conn.execute(
+            "update auth_password set hash = $2, version = $3 where user_id = $1",
+            &[&self.user_id, &hash, &(self.version as i32)]
+        );
+
+        Ok(())
     }
 
     pub async fn delete(&self, conn: &impl GenericClient) -> Result<bool, PgError> {

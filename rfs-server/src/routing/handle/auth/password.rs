@@ -15,7 +15,21 @@ pub async fn post(
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    if let Some(current) = Password::retrieve(&conn, initiator.user().id()).await? {
+    if !rfs_lib::sec::authn::password_valid(&json.updated) {
+        return Err(error::Error::new()
+            .status(StatusCode::BAD_REQUEST)
+            .kind("InvalidPassword")
+            .message("the new password is an invalid format"));
+    };
+
+    if json.updated != json.confirm {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("InvalidUpdatedPassword")
+            .message("miss match updated and confirmed"));
+    }
+
+    if let Some(mut current) = Password::retrieve(&conn, initiator.user().id()).await? {
         let Some(secret) = state.auth().secrets().get(current.version()) else {
             return Err(error::Error::new()
                 .source("password secret version not found. unable to verify user password"));
@@ -41,30 +55,26 @@ pub async fn post(
                 .kind("InvalidPassword")
                 .message("provided password is invalid"));
         }
+
+        let latest_secret = state.auth().secrets().latest();
+        let transaction = conn.transaction().await?;
+
+        current.update(&transaction, json.updated, latest_secret).await?;
+
+        transaction.commit().await?;
+    } else {
+        let transaction = conn.transaction().await?;
+
+        Password::builder(
+            initiator.user().id().clone(),
+            json.updated,
+            state.auth().secrets().latest()
+        )
+            .build(&transaction)
+            .await?;
+
+        transaction.commit().await?;
     }
-
-    if !rfs_lib::sec::authn::password_valid(&json.updated) {
-        return Err(error::Error::new()
-            .status(StatusCode::BAD_REQUEST)
-            .kind("InvalidPassword")
-            .message("the new password is an invalid format"));
-    };
-
-    if json.updated != json.confirm {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("InvalidUpdatedPassword")
-            .message("miss match updated and confirmed"));
-    }
-
-    let transaction = conn.transaction().await?;
-
-    Password::builder(initiator.user().id().clone())
-        .with_secret(state.auth().secrets().latest())
-        .build(&transaction)
-        .await?;
-
-    transaction.commit().await?;
 
     Ok(net::Json::empty()
         .with_message("password updated successfully"))
