@@ -1,3 +1,5 @@
+use std::convert::Into;
+
 use rfs_lib::actions;
 use axum::http::StatusCode;
 use axum::extract::State;
@@ -9,6 +11,29 @@ use crate::sec::authn::initiator::Initiator;
 use crate::sec::authn::totp;
 
 pub mod recovery;
+
+pub async fn get(
+    State(state): State<ArcShared>,
+    initiator: Initiator,
+) -> error::Result<impl IntoResponse> {
+    let conn = state.pool().get().await?;
+
+    let Some(totp) = totp::Totp::retrieve(&conn, initiator.user().id()).await? else {
+        return Err(error::Error::new()
+            .status(StatusCode::NOT_FOUND)
+            .kind("TotpNotFound")
+            .message("requested totp was not found"));
+    };
+
+    let rtn = rfs_lib::json::Wrapper::new(rfs_lib::schema::auth::Totp {
+        algo: totp.algo.to_string(),
+        secret: totp.secret.into(),
+        digits: totp.digits.into(),
+        step: totp.step.into()
+    });
+
+    Ok(net::Json::new(rtn))
+}
 
 pub async fn post(
     State(state): State<ArcShared>,
@@ -86,9 +111,16 @@ pub async fn post(
 
     transaction.commit().await?;
 
-    Ok(net::Json::empty()
-       .with_status(StatusCode::CREATED)
-       .with_message("create totp"))
+    let rtn = rfs_lib::json::Wrapper::new(rfs_lib::schema::auth::Totp {
+        algo: algo.to_string(),
+        secret,
+        digits,
+        step
+    })
+        .with_message("created totp");
+
+    Ok(net::Json::new(rtn)
+       .with_status(StatusCode::CREATED))
 }
 
 pub async fn patch(
@@ -152,8 +184,14 @@ pub async fn patch(
 
     transaction.commit().await?;
 
-    Ok(net::Json::empty()
-       .with_message("create totp"))
+    let rtn = rfs_lib::json::Wrapper::new(rfs_lib::schema::auth::Totp {
+        algo: totp.algo.to_string(),
+        secret: totp.secret.into(),
+        digits: totp.digits.into(),
+        step: totp.step.into()
+    });
+
+    Ok(net::Json::new(rtn))
 }
 
 pub async fn delete(

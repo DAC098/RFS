@@ -14,6 +14,34 @@ pub struct PathParams {
     key_id: String
 }
 
+pub async fn get(
+    State(state): State<ArcShared>,
+    initiator: Initiator,
+    Path(PathParams { key_id }): Path<PathParams>
+) -> error::Result<impl IntoResponse> {
+    let conn = state.pool().get().await?;
+
+    let Some(hash) = totp::recovery::Hash::retrieve_key(
+        &conn,
+        initiator.user().id(),
+        &key_id
+    ).await? else {
+        return Err(error::Error::new()
+            .status(StatusCode::NOT_FOUND)
+            .kind("KeyNotFound")
+            .message("requested totp recovery hash was not found"));
+    };
+
+    let rtn = rfs_lib::json::Wrapper::new(rfs_lib::schema::auth::TotpRecovery {
+        user_id: hash.user_id,
+        key: hash.key.into(),
+        hash: hash.hash.into(),
+        used: hash.used.into(),
+    });
+
+    Ok(net::Json::new(rtn))
+}
+
 pub async fn patch(
     State(state): State<ArcShared>,
     initiator: Initiator,
@@ -61,8 +89,14 @@ pub async fn patch(
 
     transaction.commit().await?;
 
-    Ok(net::Json::empty()
-        .with_message("updated totp hash"))
+    let rtn = rfs_lib::json::Wrapper::new(rfs_lib::schema::auth::TotpRecovery {
+        user_id: hash.user_id,
+        key: hash.key.into(),
+        hash: hash.hash.into(),
+        used: hash.used.into()
+    });
+
+    Ok(net::Json::new(rtn))
 }
 
 pub async fn delete(

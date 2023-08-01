@@ -24,6 +24,14 @@ impl Algo {
             Algo::SHA512 => 2,
         }
     }
+
+    pub fn to_string(&self) -> String {
+        match self {
+            Algo::SHA1 => String::from("SHA1"),
+            Algo::SHA256 => String::from("SHA256"),
+            Algo::SHA512 => String::from("SHA512"),
+        }
+    }
 }
 
 pub struct FromIntError;

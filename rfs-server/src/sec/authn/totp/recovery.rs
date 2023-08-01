@@ -2,11 +2,12 @@ use std::fmt::Write;
 use futures::TryStreamExt;
 
 use rfs_lib::ids;
+use rfs_lib::history::HistoryField;
 use tokio_postgres::{Error as PgError};
 use deadpool_postgres::GenericClient;
 use rand::RngCore;
 
-use crate::util::{sql, HistoryField};
+use crate::util::sql;
 
 pub const HASH_LEN: usize = 25;
 

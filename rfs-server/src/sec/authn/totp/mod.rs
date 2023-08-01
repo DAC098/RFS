@@ -23,11 +23,11 @@ pub fn create_secret() -> Result<Vec<u8>, rand::Error> {
 }
 
 pub struct Totp {
-    user_id: ids::UserId,
-    algo: HistoryField<Algo>,
-    secret: HistoryField<Vec<u8>>,
-    digits: HistoryField<u32>,
-    step: HistoryField<u64>,
+    pub user_id: ids::UserId,
+    pub algo: HistoryField<Algo>,
+    pub secret: HistoryField<Vec<u8>>,
+    pub digits: HistoryField<u32>,
+    pub step: HistoryField<u64>,
 }
 
 impl Totp {
