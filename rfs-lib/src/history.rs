@@ -119,6 +119,24 @@ impl<T> AsRef<T> for HistoryField<T> {
     }
 }
 
+impl<T> PartialEq<HistoryField<T>> for HistoryField<T>
+where
+    T: PartialEq<T>
+{
+    fn eq(&self, rhs: &HistoryField<T>) -> bool {
+        self.get().eq(rhs.get())
+    }
+}
+
+impl<T> PartialEq<T> for HistoryField<T>
+where
+    T: PartialEq<T>
+{
+    fn eq(&self, rhs: &T) -> bool {
+        self.get().eq(rhs)
+    }
+}
+
 impl<T> From<T> for HistoryField<T> {
     fn from(v: T) -> Self {
         HistoryField {
@@ -146,6 +164,10 @@ impl<T> From<(T, Option<T>)> for HistoryField<T> {
     }
 }
 
+// ----------------------------------------------------------------------------
+// std From impl's
+// ----------------------------------------------------------------------------
+
 macro_rules! std_from {
     ($($e:path)*) => ($(
         impl From<HistoryField<$e>> for $e {
@@ -164,20 +186,15 @@ std_from! {
     std::path::PathBuf
 }
 
-impl<T> PartialEq<HistoryField<T>> for HistoryField<T>
-where
-    T: PartialEq<T>
-{
-    fn eq(&self, rhs: &HistoryField<T>) -> bool {
-        self.get().eq(rhs.get())
+impl<'a> From<HistoryField<&'a str>> for &'a str {
+    fn from(v: HistoryField<&'a str>) -> &'a str {
+        v.into_inner()
     }
 }
 
-impl<T> PartialEq<T> for HistoryField<T>
-where
-    T: PartialEq<T>
-{
-    fn eq(&self, rhs: &T) -> bool {
-        self.get().eq(rhs)
+impl<T> From<HistoryField<Vec<T>>> for Vec<T> {
+    fn from(v: HistoryField<Vec<T>>) -> Vec<T> {
+        v.into_inner()
     }
 }
+
