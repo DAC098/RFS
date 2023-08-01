@@ -2,6 +2,7 @@ pub mod ids;
 pub mod serde;
 pub mod json;
 pub mod validation;
+pub mod history;
 
 pub mod schema;
 pub mod actions;
