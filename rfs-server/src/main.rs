@@ -122,6 +122,7 @@ async fn init(arg: config::CliArgs) -> error::Result<()> {
             "/auth/totp",
             get(routing::okay)
                 .post(routing::handle::auth::totp::post)
+                .patch(routing::handle::auth::totp::patch)
                 .delete(routing::handle::auth::totp::delete)
         )
         .route(

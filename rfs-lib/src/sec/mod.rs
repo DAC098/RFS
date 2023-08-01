@@ -26,6 +26,14 @@ pub mod authn {
     }
 
     pub mod totp {
+        pub fn digits_valid(given: &u32) -> bool {
+            *given <= 12
+        }
+
+        pub fn step_valid(given: &u64) -> bool {
+            *given <= 120
+        }
+
         pub mod recovery {
             use crate::validation::check_control_whitespace;
 

@@ -2,7 +2,6 @@ use rfs_lib::actions;
 use axum::http::StatusCode;
 use axum::extract::State;
 use axum::response::IntoResponse;
-use rand::RngCore;
 
 use crate::net::{self, error};
 use crate::state::ArcShared;
@@ -39,7 +38,7 @@ pub async fn post(
     };
 
     let digits: u32 = if let Some(given) = json.digits {
-        if given > 12 {
+        if !rfs_lib::sec::authn::totp::digits_valid(&given) {
             return Err(error::Error::new()
                 .status(StatusCode::BAD_REQUEST)
                 .kind("InvalidDigits")
@@ -52,7 +51,7 @@ pub async fn post(
     };
 
     let step: u64 = if let Some(given) = json.step {
-        if given > 120 {
+        if !rfs_lib::sec::authn::totp::step_valid(&given) {
             return Err(error::Error::new()
                 .status(StatusCode::BAD_REQUEST)
                 .kind("InvalidStep")
@@ -64,8 +63,7 @@ pub async fn post(
         30
     };
 
-    let mut secret = [0u8; totp::SECRET_LEN];
-    rand::thread_rng().try_fill_bytes(&mut secret)?;
+    let secret = totp::create_secret()?;
 
     let transaction = conn.transaction().await?;
 
@@ -93,6 +91,71 @@ pub async fn post(
        .with_message("create totp"))
 }
 
+pub async fn patch(
+    State(state): State<ArcShared>,
+    initiator: Initiator,
+    axum::Json(json): axum::Json<actions::auth::UpdateTotp>,
+) -> error::Result<impl IntoResponse> {
+    let mut conn = state.pool().get().await?;
+    let mut regen = false;
+
+    let Some(mut totp) = totp::Totp::retrieve(&conn, initiator.user().id()).await? else {
+        return Err(error::Error::new()
+            .status(StatusCode::NOT_FOUND)
+            .kind("TotpNotFound")
+            .message("totp not found"));
+    };
+
+    if let Some(given) = json.algo {
+        let Ok(algo) = totp::Algo::try_from(given) else {
+            return Err(error::Error::new()
+                .status(StatusCode::BAD_REQUEST)
+                .kind("InvalidAlgo")
+                .message("algo provided is invalid"));
+        };
+
+        totp.set_algo(algo);
+        regen = true;
+    }
+
+    if let Some(given) = json.digits {
+        if !rfs_lib::sec::authn::totp::digits_valid(&given) {
+            return Err(error::Error::new()
+                .status(StatusCode::BAD_REQUEST)
+                .kind("InvalidDigits")
+                .message("digits provided is invalid"));
+        }
+
+        totp.set_digits(given);
+        regen = true;
+    }
+
+    if let Some(given) = json.step {
+        if !rfs_lib::sec::authn::totp::step_valid(&given) {
+            return Err(error::Error::new()
+                .status(StatusCode::BAD_REQUEST)
+                .kind("InvalidStep")
+                .message("step provided is invalid"));
+        }
+
+        totp.set_step(given);
+        regen = true;
+    }
+
+    if regen || json.regen {
+        totp.regen_secret()?;
+    }
+
+    let transaction = conn.transaction().await?;
+
+    totp.update(&transaction).await?;
+
+    transaction.commit().await?;
+
+    Ok(net::Json::empty()
+       .with_message("create totp"))
+}
+
 pub async fn delete(
     State(state): State<ArcShared>,
     initiator: Initiator,
@@ -103,6 +166,11 @@ pub async fn delete(
         let transaction = conn.transaction().await?;
 
         totp.delete(&transaction).await?;
+
+        transaction.execute(
+            "delete from auth_totp_hash where user_id = $1",
+            &[initiator.user().id()]
+        ).await?;
 
         transaction.commit().await?;
 

@@ -11,7 +11,7 @@ use crate::util::{sql, HistoryField};
 pub const HASH_LEN: usize = 25;
 
 pub fn create_hash() -> Result<String, rand::Error> {
-    let mut bytes = [0u8; 25];
+    let mut bytes = [0u8; HASH_LEN];
     rand::thread_rng().try_fill_bytes(&mut bytes)?;
 
     Ok(data_encoding::BASE32.encode(&bytes))
@@ -145,6 +145,7 @@ impl Hash {
         Ok(rtn)
     }
 
+    /*
     pub fn user_id(&self) -> &ids::UserId {
         &self.user_id
     }
@@ -156,6 +157,7 @@ impl Hash {
     pub fn hash(&self) -> &str {
         self.hash.get_str()
     }
+    */
 
     pub fn used(&self) -> &bool {
         self.used.get()
@@ -196,7 +198,6 @@ impl Hash {
             return Ok(false);
         }
 
-        let mut use_comma = false;
         let mut update_query = String::from("update auth_totp_hash set");
         let mut update_params: sql::ParamsVec = vec![
             &self.user_id,
@@ -204,8 +205,6 @@ impl Hash {
         ];
 
         if let Some(new_key) = self.key.updated() {
-            use_comma = true;
-
             write!(
                 &mut update_query,
                 " key = ${}",
@@ -214,10 +213,8 @@ impl Hash {
         }
 
         if let Some(new_hash) = self.hash.updated() {
-            if use_comma {
+            if update_params.len() > 2 {
                 update_query.push(',');
-            } else {
-                use_comma = true;
             }
 
             write!(
@@ -228,7 +225,7 @@ impl Hash {
         }
 
         if let Some(new_used) = self.used.updated() {
-            if use_comma {
+            if update_params.len() > 2 {
                 update_query.push(',');
             }
 

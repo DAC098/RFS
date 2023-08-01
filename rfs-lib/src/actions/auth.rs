@@ -38,6 +38,23 @@ pub struct CreateTotp {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct UpdateTotp {
+    pub algo: Option<String>,
+    pub digits: Option<u32>,
+    pub step: Option<u64>,
+    pub regen: bool
+}
+
+impl UpdateTotp {
+    pub fn has_work(&self) -> bool {
+        self.algo.is_some() ||
+            self.digits.is_some() ||
+            self.step.is_some() ||
+            self.regen
+    }
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct CreateTotpHash {
     pub key: String
 }
