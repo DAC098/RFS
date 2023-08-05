@@ -78,7 +78,7 @@ pub async fn post(
     transaction.execute(
         "\
         insert into auth_totp_hash (user_id, key, hash, used) values \
-        ($1 $2, $3, false)",
+        ($1, $2, $3, false)",
         &[initiator.user().id(), &json.key, &hash]
     ).await?;
 

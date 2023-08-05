@@ -41,7 +41,7 @@ fn main() {
     }
 }
 
-fn run() -> error::Result<()> {
+fn run() -> error::Result {
     let app_matches = commands::cli().get_matches();
 
     let session_file = if let Some(arg) = app_matches.get_one::<PathBuf>("cookies") {
@@ -113,7 +113,7 @@ fn run() -> error::Result<()> {
     Ok(())
 }
 
-fn run_subcommand(state: &mut state::AppState, command: &str, matches: &ArgMatches) -> error::Result<()> {
+fn run_subcommand(state: &mut state::AppState, command: &str, matches: &ArgMatches) -> error::Result {
     match command {
         "connect" => commands::connect(state, matches),
         "disconnect" => commands::disconnect(state, matches),
@@ -121,6 +121,7 @@ fn run_subcommand(state: &mut state::AppState, command: &str, matches: &ArgMatch
         "storage" => commands::storage(state, matches),
         "fs" => commands::fs(state, matches),
         "user" => commands::user(state, matches),
+        "auth" => commands::auth(state, matches),
         _ => {
             println!("uknown command");
 

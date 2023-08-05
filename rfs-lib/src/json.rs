@@ -1,13 +1,11 @@
-use std::fmt::Debug;
-
-use chrono::{DateTime, Utc};
 use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Wrapper<T> {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     message: Option<String>,
-    timestamp: Option<DateTime<Utc>>,
     payload: T
 }
 
@@ -16,7 +14,6 @@ impl<T> Wrapper<T> {
         Self {
             kind: None,
             message: None,
-            timestamp: None,
             payload
         }
     }
@@ -33,13 +30,11 @@ impl<T> Wrapper<T> {
         self.message.as_ref()
     }
 
-    pub fn timestamp(&self) -> Option<&DateTime<Utc>> {
-        self.timestamp.as_ref()
-    }
-
-    pub fn with_timestamp_now(mut self) -> Self {
-        self.timestamp = Some(Utc::now());
-        self
+    pub fn set_message<M>(&mut self, msg: M) -> ()
+    where
+        M: Into<String>
+    {
+        self.message = Some(msg.into());
     }
 
     pub fn with_message<M>(mut self, msg: M) -> Self
@@ -48,6 +43,13 @@ impl<T> Wrapper<T> {
     {
         self.message = Some(msg.into());
         self
+    }
+
+    pub fn set_kind<K>(&mut self, kind: K) -> ()
+    where
+        K: Into<String>
+    {
+        self.kind = Some(kind.into());
     }
 
     pub fn with_kind<K>(mut self, kind: K) -> Self
@@ -62,7 +64,6 @@ impl<T> Wrapper<T> {
         Wrapper {
             kind: self.kind,
             message: self.message,
-            timestamp: self.timestamp,
             payload
         }
     }
@@ -72,11 +73,50 @@ impl<T> Wrapper<T> {
     }
 }
 
+impl<T> std::fmt::Display for Wrapper<T>
+where
+    T: std::fmt::Display
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        match (&self.kind, &self.message) {
+            (Some(kind), Some(message)) => {
+                if f.alternate() {
+                    write!(f, "{}: {} -> {:#}", kind, message, self.payload)
+                } else {
+                    write!(f, "{}: {} -> {}", kind, message, self.payload)
+                }
+            },
+            (Some(kind), None) => {
+                if f.alternate() {
+                    write!(f, "{} -> {:#}", kind, self.payload)
+                } else {
+                    write!(f, "{} -> {}", kind, self.payload)
+                }
+            },
+            (None, Some(message)) => {
+                if f.alternate() {
+                    write!(f, "{} -> {:#}", message, self.payload)
+                } else {
+                    write!(f, "{} -> {}", message, self.payload)
+                }
+            },
+            (None, None) => {
+                if f.alternate() {
+                    write!(f, "{:#}", self.payload)
+                } else {
+                    write!(f, "{}", self.payload)
+                }
+            }
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ListWrapper<T> {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     message: Option<String>,
-    timestamp: Option<DateTime<Utc>>,
     total: usize,
     payload: T,
 }
@@ -86,7 +126,6 @@ impl<T> ListWrapper<T> {
         Self {
             kind: None,
             message: None,
-            timestamp: None,
             total: 0,
             payload
         }
@@ -104,13 +143,11 @@ impl<T> ListWrapper<T> {
         self.message.as_ref()
     }
 
-    pub fn timestamp(&self) -> Option<&DateTime<Utc>> {
-        self.timestamp.as_ref()
-    }
-
-    pub fn with_timestamp_now(mut self) -> Self {
-        self.timestamp = Some(Utc::now());
-        self
+    pub fn set_message<M>(&mut self, msg: M) -> ()
+    where
+        M: Into<String>
+    {
+        self.message = Some(msg.into());
     }
 
     pub fn with_message<M>(mut self, msg: M) -> Self
@@ -121,9 +158,20 @@ impl<T> ListWrapper<T> {
         self
     }
 
+    pub fn set_total(&mut self, total: usize) -> () {
+        self.total = total;
+    }
+
     pub fn with_total(mut self, total: usize) -> Self {
         self.total = total;
         self
+    }
+
+    pub fn set_kind<K>(&mut self, kind: K) -> ()
+    where
+        K: Into<String>
+    {
+        self.kind = Some(kind.into());
     }
 
     pub fn with_kind<K>(mut self, kind: K) -> Self
@@ -144,7 +192,6 @@ impl<T> ListWrapper<Vec<T>> {
         Self {
             kind: None,
             message: None,
-            timestamp: None,
             total: vec.len(),
             payload: vec
         }
@@ -157,9 +204,46 @@ impl<T> ListWrapper<Vec<T>> {
         Self {
             kind: None,
             message: None,
-            timestamp: None,
             total: slice.len(),
             payload: slice.to_vec(),
+        }
+    }
+}
+
+impl<T> std::fmt::Display for ListWrapper<T>
+where
+    T: std::fmt::Display
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        match (&self.kind, &self.message) {
+            (Some(kind), Some(message)) => {
+                if f.alternate() {
+                    write!(f, "{}: {} -> ({}) {:#}", kind, message, self.total, self.payload)
+                } else {
+                    write!(f, "{}: {} -> ({}) {}", kind, message, self.total, self.payload)
+                }
+            },
+            (Some(kind), None) => {
+                if f.alternate() {
+                    write!(f, "{} -> ({}) {:#}", kind, self.total, self.payload)
+                } else {
+                    write!(f, "{} -> ({}) {}", kind, self.total, self.payload)
+                }
+            },
+            (None, Some(message)) => {
+                if f.alternate() {
+                    write!(f, "{} -> ({}) {:#}", message, self.total, self.payload)
+                } else {
+                    write!(f, "{} -> ({}) {}", message, self.total, self.payload)
+                }
+            },
+            (None, None) => {
+                if f.alternate() {
+                    write!(f, "({}) {:#}", self.total, self.payload)
+                } else {
+                    write!(f, "({}) {}", self.total, self.payload)
+                }
+            }
         }
     }
 }
@@ -204,3 +288,15 @@ impl Error {
         self
     }
 }
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        if let Some(msg) = &self.message {
+            write!(f, "{}: {}", self.kind, msg)
+        } else {
+            write!(f, "{}", self.kind)
+        }
+    }
+}
+
+impl std::error::Error for Error {}

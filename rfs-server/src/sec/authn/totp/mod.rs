@@ -48,17 +48,17 @@ impl Totp {
             select auth_totp.algo, \
                    auth_totp.secret, \
                    auth_totp.digits, \
-                   auth_totp.step, \
+                   auth_totp.step \
             from auth_totp \
             where auth_totp.user_id = $1",
             &[id]
         ).await? {
             Ok(Some(Totp {
                 user_id: id.clone(),
-                algo: HistoryField::new(Algo::from_i16(row.get(1)).unwrap()),
-                secret: HistoryField::new(row.get(2)),
-                digits: HistoryField::new(Self::digits_from_db(row.get(3))),
-                step: HistoryField::new(Self::step_from_db(row.get(4)))
+                algo: HistoryField::new(Algo::from_i16(row.get(0)).unwrap()),
+                secret: HistoryField::new(row.get(1)),
+                digits: HistoryField::new(Self::digits_from_db(row.get(2))),
+                step: HistoryField::new(Self::step_from_db(row.get(3)))
             }))
         } else {
             Ok(None)
@@ -177,7 +177,7 @@ impl Totp {
                 update_query.push(',');
             }
 
-            pg_step = *new_step as i64;
+            pg_step = *new_step as i32;
 
             write!(
                 &mut update_query,

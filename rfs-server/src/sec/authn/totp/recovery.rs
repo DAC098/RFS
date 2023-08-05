@@ -29,7 +29,7 @@ where
     let check = conn.execute(
         "\
         select key \
-        from auth_totp \
+        from auth_totp_hash \
         where user_id = $1 and \
               key = $2",
         &[user_id, &key.as_ref()]

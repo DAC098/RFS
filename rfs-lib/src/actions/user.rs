@@ -5,6 +5,7 @@ use crate::serde::nested_option;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateUser {
     pub username: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub email: Option<String>,
 }
 

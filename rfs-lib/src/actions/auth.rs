@@ -1,46 +1,52 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RequestUser {
     pub username: String
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum SubmitAuth {
     None,
     Password(String)
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum SubmitVerify {
     None,
     Totp(String),
     TotpHash(String),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CreatePassword {
     pub current: Option<String>,
     pub updated: String,
     pub confirm: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct DeletePassword {
     pub current: Option<String>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CreateTotp {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub algo: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub digits: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub step: Option<u64>
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct UpdateTotp {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub algo: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub digits: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub step: Option<u64>,
     pub regen: bool
 }
@@ -54,13 +60,20 @@ impl UpdateTotp {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CreateTotpHash {
     pub key: String
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct UpdateTotpHash {
     pub key: Option<String>,
     pub regen: bool
+}
+
+impl UpdateTotpHash {
+    pub fn has_work(&self) -> bool {
+        self.key.is_some() ||
+            self.regen
+    }
 }

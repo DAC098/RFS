@@ -3,19 +3,20 @@ use std::path::PathBuf;
 use clap::{Command, Arg, ArgAction, ArgMatches, value_parser};
 
 use crate::error;
-use crate::auth;
 use crate::util;
 use crate::state::AppState;
 
 mod storage;
 mod fs;
 mod user;
+mod auth;
 
 fn append_subcommands(command: Command) -> Command {
     command
         .subcommand(storage::command())
         .subcommand(fs::command())
         .subcommand(user::command())
+        .subcommand(auth::command())
         .subcommand(Command::new("connect")
             .alias("login")
             .about("logs in into the desired server")
@@ -83,52 +84,53 @@ pub fn interactive() -> Command {
     append_subcommands(command)
 }
 
-pub fn connect(state: &mut AppState, _args: &ArgMatches) -> error::Result<()> {
-    auth::connect(state)?;
+pub fn connect(state: &mut AppState, _args: &ArgMatches) -> error::Result {
+    crate::auth::connect(state)?;
 
     println!("session authenticated");
 
     Ok(())
 }
 
-pub fn disconnect(state: &mut AppState, _args: &ArgMatches) -> error::Result<()> {
-    auth::disconnect(state)?;
+pub fn disconnect(state: &mut AppState, _args: &ArgMatches) -> error::Result {
+    crate::auth::disconnect(state)?;
 
     Ok(())
 }
 
-pub fn storage(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
+pub fn storage(state: &mut AppState, args: &ArgMatches) -> error::Result {
     match args.subcommand() {
-        Some(("create", create_args)) => storage::create(state, create_args)?,
-        Some(("update", update_args)) => storage::update(state, update_args)?,
+        Some(("create", create_args)) => storage::create(state, create_args),
+        Some(("update", update_args)) => storage::update(state, update_args),
         _ => unreachable!()
     }
-
-    Ok(())
 }
 
-pub fn fs(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
+pub fn fs(state: &mut AppState, args: &ArgMatches) -> error::Result {
     match args.subcommand() {
-        Some(("create", create_args)) => fs::create(state, create_args)?,
-        Some(("update", update_args)) => fs::update(state, update_args)?,
-        Some(("upload", upload_args)) => fs::upload(state, upload_args)?,
+        Some(("create", create_args)) => fs::create(state, create_args),
+        Some(("update", update_args)) => fs::update(state, update_args),
+        Some(("upload", upload_args)) => fs::upload(state, upload_args),
         _ => unreachable!()
     }
-
-    Ok(())
 }
 
-pub fn user(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
+pub fn user(state: &mut AppState, args: &ArgMatches) -> error::Result {
     match args.subcommand() {
-        Some(("create", create_args)) => user::create(state, create_args)?,
-        Some(("update", update_args)) => user::update(state, update_args)?,
+        Some(("create", create_args)) => user::create(state, create_args),
+        Some(("update", update_args)) => user::update(state, update_args),
         _ => unreachable!()
     }
-
-    Ok(())
 }
 
-pub fn hash(_state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
+pub fn auth(state: &mut AppState, args: &ArgMatches) -> error::Result {
+    match args.subcommand() {
+        Some(("totp", totp_args)) => auth::totp(state, totp_args),
+        _ => unreachable!()
+    }
+}
+
+pub fn hash(_state: &mut AppState, args: &ArgMatches) -> error::Result {
     use std::io::{BufReader, BufRead, ErrorKind};
     use std::fs::OpenOptions;
 

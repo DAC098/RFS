@@ -7,7 +7,7 @@ pub struct Error {
     src: Option<BoxDynError>,
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T = ()> = std::result::Result<T, Error>;
 
 impl Error {
     pub fn new() -> Error {

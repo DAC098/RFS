@@ -104,7 +104,7 @@ pub async fn post(
                 &pg_algo,
                 &secret.as_slice(),
                 &(digits as i32),
-                &(step as i64)
+                &(step as i32)
             ]
         ).await?;
     }
