@@ -9,7 +9,7 @@ use rand::RngCore;
 
 use crate::util::sql;
 
-pub const HASH_LEN: usize = 25;
+pub const HASH_LEN: usize = 5;
 
 pub fn create_hash() -> Result<String, rand::Error> {
     let mut bytes = [0u8; HASH_LEN];
