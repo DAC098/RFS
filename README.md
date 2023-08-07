@@ -1,6 +1,6 @@
 # rust-file-server (rfs)
 
-pretty much as the name implies a file server written in rust.
+pretty much as the name implies a file server written in rust. using this as a way to learn more about various things as well as  integrating with third party services such as AWS and Azure but also plan on using this for my own purposes.
 
 planned features
 - integration with third-party storage providers
