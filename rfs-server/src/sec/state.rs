@@ -2,7 +2,7 @@ use serde::Deserialize;
 
 use crate::error;
 
-use super::secret;
+use super::secrets;
 
 const BLAKE3_CONTEXT: &str = "rust-file-server 2023-05-12 12:35:00 session tokens";
 
@@ -90,16 +90,12 @@ impl SessionInfoBuilder {
 #[derive(Debug)]
 pub struct Builder {
     session_info: SessionInfoBuilder,
-    secret_manager: secret::Manager,
+    secret_manager: secrets::Manager,
 }
 
 impl Builder {
     pub fn session_info(&mut self) -> &mut SessionInfoBuilder {
         &mut self.session_info
-    }
-
-    pub fn add_secret(&mut self, version: u32, bytes: Vec<u8>) -> bool {
-        self.secret_manager.add(secret::Secret::new(version, bytes))
     }
 
     pub fn build(self) -> error::Result<Sec> {
@@ -142,7 +138,7 @@ impl SessionInfo {
 #[derive(Debug)]
 pub struct Sec {
     session_info: SessionInfo,
-    secrets: secret::Manager,
+    secrets: secrets::Manager,
 }
 
 impl Sec {
@@ -154,7 +150,7 @@ impl Sec {
                 domain: None,
                 secure: false,
             },
-            secret_manager: secret::Manager::new(),
+            secret_manager: secrets::Manager::new(),
         }
     }
 
@@ -162,7 +158,7 @@ impl Sec {
         &self.session_info
     }
 
-    pub fn secrets(&self) -> &secret::Manager {
+    pub fn secrets(&self) -> &secrets::Manager {
         &self.secrets
     }
 }

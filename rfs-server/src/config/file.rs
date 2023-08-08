@@ -35,8 +35,17 @@ pub struct SecSession {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+pub enum SecretManager {
+    Local {
+        master: String
+    }
+}
+
+#[derive(Debug, Deserialize)]
 pub struct Sec {
-    pub session: Option<SecSession>
+    pub session: Option<SecSession>,
+    pub secrets: Option<SecretManager>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -1,4 +1,4 @@
-pub mod secret;
+pub mod secrets;
 pub mod state;
 
 pub mod authn;

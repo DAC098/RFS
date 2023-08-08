@@ -5,7 +5,7 @@ use argon2::Variant;
 use rand::RngCore;
 
 use crate::net;
-use crate::sec::secret::Secret;
+use crate::sec::secrets::Secret;
 
 pub const SALT_LEN: usize = 32;
 
