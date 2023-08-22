@@ -30,7 +30,7 @@ pub async fn post(
     }
 
     if let Some(mut current) = Password::retrieve(&conn, initiator.user().id()).await? {
-        let Some(secret) = state.auth().secrets().get(current.version()) else {
+        let Some(secret) = state.auth().secrets().get(current.version())? else {
             return Err(error::Error::new()
                 .source("password secret version not found. unable to verify user password"));
         };
@@ -49,26 +49,27 @@ pub async fn post(
                 .message("the current password is an invalid format"));
         };
 
-        if !current.verify(given, secret)? {
+        if !current.verify(given, &secret)? {
             return Err(error::Error::new()
                 .status(StatusCode::UNAUTHORIZED)
                 .kind("InvalidPassword")
                 .message("provided password is invalid"));
         }
 
-        let latest_secret = state.auth().secrets().latest();
+        let latest_secret = state.auth().secrets().latest()?;
         let transaction = conn.transaction().await?;
 
-        current.update(&transaction, json.updated, latest_secret).await?;
+        current.update(&transaction, json.updated, &latest_secret).await?;
 
         transaction.commit().await?;
     } else {
         let transaction = conn.transaction().await?;
+        let latest = state.auth().secrets().latest()?;
 
         Password::builder(
             initiator.user().id().clone(),
             json.updated,
-            state.auth().secrets().latest()
+            &latest
         )
             .build(&transaction)
             .await?;
@@ -91,7 +92,7 @@ pub async fn delete(
         &conn,
         initiator.user().id()
     ).await? {
-        let Some(secret) = state.auth().secrets().get(current.version()) else {
+        let Some(secret) = state.auth().secrets().get(current.version())? else {
             return Err(error::Error::new()
                 .source("password secret version not found. unable to verify user password"));
         };
@@ -103,7 +104,7 @@ pub async fn delete(
                 .message("current password is required"));
         };
 
-        if !current.verify(given, secret)? {
+        if !current.verify(given, &secret)? {
             return Err(error::Error::new()
                 .status(StatusCode::UNAUTHORIZED)
                 .kind("InvalidPassword")

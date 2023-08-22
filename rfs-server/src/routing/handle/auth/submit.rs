@@ -67,12 +67,12 @@ pub async fn post(
                         .source("session required user password but user password was not found"));
                 };
 
-                let Some(secret) = state.auth().secrets().get(user_password.version()) else {
+                let Some(secret) = state.auth().secrets().get(user_password.version())? else {
                     return Err(error::Error::new()
                         .source("password secret version not found. unable verify user password"));
                 };
 
-                if !user_password.verify(given, secret)? {
+                if !user_password.verify(given, &secret)? {
                     return Err(error::Error::new()
                         .status(StatusCode::UNAUTHORIZED)
                         .kind("InvalidPassword")

@@ -5,7 +5,7 @@ use argon2::Variant;
 use rand::RngCore;
 
 use crate::net;
-use crate::sec::secrets::Secret;
+use crate::sec::secrets;
 
 pub const SALT_LEN: usize = 32;
 
@@ -46,7 +46,7 @@ impl From<PasswordError> for net::error::Error {
 pub struct PasswordBuilder<'a> {
     user_id: ids::UserId,
     password: String,
-    secret: &'a Secret
+    secret: &'a secrets::Key,
 }
 
 impl<'a> PasswordBuilder<'a> {
@@ -72,7 +72,7 @@ impl<'a> PasswordBuilder<'a> {
             "\
             insert into auth_password (user_id, version, hash) values
             ($1, $2, $3)",
-            &[&self.user_id, &(version as i32), &hash]
+            &[&self.user_id, &(version as i64), &hash]
         ).await?;
 
         Ok(Password {
@@ -85,15 +85,15 @@ impl<'a> PasswordBuilder<'a> {
 
 pub struct Password {
     user_id: ids::UserId,
-    version: u32,
-    hash: String
+    version: u64,
+    hash: String,
 }
 
 impl Password {
     pub fn builder<'a>(
         user_id: ids::UserId,
         password: String,
-        secret: &'a Secret,
+        secret: &'a secrets::Key,
     ) -> PasswordBuilder<'a> {
         PasswordBuilder {
             user_id,
@@ -115,9 +115,12 @@ impl Password {
             where auth_password.user_id = $1",
             &[user_id]
         ).await? {
+            let version: i64 = row.get(1);
+
             Ok(Some(Password {
                 user_id: row.get(0),
-                version: row.get(1),
+                version: version.try_into()
+                    .expect("auth_password.version is an invalid unsigned integer"),
                 hash: row.get(2)
             }))
         } else {
@@ -125,11 +128,11 @@ impl Password {
         }
     }
 
-    pub fn version(&self) -> &u32 {
+    pub fn version(&self) -> &u64 {
         &self.version
     }
 
-    pub fn verify<C>(&self, check: C, secret: &Secret) -> Result<bool, PasswordError>
+    pub fn verify<C>(&self, check: C, secret: &secrets::Key) -> Result<bool, PasswordError>
     where
         C: AsRef<[u8]>,
     {
@@ -149,7 +152,7 @@ impl Password {
         &mut self,
         conn: &impl GenericClient,
         password: P,
-        secret: &Secret
+        secret: &secrets::Key
     ) -> Result<(), PasswordError>
     where
         P: AsRef<[u8]>
@@ -173,7 +176,7 @@ impl Password {
 
         let _ = conn.execute(
             "update auth_password set hash = $2, version = $3 where user_id = $1",
-            &[&self.user_id, &hash, &(self.version as i32)]
+            &[&self.user_id, &hash, &(self.version as i64)]
         );
 
         Ok(())

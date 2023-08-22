@@ -1,3 +1,22 @@
+pub mod chacha;
+
+pub mod secrets {
+    pub type Version = u64;
+    pub type Timestamp = u64;
+
+    pub const PASSWORDS_KEY_INFO: &[u8; 9] = b"passwords";
+    pub const SESSIONS_KEY_INFO: &[u8; 8] = b"sessions";
+
+    pub mod manager {
+        use serde::{Serialize, Deserialize};
+
+        #[derive(Debug, Serialize, Deserialize)]
+        pub struct ManagerFile {
+            pub count: super::Version
+        }
+    }
+}
+
 pub mod authn {
     pub const MIN_PASSWORD_CHARS: usize = 8;
     pub const MAX_PASSWORD_CHARS: usize = 512;
