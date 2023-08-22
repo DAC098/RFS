@@ -298,13 +298,13 @@ impl Settings {
 }
 
 pub fn get_config() -> error::Result<Config> {
-    let settings = Settings::try_default()?;
+    let mut settings = Settings::try_default()?;
     let args = CliArgs::parse();
 
     for config_path in args.config {
         let loaded = shape::from_file(&config_path)?;
 
-        settings.merge(shape::validate(&config_path, loaded)?);
+        settings.merge(shape::validate(&config_path, loaded)?)?;
     }
 
     tracing::debug!("{:#?}", settings);
