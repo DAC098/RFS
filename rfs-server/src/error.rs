@@ -123,6 +123,9 @@ macro_rules! generic_catch {
 }
 
 generic_catch!("std::io::Error", std::io::Error);
+generic_catch!("std::net::AddrParseError", std::net::AddrParseError);
 generic_catch!("handlebars::TemplateError", handlebars::TemplateError);
 generic_catch!("tokio_postgres::Error", tokio_postgres::Error);
 generic_catch!("snowcloud_cloud::error::Error", snowcloud_cloud::error::Error);
+generic_catch!("serde_json::Error", serde_json::Error);
+generic_catch!("serde_yaml::Error", serde_yaml::Error);

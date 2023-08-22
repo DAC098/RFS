@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use handlebars::Handlebars;
 
 use crate::error;
+use crate::config;
 use crate::fs;
 
 fn get_registry_name<'a>(base: &PathBuf, path: &'a PathBuf, strip_ext: &str) -> error::Result<&'a str> {
@@ -100,56 +101,23 @@ fn load_template_directory(registry: &mut Handlebars<'_>, directory: &PathBuf) -
 }
 
 #[derive(Debug)]
-pub struct Builder {
-    templates: Option<PathBuf>,
-    dev_mode: bool,
-}
-
-impl Builder {
-    pub fn set_templates<P>(&mut self, path: P) -> &mut Self
-    where
-        P: Into<PathBuf>
-    {
-        self.templates = Some(path.into());
-        self
-    }
-
-    pub fn set_dev_mode(&mut self, value: bool) -> &mut Self {
-        self.dev_mode = value;
-        self
-    }
-
-    pub fn build(self) -> error::Result<Templates> {
-        let cwd = std::env::current_dir()?;
-
-        let templates = fs::validate_dir(
-            "templates",
-            &cwd,
-            self.templates.unwrap_or("templates".into())
-        )?;
-
-        let mut registry = Handlebars::new();
-        registry.set_dev_mode(self.dev_mode);
-
-        load_template_directory(&mut registry, &templates)?;
-
-        Ok(Templates {
-            registry: registry
-        })
-    }
-}
-
-#[derive(Debug)]
 pub struct Templates {
     registry: Handlebars<'static>,
 }
 
 impl Templates {
-    pub fn builder() -> Builder {
-        Builder {
-            templates: None,
-            dev_mode: false,
-        }
+    pub fn from_config(config: &config::Config) -> error::Result<Self> {
+        let mut registry = Handlebars::new();
+        registry.set_dev_mode(config.settings.templates.dev_mode);
+
+        load_template_directory(
+            &mut registry, 
+            &config.settings.templates.directory
+        )?;
+
+        Ok(Templates {
+            registry,
+        })
     }
 
     #[allow(dead_code)]

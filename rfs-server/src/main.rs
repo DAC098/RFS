@@ -29,8 +29,6 @@ fn main() {
         .try_init()
         .expect("failed to initialize global tracing subscriber");
 
-    let matches = config::CliArgs::parse();
-
     let rt = match Builder::new_multi_thread()
         .enable_io()
         .enable_time()
@@ -47,7 +45,7 @@ fn main() {
         "started tokio runtime"
     );
 
-    if let Err(err) = rt.block_on(init(matches)) {
+    if let Err(err) = rt.block_on(init()) {
         match err.into_parts() {
             (kind, Some(msg), Some(err)) => {
                 tracing::event!(
@@ -85,12 +83,11 @@ fn main() {
     }
 }
 
-async fn init(arg: config::CliArgs) -> error::Result<()> {
+async fn init() -> error::Result<()> {
     use axum::routing::{get, post};
 
-    let config = config::get_config(arg)?;
-    let sock_addr = config.socket;
-    let state = config.state;
+    let config = config::get_config()?;
+    let state = state::Shared::from_config(&config)?;
 
     let router = Router::new()
         .route(
@@ -199,6 +196,7 @@ async fn init(arg: config::CliArgs) -> error::Result<()> {
         )
         .with_state(Arc::new(state));
 
+    let sock_addr = config.settings.listen_socket();
     let server = hyper::Server::try_bind(&sock_addr)
         .map_err(|error| error::Error::new()
             .message(format!("failed to bind to socket address: {:#?}", sock_addr))

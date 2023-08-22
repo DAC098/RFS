@@ -4,68 +4,13 @@ use std::sync::Arc;
 use deadpool_postgres::Pool;
 
 use crate::error;
+use crate::config;
 use crate::template;
-use crate::fs;
 use crate::sec;
+use crate::fs;
 
 pub mod ids;
 pub mod db;
-
-/// builder for creating the [`Shared`] struct
-#[derive(Debug)]
-pub struct SharedBuilder {
-    primary_id: Option<i64>,
-    assets: Option<PathBuf>,
-    pg_options: db::Builder,
-    templates: template::state::Builder,
-    sec: sec::state::Builder,
-}
-
-impl SharedBuilder {
-    pub fn templates(&mut self) -> &mut template::state::Builder {
-        &mut self.templates
-    }
-
-    pub fn sec(&mut self) -> &mut sec::state::Builder {
-        &mut self.sec
-    }
-
-    pub fn pg_options(&mut self) -> &mut db::Builder {
-        &mut self.pg_options
-    }
-
-    pub fn set_primary_id(&mut self, primary: i64) -> &mut Self {
-        self.primary_id = Some(primary);
-        self
-    }
-
-    pub fn build(self) -> error::Result<Shared> {
-        let cwd = std::env::current_dir()?;
-
-        let assets = fs::validate_dir(
-            "assets",
-            &cwd,
-            self.assets.unwrap_or("assets".into())
-        )?;
-
-        let pages = fs::validate_dir(
-            "pages",
-            &cwd,
-            "pages"
-        )?;
-
-        let primary_id = self.primary_id.unwrap_or(1);
-
-        Ok(Shared {
-            assets,
-            pages,
-            pool: self.pg_options.build()?,
-            templates: self.templates.build()?,
-            sec: self.sec.build()?,
-            ids: ids::Ids::new(primary_id)?,
-        })
-    }
-}
 
 #[derive(Debug)]
 pub struct Shared {
@@ -80,14 +25,15 @@ pub struct Shared {
 pub type ArcShared = Arc<Shared>;
 
 impl Shared {
-    pub fn builder() -> SharedBuilder {
-        SharedBuilder {
-            primary_id: None,
-            assets: None,
-            pg_options: db::Builder::new(),
-            templates: template::state::Templates::builder(),
-            sec: sec::state::Sec::builder(),
-        }
+    pub fn from_config(config: &config::Config) -> error::Result<Shared> {
+        Ok(Shared {
+            assets: PathBuf::new(),
+            pages: PathBuf::new(),
+            pool: db::from_config(config)?,
+            templates: template::state::Templates::from_config(config)?,
+            sec: sec::state::Sec::from_config(config)?,
+            ids: ids::Ids::new(config.settings.id)?
+        })
     }
 
     pub fn assets(&self) -> &PathBuf {

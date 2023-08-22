@@ -1,224 +1,318 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::net::{SocketAddr, IpAddr};
+use std::default::Default;
 
 use clap::Parser;
 
 use crate::error;
-use crate::sec;
 use crate::state;
 
-mod file;
+pub mod shape;
+
+pub type Kdf = hkdf::Hkdf<sha3::Sha3_512>;
+
+pub struct Config {
+    pub settings: Settings,
+    pub kdf: Kdf,
+}
+
+#[derive(Debug, Parser)]
+#[command(author, version, about, long_about = None)]
+struct CliArgs {
+    /// a config path or directory to load file from.
+    #[arg(long)]
+    config: Vec<PathBuf>
+}
 
 #[derive(Debug)]
-pub struct Config {
-    pub socket: SocketAddr,
-    pub state: state::Shared,
+pub struct Assets {
+    pub files: HashMap<PathBuf, PathBuf>,
+    pub directories: HashMap<PathBuf, PathBuf>,
 }
 
-#[derive(Parser, Debug)]
-#[command(author, version, version, about, long_about = None)]
-pub struct CliArgs {
-    /// the config file to load
-    #[arg(long)]
-    pub config: Option<PathBuf>,
+impl Assets {
+    fn try_default() -> error::Result<Self> {
+        Ok(Assets {
+            files: HashMap::new(),
+            directories: HashMap::new(),
+        })
+    }
 
-    /// id of the server
-    #[arg(long)]
-    pub id: Option<i64>,
+    fn merge(&mut self, assets: shape::Assets) -> error::Result<()> {
+        if let Some(files) = assets.files {
+            for (key, value) in files {
+                self.files.insert(key, value);
+            }
+        }
 
-    /// the directory that will store data for the server
-    #[arg(long)]
-    pub data: Option<PathBuf>,
+        if let Some(directories) = assets.directories {
+            for (key, value) in directories {
+                self.directories.insert(key, value);
+            }
+        }
 
-    /// ip address to bind the server to
-    #[arg(short, long)]
-    pub ip: Option<String>,
-
-    /// port for the server to listen on
-    #[arg(short, long)]
-    pub port: Option<u16>,
-
-    /// specifies a file that the server will provide, publicly available
-    #[arg(long)]
-    pub assets_file: Vec<String>,
-
-    /// specifies a directory that the server will provide, publicly available
-    #[arg(long)]
-    pub assets_directory: Vec<String>,
-
-    /// specified the directory to load handlebars templates from
-    #[arg(long)]
-    pub templates_directory: Option<PathBuf>,
-
-    /// enabled dev mode for templates
-    #[arg(long)]
-    pub templates_dev_mode: bool,
-
-    /// postgres username for connecting to database
-    #[arg(long)]
-    pub db_user: Option<String>,
-
-    /// postgres user password for connecting to database
-    #[arg(long)]
-    pub db_password: Option<String>,
-
-    /// postgres host address for database
-    #[arg(long)]
-    pub db_host: Option<String>,
-
-    /// postgres port for connecting to host
-    #[arg(long)]
-    pub db_port: Option<u16>,
-
-    /// postgres database name
-    #[arg(long)]
-    pub db_dbname: Option<String>,
-
-    /// hashing algorithm to use for session key
-    #[arg(long)]
-    pub sec_session_hash: Option<sec::state::SessionHash>,
-
-    /// inidicates that the session cookie should only be available in a secure context
-    #[arg(long)]
-    pub sec_session_secure: bool,
+        Ok(())
+    }
 }
 
-pub fn get_config(arg: CliArgs) -> error::Result<Config> {
-    let mut state_builder = state::Shared::builder();
-    let config = if let Some(file_path) = arg.config {
-        file::load(file_path.clone())?
-    } else {
-        file::Root::default()
-    };
+#[derive(Debug)]
+pub struct Templates {
+    pub dev_mode: bool,
+    pub directory: PathBuf,
+}
 
-    if let Some(id) = config.id {
-        state_builder.set_primary_id(id);
+impl Templates {
+    fn try_default() -> error::Result<Self> {
+        let cwd = std::env::current_dir()?;
+
+        Ok(Templates {
+            dev_mode: false,
+            directory: cwd.join("templates"),
+        })
     }
 
-    if let Some(id) = arg.id {
-        state_builder.set_primary_id(id);
+    fn merge(&mut self, templates: shape::Templates) -> error::Result<()> {
+        if let Some(dir) = templates.directory {
+            self.directory = dir;
+        }
+
+        if let Some(dev_mode) = templates.dev_mode {
+            self.dev_mode = dev_mode;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct Db {
+    pub user: String,
+    pub password: Option<String>,
+    pub host: String,
+    pub port: u16,
+    pub dbname: String,
+}
+
+impl Db {
+    fn try_default() -> error::Result<Self> {
+        Ok(Db {
+            user: "postgres".into(),
+            password: None,
+            host: "localhost".into(),
+            port: 5432,
+            dbname: "rfs".into(),
+        })
     }
 
-    {
-        let builder = state_builder.templates();
-
-        if let Some(config_templates) = config.templates {
-            if let Some(path) = config_templates.directory {
-                builder.set_templates(path);
-            }
-
-            if let Some(flag) = config_templates.dev_mode {
-                builder.set_dev_mode(flag);
-            }
+    fn merge(&mut self, db: shape::Db) -> error::Result<()> {
+        if let Some(user) = db.user {
+            self.user = user;
         }
 
-        if let Some(path) = arg.templates_directory {
-            builder.set_templates(path);
+        self.password = db.password;
+
+        if let Some(host) = db.host {
+            self.host = host;
         }
 
-        if arg.templates_dev_mode {
-            builder.set_dev_mode(true);
+        if let Some(port) = db.port {
+            self.port = port;
+        }
+
+        if let Some(dbname) = db.dbname {
+            self.dbname = dbname;
+        }
+
+        Ok(())
+    }
+}
+
+pub mod sec {
+    use std::default::Default;
+
+    use crate::error;
+    use super::shape;
+
+    #[derive(Debug)]
+    pub enum Hash {
+        Blake3,
+        HS256,
+        HS384,
+        HS512,
+    }
+
+    #[derive(Debug)]
+    pub struct Session {
+        pub hash: Hash,
+        pub secure: bool
+    }
+
+    impl Session {
+        pub(super) fn try_default() -> error::Result<Self> {
+            Ok(Session {
+                hash: Hash::Blake3,
+                secure: false
+            })
+        }
+
+        pub(super) fn merge(&mut self, session: shape::sec::Session) -> error::Result<()> {
+            if let Some(hash) = session.hash {
+                self.hash = match hash {
+                    shape::sec::Hash::Blake3 => Hash::Blake3,
+                    shape::sec::Hash::HS256 => Hash::HS256,
+                    shape::sec::Hash::HS384 => Hash::HS384,
+                    shape::sec::Hash::HS512 => Hash::HS512,
+                };
+            }
+
+            if let Some(secure) = session.secure {
+                self.secure = secure;
+            }
+
+            Ok(())
         }
     }
 
-    {
-        let pg_options = state_builder.pg_options();
+    #[derive(Debug)]
+    pub enum Secrets {
+        Local {}
+    }
 
-        if let Some(db) = config.db {
-            if let Some(user) = db.user {
-                pg_options.set_user(user);
-            }
-
-            if let Some(password) = db.password {
-                pg_options.set_password(password);
-            }
-
-            if let Some(host) = db.host {
-                pg_options.set_host(host);
-            }
-
-            if let Some(port) = db.port {
-                pg_options.set_port(port);
-            }
-
-            if let Some(dbname) = db.dbname {
-                pg_options.set_dbname(dbname);
-            }
+    impl Secrets {
+        pub(super) fn try_default() -> error::Result<Self> {
+            Ok(Secrets::Local {})
         }
 
-        if let Some(user) = arg.db_user {
-            pg_options.set_user(user);
-        }
-
-        if let Some(password) = arg.db_password {
-            pg_options.set_password(password);
-        }
-
-        if let Some(host) = arg.db_host {
-            pg_options.set_host(host);
-        }
-
-        if let Some(port) = arg.db_port {
-            pg_options.set_port(port);
-        }
-
-        if let Some(dbname) = arg.db_dbname {
-            pg_options.set_dbname(dbname);
+        pub(super) fn merge(&mut self, secrets: shape::sec::Secrets) -> error::Result<()> {
+            Ok(())
         }
     }
 
-    {
-        let sec_builder = state_builder.sec();
-        let sec = config.sec;
-        let session = sec.map(|v| v.session).flatten();
-
-        {
-            let session_builder = sec_builder.session_info();
-
-            if let Some(session) = session {
-                if let Some(session_hash) = session.hash {
-                    session_builder.set_hash(session_hash);
-                }
-
-                if let Some(secure) = session.secure {
-                    session_builder.set_secure(secure);
-                }
-            }
-
-            if let Some(session_hash) = arg.sec_session_hash {
-                session_builder.set_hash(session_hash);
-            }
-
-            if arg.sec_session_secure {
-                session_builder.set_secure(true);
-            }
-        }
+    #[derive(Debug)]
+    pub struct Sec {
+        pub session: Session,
+        pub secrets: Secrets
     }
 
-    let port = arg.port.unwrap_or(config.port.unwrap_or(0));
-    let ip = if let Some(ip) = arg.ip {
-        IpAddr::from_str(&ip)
-            .map_err(|_| error::Error::new()
-                .kind("InvalidIp")
-                .message("invalid ip address provided"))?
-    } else if let Some(ip) = config.ip {
-        IpAddr::from_str(&ip)
-            .map_err(|_| error::Error::new()
-                .kind("InvalidIp")
-                .message("invalid ip address provided from config"))?
-    } else {
-        IpAddr::from([0,0,0,0])
-    };
+    impl Sec {
+        pub(super) fn try_default() -> error::Result<Self> {
+            Ok(Sec {
+                session: Session::try_default()?,
+                secrets: Secrets::try_default()?,
+            })
+        }
 
-    tracing::debug!("shared state builder {:#?}", state_builder);
+        pub(super) fn merge(&mut self, sec: shape::Sec) -> error::Result<()> {
+            if let Some(session) = sec.session {
+                self.session.merge(session)?;
+            }
 
-    let rtn = Config {
-        state: state_builder.build()?,
-        socket: SocketAddr::new(ip, port)
-    };
+            if let Some(secrets) = sec.secrets {
+                self.secrets.merge(secrets)?;
+            }
 
-    tracing::debug!("{:#?}", rtn);
+            Ok(())
+        }
+    }
+}
 
-    Ok(rtn)
+pub use sec::Sec;
+
+#[derive(Debug)]
+pub struct Settings {
+    pub id: i64,
+    pub data: PathBuf,
+    pub master_key: String,
+    pub ip: String,
+    pub port: u16,
+    pub templates: Templates,
+    pub assets: Assets,
+    pub sec: Sec,
+    pub db: Db,
+}
+
+impl Settings {
+    fn try_default() -> error::Result<Self> {
+        let cwd = std::env::current_dir()?;
+
+        Ok(Settings {
+            id: 1,
+            data: cwd.join("data"),
+            master_key: "rfs_master_key_secret".into(),
+            ip: "0.0.0.0".into(),
+            port: 8000,
+            templates: Templates::try_default()?,
+            assets: Assets::try_default()?,
+            sec: Sec::try_default()?,
+            db: Db::try_default()?,
+        })
+    }
+
+    fn merge(&mut self, settings: shape::Settings) -> error::Result<()> {
+        if let Some(id) = settings.id {
+            self.id = id;
+        }
+
+        if let Some(data) = settings.data {
+            self.data = data;
+        }
+
+        if let Some(master_key) = settings.master_key {
+            self.master_key = master_key;
+        }
+
+        if let Some(ip) = settings.ip {
+            self.ip = ip;
+        }
+
+        if let Some(port) = settings.port {
+            self.port = port;
+        }
+
+        if let Some(templates) = settings.templates {
+            self.templates.merge(templates)?;
+        }
+
+        if let Some(assets) = settings.assets {
+            self.assets.merge(assets)?;
+        }
+
+        if let Some(sec) = settings.sec {
+            self.sec.merge(sec)?;
+        }
+
+        if let Some(db) = settings.db {
+            self.db.merge(db)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn listen_socket(&self) -> SocketAddr {
+        let ip = IpAddr::from_str(&self.ip).unwrap();
+
+        SocketAddr::new(ip, self.port)
+    }
+}
+
+pub fn get_config() -> error::Result<Config> {
+    let settings = Settings::try_default()?;
+    let args = CliArgs::parse();
+
+    for config_path in args.config {
+        let loaded = shape::from_file(&config_path)?;
+
+        settings.merge(shape::validate(&config_path, loaded)?);
+    }
+
+    tracing::debug!("{:#?}", settings);
+
+    let kdf = hkdf::Hkdf::<sha3::Sha3_512>::new(None, settings.master_key.as_bytes());
+
+    Ok(Config {
+        settings,
+        kdf
+    })
 }
