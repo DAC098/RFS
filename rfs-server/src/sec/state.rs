@@ -39,7 +39,7 @@ impl SessionInfo {
             .message("failed to expand session key for secrets manager"))?;
 
         let options = secrets::Options {
-            path: config.settings.data.join("sec/secrets/session"),
+            path: config.settings.data.join("sec/secrets/session.data"),
             key: session_key
         };
 
@@ -90,7 +90,7 @@ impl Sec {
             .message("failed to expand passwords key for secrets manager"))?;
 
         let options = secrets::Options {
-            path: config.settings.data.join("sec/secrets/password"),
+            path: config.settings.data.join("sec/secrets/passwords.data"),
             key: password_key
         };
 
