@@ -313,3 +313,5 @@ simple_from!(argon2::Error);
 simple_from!(rust_otp::error::Error);
 
 simple_from!(snowcloud_cloud::error::Error);
+
+simple_from!(rust_kms_local::local::Error);

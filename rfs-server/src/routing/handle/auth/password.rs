@@ -7,6 +7,7 @@ use crate::net::{self, error};
 use crate::state::ArcShared;
 use crate::sec::authn::initiator::Initiator;
 use crate::sec::authn::password::Password;
+use crate::sec::secrets::empty_versioned_key;
 
 pub async fn post(
     State(state): State<ArcShared>,
@@ -56,20 +57,26 @@ pub async fn post(
                 .message("provided password is invalid"));
         }
 
-        let latest_secret = state.auth().secrets().latest()?;
+        let latest_pepper = state.auth()
+            .peppers()
+            .latest_version()?
+            .unwrap_or(empty_versioned_key());
         let transaction = conn.transaction().await?;
 
-        current.update(&transaction, json.updated, &latest_secret).await?;
+        current.update(&transaction, json.updated, &latest_pepper).await?;
 
         transaction.commit().await?;
     } else {
         let transaction = conn.transaction().await?;
-        let latest = state.auth().secrets().latest()?;
+        let latest_pepper = state.auth()
+            .peppers()
+            .latest_version()?
+            .unwrap_or(empty_versioned_key());
 
         Password::builder(
             initiator.user().id().clone(),
             json.updated,
-            &latest
+            &latest_pepper
         )
             .build(&transaction)
             .await?;

@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use rfs_lib::sec::chacha;
 use serde::Deserialize;
+use rust_kms_local::fs::Wrapper;
 
 use crate::error;
 use crate::config;
@@ -37,13 +38,16 @@ impl SessionInfo {
             .kind("KDFExpandFailed")
             .message("failed to expand session key for secrets manager"))?;
 
-        let manager = secrets::Manager::new(
-            config.settings.data.join("sec/secrets/session"),
-            session_key
-        ).map_err(|e| error::Error::new()
-            .kind("SessionManagerFailed")
-            .message("failed loading data for session secrets manager")
-            .source(e))?;
+        let options = secrets::Options {
+            path: config.settings.data.join("sec/secrets/session"),
+            key: session_key
+        };
+
+        let manager = secrets::Manager::load(options)
+            .map_err(|e| error::Error::new()
+                .kind("SessionManagerFailed")
+                .message("failed loading data for session secrets manager")
+                .source(e))?;
 
         let key = SessionKey::Blake3([0; 32]);
 
@@ -85,13 +89,16 @@ impl Sec {
             .kind("KDFExpandFailed")
             .message("failed to expand passwords key for secrets manager"))?;
 
-        let peppers = secrets::Manager::new(
-            config.settings.data.join("sec/secrets/password"),
-            password_key
-        ).map_err(|e| error::Error::new()
-            .kind("PasswordManagerFailed")
-            .message("failed loading data for password secrets manager")
-            .source(e))?;
+        let options = secrets::Options {
+            path: config.settings.data.join("sec/secrets/password"),
+            key: password_key
+        };
+
+        let peppers = secrets::Manager::load(options)
+            .map_err(|e| error::Error::new()
+                .kind("PasswordManagerFailed")
+                .message("failed loading data for password secrets manager")
+                .source(e))?;
 
         Ok(Sec {
             session_info: SessionInfo::from_config(config)?,

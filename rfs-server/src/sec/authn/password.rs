@@ -46,7 +46,7 @@ impl From<PasswordError> for net::error::Error {
 pub struct PasswordBuilder<'a> {
     user_id: ids::UserId,
     password: String,
-    secret: &'a secrets::Key,
+    secret: &'a secrets::VersionedKey,
 }
 
 impl<'a> PasswordBuilder<'a> {
@@ -93,7 +93,7 @@ impl Password {
     pub fn builder<'a>(
         user_id: ids::UserId,
         password: String,
-        secret: &'a secrets::Key,
+        secret: &'a secrets::VersionedKey,
     ) -> PasswordBuilder<'a> {
         PasswordBuilder {
             user_id,
@@ -152,7 +152,7 @@ impl Password {
         &mut self,
         conn: &impl GenericClient,
         password: P,
-        secret: &secrets::Key
+        secret: &secrets::VersionedKey
     ) -> Result<(), PasswordError>
     where
         P: AsRef<[u8]>

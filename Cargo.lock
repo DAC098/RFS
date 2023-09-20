@@ -1568,6 +1568,7 @@ dependencies = [
  "rand",
  "rfs-lib",
  "rust-argon2",
+ "rust-kms-local",
  "rust-otp",
  "serde",
  "serde_json",
@@ -1617,6 +1618,23 @@ dependencies = [
  "blake2b_simd",
  "constant_time_eq 0.1.5",
  "crossbeam-utils",
+]
+
+[[package]]
+name = "rust-kms-core"
+version = "0.1.0"
+source = "git+https://github.com/dac098/rust-kms#8f5664c4539e79cbc009a700cda06c6af333ce90"
+
+[[package]]
+name = "rust-kms-local"
+version = "0.1.0"
+source = "git+https://github.com/dac098/rust-kms#8f5664c4539e79cbc009a700cda06c6af333ce90"
+dependencies = [
+ "bincode",
+ "chacha20poly1305",
+ "rand",
+ "rust-kms-core",
+ "serde",
 ]
 
 [[package]]

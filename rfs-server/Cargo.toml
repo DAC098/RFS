@@ -33,6 +33,7 @@ hmac = { version = "0.12.1" }
 hkdf = { version = "0.12.3" }
 chacha20poly1305 = { version = "0.10.1" }
 rust-otp = { git = "https://github.com/dac098/rust-otp" }
+rust-kms-local = { git = "https://github.com/dac098/rust-kms", features = ["rand", "crypto"] }
 
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7.8", features = ["codec", "io"] }
