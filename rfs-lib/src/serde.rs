@@ -1,14 +1,17 @@
 use std::fmt;
 use std::str::FromStr;
+use std::marker::PhantomData;
+use core::convert::TryFrom;
+
+use serde::{ser, de};
 
 use mime::Mime;
-use serde::de;
 use serde::Deserialize;
 
 pub fn nested_option<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
 where
     D: de::Deserializer<'de>,
-    T: Deserialize<'de>,
+    T: de::Deserialize<'de>,
 {
     Ok(Some(Deserialize::deserialize(deserializer)?))
 }
@@ -105,6 +108,103 @@ pub mod mime_opt_str {
         D: de::Deserializer<'de>
     {
         deserializer.deserialize_option(OptionMimeVisitor)
+    }
+}
+
+pub struct StringVisitor<F> {
+    phantom: PhantomData<F>
+}
+
+impl<'de, F> de::Visitor<'de> for StringVisitor<F>
+where
+    F: FromStr
+{
+    type Value = F;
+
+    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "non empty integer string within the valid range of the Id")
+    }
+
+    fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        let Ok(num) = FromStr::from_str(s) else {
+            return Err(E::invalid_value(de::Unexpected::Str(s), &self));
+        };
+
+        Ok(num)
+    }
+}
+
+/*
+pub struct OptionStringVisitor<F> {
+    phantom: PhantomData<F>
+}
+
+impl<'de, F> de::Visitor<'de> for OptionStringVisitor<F>
+where
+    F: FromStr
+{
+    type Value = Option<F>;
+
+    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "non empty integer string with the valid range of the Id")
+    }
+
+    fn visit_some<D>(self, d: D) -> Result<Self::Value, D::Error>
+    where
+        D: de::Deserializer<'de>
+    {
+        d.deserialize_str(StringVisitor {
+            phantom: PhantomData
+        }).map(Some)
+    }
+
+    fn visit_none<E>(self) -> Result<Self::Value, E>
+    where
+        E: de::Error
+    {
+        Ok(None)
+    }
+
+    fn visit_unit<E>(self) -> Result<Self::Value, E>
+    where
+        E: de::Error
+    {
+        Ok(None)
+    }
+}
+*/
+
+pub mod from_to_str {
+    use std::marker::PhantomData;
+    use std::str::FromStr;
+
+    use serde::{ser, de};
+
+    use super::StringVisitor;
+
+    /// serializes a given snowflake to a string
+    pub fn serialize<F, S>(v: &F, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        F: ToString,
+        S: ser::Serializer
+    {
+        let v_str = v.to_string();
+
+        serializer.serialize_str(v_str.as_str())
+    }
+
+    /// deserializes a given string to a snowflake
+    pub fn deserialize<'de, F, D>(deserializer: D) -> Result<F, D::Error>
+    where
+        F: FromStr,
+        D: de::Deserializer<'de>
+    {
+        deserializer.deserialize_str(StringVisitor {
+            phantom: PhantomData
+        })
     }
 }
 

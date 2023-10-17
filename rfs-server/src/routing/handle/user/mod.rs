@@ -8,7 +8,7 @@ use crate::net;
 use crate::net::error;
 use crate::state::ArcShared;
 use crate::sec::authn::initiator;
-use crate::util::sql;
+use crate::sql;
 use crate::user;
 
 pub mod user_id;

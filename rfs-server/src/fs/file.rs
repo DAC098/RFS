@@ -8,7 +8,7 @@ use chrono::{DateTime, Utc};
 
 use crate::storage;
 use crate::tags;
-use crate::util::sql;
+use crate::sql;
 
 //use super::consts;
 use super::traits;

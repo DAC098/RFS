@@ -11,7 +11,7 @@ rfs-lib = { path = "../rfs-lib" }
 clap = { version = "4.3.0", features = ["derive"] }
 futures = { version = "0.3" }
 pin-project = { version = "1" }
-chrono = { version = "0.4.24" }
+chrono = { version = "0.4.31" }
 base64 = { version = "0.21.0" }
 
 ratatui = { version = "0.21.0" }

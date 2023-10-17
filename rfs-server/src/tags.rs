@@ -6,7 +6,7 @@ use tokio_postgres::{RowStream, Error as PgError};
 use tokio_postgres::types::ToSql;
 use deadpool_postgres::GenericClient;
 
-use crate::util::sql;
+use crate::sql;
 
 pub type TagMap = HashMap<String, Option<String>>;
 

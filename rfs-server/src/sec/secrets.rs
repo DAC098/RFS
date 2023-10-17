@@ -1,19 +1,72 @@
-use rust_kms_local::fs::encrypted;
-use rust_kms_local::local::VersionedKey as KmsVersionedKey;
+use std::sync::RwLock;
+use std::fmt;
 
-pub use encrypted::Options;
+use rust_lib_file_sys::wrapper::Encrypted;
+use rust_lib_history::versioned::Versioned;
+use rust_lib_history::list::fixed::Fixed;
+use rand::RngCore;
+use serde::{Serialize, Deserialize};
 
-pub type Key = rust_kms_local::Key<[u8; 32]>;
-pub type VersionedKey = KmsVersionedKey<Key>;
-pub type Manager = encrypted::Encrypted<Key>;
+pub const KEY_DATA_LEN: usize = 32;
 
-pub fn empty_key() -> Key {
-    let mut builder = Key::builder([0; 32]);
-    builder.set_created(0);
+pub type KeyData = [u8; KEY_DATA_LEN];
+pub type PepperManager = Encrypted<RwLock<Versioned<Key>>>;
+pub type SessionManager = Encrypted<RwLock<Fixed<Key, 100>>>;
 
-    builder.build().unwrap()
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Key {
+    data: KeyData,
+    created: u64
 }
 
-pub fn empty_versioned_key() -> VersionedKey {
-    KmsVersionedKey(0, empty_key())
+impl Key {
+    pub fn rand_key_data() -> Result<KeyData, rand::Error> {
+        let mut bytes = [0; KEY_DATA_LEN];
+
+        rand::rngs::OsRng.try_fill_bytes(&mut bytes)?;
+
+        Ok(bytes)
+    }
+
+    pub fn new(data: KeyData, created: u64) -> Key {
+        Key {
+            data,
+            created
+        }
+    }
+
+    pub fn data(&self) -> &KeyData {
+        &self.data
+    }
+
+    pub fn created(&self) -> &u64 {
+        &self.created
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        self.data.as_slice()
+    }
+}
+
+impl Clone for Key {
+    fn clone(&self) -> Self {
+        Key {
+            data: self.data.clone(),
+            created: self.created
+        }
+    }
+}
+
+impl Copy for Key {}
+
+impl std::convert::AsRef<[u8]> for Key {
+    fn as_ref(&self) -> &[u8] {
+        &self.data.as_slice()
+    }
+}
+
+impl std::convert::AsRef<[u8; KEY_DATA_LEN]> for Key {
+    fn as_ref(&self) -> &[u8; KEY_DATA_LEN] {
+        &self.data
+    }
 }

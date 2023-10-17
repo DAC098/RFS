@@ -7,7 +7,7 @@ use tokio_postgres::Error as PgError;
 use deadpool_postgres::GenericClient;
 
 use crate::storage;
-use crate::util::sql;
+use crate::sql;
 use crate::tags;
 
 use super::traits;

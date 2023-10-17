@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use tokio_postgres::Error as PgError;
 use deadpool_postgres::GenericClient;
 
-use crate::util::sql;
+use crate::sql;
 use crate::tags;
 
 pub mod fs;

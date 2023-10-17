@@ -290,18 +290,17 @@ dependencies = [
 
 [[package]]
 name = "chrono"
-version = "0.4.26"
+version = "0.4.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec837a71355b28f6556dbd569b37b3f363091c0bd4b2e735674521b4c5fd9bc5"
+checksum = "7f2c685bad3eb3d45a01354cedb7d5faa66194d1d58ba6e267a8de788f79db38"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
  "js-sys",
  "num-traits",
  "serde",
- "time 0.1.45",
  "wasm-bindgen",
- "winapi",
+ "windows-targets",
 ]
 
 [[package]]
@@ -382,7 +381,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e859cd57d0710d9e06c381b550c06e76992472a8c6d527aecd2fc673dcc231fb"
 dependencies = [
  "percent-encoding",
- "time 0.3.22",
+ "time",
  "version_check",
 ]
 
@@ -398,7 +397,7 @@ dependencies = [
  "publicsuffix",
  "serde",
  "serde_json",
- "time 0.3.22",
+ "time",
  "url",
 ]
 
@@ -414,7 +413,7 @@ dependencies = [
  "publicsuffix",
  "serde",
  "serde_json",
- "time 0.3.22",
+ "time",
  "url",
 ]
 
@@ -581,6 +580,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4443176a9f2c162692bd3d352d745ef9413eec5782a80d8fd6f8a1ac692a07f7"
 
 [[package]]
+name = "file-sys"
+version = "0.1.0"
+source = "git+https://github.com/DAC098/rust-lib.git#8b20e3a7f888e2ae3f92b7996149c42e384d1b3e"
+dependencies = [
+ "bincode",
+ "chacha20poly1305",
+ "serde",
+ "tokio",
+]
+
+[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -702,7 +712,7 @@ checksum = "be4136b2a15dd319360be1c07d9933517ccf0be8f16bf62a3bee4f0d618df427"
 dependencies = [
  "cfg-if",
  "libc",
- "wasi 0.11.0+wasi-snapshot-preview1",
+ "wasi",
 ]
 
 [[package]]
@@ -770,6 +780,14 @@ name = "hermit-abi"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fed44880c466736ef9a5c5b5facefb5ed0785676d0c02d612db14e54f0d84286"
+
+[[package]]
+name = "history"
+version = "0.1.0"
+source = "git+https://github.com/DAC098/rust-lib.git#8b20e3a7f888e2ae3f92b7996149c42e384d1b3e"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "hkdf"
@@ -1083,7 +1101,7 @@ checksum = "927a765cd3fc26206e66b296465fa9d3e5ab003e651c1b3c060e7956d96b19d2"
 dependencies = [
  "libc",
  "log",
- "wasi 0.11.0+wasi-snapshot-preview1",
+ "wasi",
  "windows-sys",
 ]
 
@@ -1557,8 +1575,10 @@ dependencies = [
  "data-encoding",
  "deadpool-postgres",
  "email_address",
+ "file-sys",
  "futures",
  "handlebars",
+ "history",
  "hkdf",
  "hmac",
  "hyper",
@@ -1623,12 +1643,12 @@ dependencies = [
 [[package]]
 name = "rust-kms-core"
 version = "0.1.0"
-source = "git+https://github.com/dac098/rust-kms#8f5664c4539e79cbc009a700cda06c6af333ce90"
+source = "git+https://github.com/dac098/rust-kms#3735ad7054b7d64a92becba335ffe52e36303436"
 
 [[package]]
 name = "rust-kms-local"
 version = "0.1.0"
-source = "git+https://github.com/dac098/rust-kms#8f5664c4539e79cbc009a700cda06c6af333ce90"
+source = "git+https://github.com/dac098/rust-kms#3735ad7054b7d64a92becba335ffe52e36303436"
 dependencies = [
  "bincode",
  "chacha20poly1305",
@@ -1954,17 +1974,6 @@ checksum = "3fdd6f064ccff2d6567adcb3873ca630700f00b5ad3f060c25b5dcfd9a4ce152"
 dependencies = [
  "cfg-if",
  "once_cell",
-]
-
-[[package]]
-name = "time"
-version = "0.1.45"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b797afad3f312d1c66a56d11d0316f916356d11bd158fbc6ca6389ff6bf805a"
-dependencies = [
- "libc",
- "wasi 0.10.0+wasi-snapshot-preview1",
- "winapi",
 ]
 
 [[package]]
@@ -2301,12 +2310,6 @@ dependencies = [
  "log",
  "try-lock",
 ]
-
-[[package]]
-name = "wasi"
-version = "0.10.0+wasi-snapshot-preview1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a143597ca7c7793eff794def352d41792a93c481eb1042423ff7ff72ba2c31f"
 
 [[package]]
 name = "wasi"

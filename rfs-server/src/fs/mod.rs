@@ -6,7 +6,7 @@ use deadpool_postgres::GenericClient;
 use tokio_postgres::Error as PgError;
 
 use crate::tags;
-use crate::util::sql;
+use crate::sql;
 
 pub mod consts;
 pub mod traits;

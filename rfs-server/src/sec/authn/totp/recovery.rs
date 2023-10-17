@@ -7,7 +7,7 @@ use tokio_postgres::{Error as PgError};
 use deadpool_postgres::GenericClient;
 use rand::RngCore;
 
-use crate::util::sql;
+use crate::sql;
 
 pub const HASH_LEN: usize = 5;
 
@@ -191,7 +191,7 @@ impl Hash {
     where
         V: AsRef<str>
     {
-        self.hash.get_str() == verify.as_ref()
+        self.hash.as_str() == verify.as_ref()
     }
 
     pub async fn update(&mut self, conn: &impl GenericClient) -> Result<bool, PgError> {

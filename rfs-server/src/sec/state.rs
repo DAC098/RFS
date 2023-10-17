@@ -21,7 +21,7 @@ pub enum SessionKey {
 
 #[derive(Debug)]
 pub struct SessionInfo {
-    manager: secrets::Manager,
+    manager: secrets::SessionManager,
     key: SessionKey,
     domain: Option<String>,
     secure: bool,
@@ -38,16 +38,13 @@ impl SessionInfo {
             .kind("KDFExpandFailed")
             .message("failed to expand session key for secrets manager"))?;
 
-        let options = secrets::Options {
-            path: config.settings.data.join("sec/secrets/session.data"),
-            key: session_key
-        };
-
-        let manager = secrets::Manager::load(options)
-            .map_err(|e| error::Error::new()
-                .kind("SessionManagerFailed")
-                .message("failed loading data for session secrets manager")
-                .source(e))?;
+        let manager = secrets::SessionManager::load(
+            config.settings.data.join("sec/secrets/session.data"),
+            session_key
+        ).map_err(|e| error::Error::new()
+            .kind("SessionManagerFailed")
+            .message("failed loading data for session secrets manager")
+            .source(e))?;
 
         let key = SessionKey::Blake3([0; 32]);
 
@@ -75,7 +72,7 @@ impl SessionInfo {
 #[derive(Debug)]
 pub struct Sec {
     session_info: SessionInfo,
-    peppers: secrets::Manager,
+    peppers: secrets::PepperManager,
 }
 
 impl Sec {
@@ -89,16 +86,13 @@ impl Sec {
             .kind("KDFExpandFailed")
             .message("failed to expand passwords key for secrets manager"))?;
 
-        let options = secrets::Options {
-            path: config.settings.data.join("sec/secrets/passwords.data"),
-            key: password_key
-        };
-
-        let peppers = secrets::Manager::load(options)
-            .map_err(|e| error::Error::new()
-                .kind("PasswordManagerFailed")
-                .message("failed loading data for password secrets manager")
-                .source(e))?;
+        let peppers = secrets::PepperManager::load(
+            config.settings.data.join("sec/secrets/passwords.data"),
+            password_key
+        ).map_err(|e| error::Error::new()
+            .kind("PasswordManagerFailed")
+            .message("failed loading data for password secrets manager")
+            .source(e))?;
 
         Ok(Sec {
             session_info: SessionInfo::from_config(config)?,
@@ -110,11 +104,7 @@ impl Sec {
         &self.session_info
     }
 
-    pub fn secrets(&self) -> &secrets::Manager {
-        &self.peppers
-    }
-
-    pub fn peppers(&self) -> &secrets::Manager {
+    pub fn peppers(&self) -> &secrets::PepperManager {
         &self.peppers
     }
 }

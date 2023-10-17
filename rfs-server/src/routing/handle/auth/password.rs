@@ -6,8 +6,7 @@ use axum::response::IntoResponse;
 use crate::net::{self, error};
 use crate::state::ArcShared;
 use crate::sec::authn::initiator::Initiator;
-use crate::sec::authn::password::Password;
-use crate::sec::secrets::empty_versioned_key;
+use crate::sec::authn::password::{self, Password};
 
 pub async fn post(
     State(state): State<ArcShared>,
@@ -15,6 +14,7 @@ pub async fn post(
     axum::Json(json): axum::Json<actions::auth::CreatePassword>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
+    let peppers = state.sec().peppers().inner();
 
     if !rfs_lib::sec::authn::password_valid(&json.updated) {
         return Err(error::Error::new()
@@ -30,12 +30,7 @@ pub async fn post(
             .message("miss match updated and confirmed"));
     }
 
-    if let Some(mut current) = Password::retrieve(&conn, initiator.user().id()).await? {
-        let Some(secret) = state.auth().secrets().get(current.version())? else {
-            return Err(error::Error::new()
-                .source("password secret version not found. unable to verify user password"));
-        };
-
+    if let Some(current) = Password::retrieve(&conn, initiator.user().id()).await? {
         let Some(given) = json.current else {
             return Err(error::Error::new()
                 .status(StatusCode::UNAUTHORIZED)
@@ -50,36 +45,75 @@ pub async fn post(
                 .message("the current password is an invalid format"));
         };
 
-        if !current.verify(given, &secret)? {
-            return Err(error::Error::new()
-                .status(StatusCode::UNAUTHORIZED)
-                .kind("InvalidPassword")
-                .message("provided password is invalid"));
+        let salt = password::gen_salt()?;
+        let hash;
+        let version;
+
+        {
+            let reader = peppers.read()
+                .map_err(|_| error::Error::new().source("secrets rwlock poisoned"))?;
+
+            let secret = if current.version == 0 {
+                &[]
+            } else {
+                let Some(secret) = reader.get(&current.version) else {
+                    return Err(error::Error::new()
+                        .source("password secret version not found. unable to verify user password"));
+                };
+
+                secret.data().as_slice()
+            };
+
+            if !current.verify(given, secret)? {
+                return Err(error::Error::new()
+                    .status(StatusCode::UNAUTHORIZED)
+                    .kind("InvalidPassword")
+                    .message("provided password is invalid"));
+            }
+
+            if let Some((ver, pepper)) = reader.latest_version() {
+                hash = password::gen_hash(&json.updated, &salt, pepper.data())?;
+                version = *ver;
+            } else {
+                hash = password::gen_hash(&json.updated, &salt, &[])?;
+                version = 0;
+            }
         }
 
-        let latest_pepper = state.auth()
-            .peppers()
-            .latest_version()?
-            .unwrap_or(empty_versioned_key());
         let transaction = conn.transaction().await?;
 
-        current.update(&transaction, json.updated, &latest_pepper).await?;
+        let _ = transaction.execute(
+            "update auth_password set hash = $2, version = $3 where user_id = $1",
+            &[initiator.user().id(), &hash, &(version as i64)]
+        );
 
         transaction.commit().await?;
     } else {
-        let transaction = conn.transaction().await?;
-        let latest_pepper = state.auth()
-            .peppers()
-            .latest_version()?
-            .unwrap_or(empty_versioned_key());
+        let salt = password::gen_salt()?;
+        let version;
+        let hash;
 
-        Password::builder(
-            initiator.user().id().clone(),
-            json.updated,
-            &latest_pepper
-        )
-            .build(&transaction)
-            .await?;
+        {
+            let reader = peppers.read()
+                .map_err(|_| error::Error::new().source("peppers rwlock poisoned"))?;
+
+            if let Some((ver, pepper)) = reader.latest_version() {
+                hash = password::gen_hash(&json.updated, &salt, pepper.data())?;
+                version = *ver;
+            } else {
+                hash = password::gen_hash(&json.updated, &salt, &[])?;
+                version = 0;
+            }
+        }
+
+        let transaction = conn.transaction().await?;
+
+        let _ = transaction.execute(
+            "\
+            insert into auth_password (user_id, version, hash) values
+            ($1, $2, $3)",
+            &[&initiator.user().id(), &(version as i64), &hash]
+        ).await?;
 
         transaction.commit().await?;
     }
@@ -94,16 +128,12 @@ pub async fn delete(
     axum::Json(json): axum::Json<actions::auth::DeletePassword>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
+    let peppers = state.sec().peppers().inner();
 
     if let Some(current) = Password::retrieve(
         &conn,
         initiator.user().id()
     ).await? {
-        let Some(secret) = state.auth().secrets().get(current.version())? else {
-            return Err(error::Error::new()
-                .source("password secret version not found. unable to verify user password"));
-        };
-
         let Some(given) = json.current else {
             return Err(error::Error::new()
                 .status(StatusCode::UNAUTHORIZED)
@@ -111,16 +141,35 @@ pub async fn delete(
                 .message("current password is required"));
         };
 
-        if !current.verify(given, &secret)? {
-            return Err(error::Error::new()
-                .status(StatusCode::UNAUTHORIZED)
-                .kind("InvalidPassword")
-                .message("provided password is invalid"));
+        {
+            let reader = peppers.read()
+                .map_err(|_| error::Error::new().source("peppers rwlock poisoned"))?;
+
+            let secret = if current.version == 0 {
+                &[]
+            } else {
+                let Some(secret) = reader.get(&current.version) else {
+                    return Err(error::Error::new()
+                        .source("password secret version not found. unable to verify user password"));
+                };
+
+                secret.data().as_slice()
+            };
+
+            if !current.verify(given, secret)? {
+                return Err(error::Error::new()
+                    .status(StatusCode::UNAUTHORIZED)
+                    .kind("InvalidPassword")
+                    .message("provided password is invalid"));
+            }
         }
 
         let transaction = conn.transaction().await?;
 
-        current.delete(&transaction).await?;
+        let _ = transaction.execute(
+            "delete from auth_password where user_id = $1",
+            &[initiator.user().id()]
+        ).await?;
 
         transaction.commit().await?;
 

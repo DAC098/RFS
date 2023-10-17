@@ -83,16 +83,6 @@ where
     }
 }
 
-impl HistoryField<String> {
-    pub fn get_str(&self) -> &str {
-        if let Some(v) = self.updated.as_ref() {
-            v.as_str()
-        } else {
-            &self.original.as_str()
-        }
-    }
-}
-
 impl<T> Clone for HistoryField<T>
 where
     T: Clone
@@ -100,16 +90,8 @@ where
     fn clone(&self) -> Self {
         HistoryField {
             original: self.original.clone(),
-            updated: Option::clone(&self.updated)
+            updated: Option::clone(&self.updated),
         }
-    }
-}
-
-impl<T> std::ops::Deref for HistoryField<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        self.get()
     }
 }
 
@@ -134,6 +116,12 @@ where
 {
     fn eq(&self, rhs: &T) -> bool {
         self.get().eq(rhs)
+    }
+}
+
+impl HistoryField<String> {
+    pub fn as_str(&self) -> &str {
+        self.get().as_str()
     }
 }
 

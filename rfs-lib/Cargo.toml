@@ -9,7 +9,7 @@ edition = "2021"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
 mime = { version = "0.3.17" }
-chrono = { version = "0.4.24", features = ["serde"] }
+chrono = { version = "0.4.31", features = ["serde"] }
 email_address = { version = "0.2.4" }
 snowcloud-flake = { git = "https://github.com/DAC098/snowcloud", features = ["serde", "postgres"] }
 

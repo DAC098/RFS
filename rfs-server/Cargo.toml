@@ -12,7 +12,7 @@ clap = { version = "4.3.0", features = ["derive"] }
 lazy_static = { version = "1.4.0" }
 futures = { version = "0.3" }
 pin-project = { version = "1" }
-chrono = { version = "0.4.24", features = ["serde"] }
+chrono = { version = "0.4.31", features = ["serde"] }
 base64 = { version = "0.21.0" }
 data-encoding = { version = "2.4.0" }
 snowcloud-cloud = { git = "https://github.com/DAC098/snowcloud" }
@@ -53,3 +53,13 @@ url = { version = "2.2.2" }
 axum = { version = "0.6.18", features = ["macros", "query"] }
 
 handlebars = { version = "4.3.7" }
+
+[dependencies.rust-lib-history]
+git = "https://github.com/DAC098/rust-lib.git"
+package = "history"
+features = ["serde"]
+
+[dependencies.rust-lib-file-sys]
+git = "https://github.com/DAC098/rust-lib.git"
+package = "file-sys"
+features = ["serde", "binary", "crypto", "tokio"]

@@ -6,7 +6,7 @@ use tokio_postgres::{Error as PgError};
 use deadpool_postgres::GenericClient;
 use rand::RngCore;
 
-use crate::util::sql;
+use crate::sql;
 
 pub mod algo;
 pub mod recovery;
@@ -107,14 +107,14 @@ impl Totp {
     where
         C: AsRef<str>
     {
-        let algo = (*self.algo).clone().into();
-        let secret = (*self.secret).clone();
+        let algo = self.algo.get().clone().into();
+        let secret = self.secret.get().clone();
 
         let settings = rust_otp::TotpSettings {
             algo,
             secret,
-            digits: *self.digits,
-            step: *self.step,
+            digits: *self.digits.get(),
+            step: *self.step.get(),
             window_before: 1,
             window_after: 1,
             now: None,

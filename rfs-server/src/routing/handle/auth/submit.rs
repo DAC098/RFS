@@ -16,6 +16,7 @@ pub async fn post(
     axum::Json(json): axum::Json<actions::auth::SubmitAuth>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
+    let peppers = state.sec().peppers().inner();
 
     let mut session = match initiator::lookup_header_map(state.auth(), &conn, &headers).await {
         Ok(_initiator) => {
@@ -67,16 +68,21 @@ pub async fn post(
                         .source("session required user password but user password was not found"));
                 };
 
-                let Some(secret) = state.auth().secrets().get(user_password.version())? else {
-                    return Err(error::Error::new()
-                        .source("password secret version not found. unable verify user password"));
-                };
+                {
+                    let reader = peppers.read()
+                        .map_err(|_| error::Error::new().source("peppers rwlock poisoned"))?;
 
-                if !user_password.verify(given, &secret)? {
-                    return Err(error::Error::new()
-                        .status(StatusCode::UNAUTHORIZED)
-                        .kind("InvalidPassword")
-                        .message("provided password is invalid"));
+                    let Some(pepper) = reader.get(&user_password.version) else {
+                        return Err(error::Error::new()
+                            .source("password secret version not found. unable verify user password"));
+                    };
+
+                    if !user_password.verify(&given, pepper.data())? {
+                        return Err(error::Error::new()
+                            .status(StatusCode::UNAUTHORIZED)
+                            .kind("InvalidPassword")
+                            .message("provided password is invalid"));
+                    }
                 }
 
                 session.authenticated = true;

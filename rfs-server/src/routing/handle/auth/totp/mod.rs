@@ -26,7 +26,7 @@ pub async fn get(
     };
 
     let rtn = rfs_lib::json::Wrapper::new(rfs_lib::schema::auth::Totp {
-        algo: totp.algo.to_string(),
+        algo: totp.algo.get().to_string(),
         secret: totp.secret.into(),
         digits: totp.digits.into(),
         step: totp.step.into()
@@ -185,7 +185,7 @@ pub async fn patch(
     transaction.commit().await?;
 
     let rtn = rfs_lib::json::Wrapper::new(rfs_lib::schema::auth::Totp {
-        algo: totp.algo.to_string(),
+        algo: totp.algo.get().to_string(),
         secret: totp.secret.into(),
         digits: totp.digits.into(),
         step: totp.step.into()

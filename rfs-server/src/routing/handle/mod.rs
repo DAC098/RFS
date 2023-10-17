@@ -8,6 +8,7 @@ use crate::state::ArcShared;
 
 pub mod ping;
 pub mod auth;
+pub mod sec;
 pub mod storage;
 pub mod fs;
 pub mod user;

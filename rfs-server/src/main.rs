@@ -9,7 +9,8 @@ use tower_http::trace::TraceLayer;
 use tracing_subscriber::{FmtSubscriber, EnvFilter};
 
 mod error;
-mod util;
+mod time;
+mod sql;
 mod net;
 mod fs;
 mod template;
@@ -132,6 +133,26 @@ async fn init() -> error::Result<()> {
             get(routing::handle::auth::totp::recovery::key_id::get)
                 .patch(routing::handle::auth::totp::recovery::key_id::patch)
                 .delete(routing::handle::auth::totp::recovery::key_id::delete)
+        )
+        .route(
+            "/sec/secrets/password",
+            get(routing::okay)
+                .post(routing::okay)
+        )
+        .route(
+            "/sec/secrets/password/{version}",
+            get(routing::okay)
+                .delete(routing::okay)
+        )
+        .route(
+            "/sec/secrets/session",
+            get(routing::okay)
+                .delete(routing::okay)
+        )
+        .route(
+            "/sec/secrets/session/{version}",
+            get(routing::okay)
+                .delete(routing::okay)
         )
         .route(
             "/storage",

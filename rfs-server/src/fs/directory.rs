@@ -7,7 +7,7 @@ use deadpool_postgres::GenericClient;
 
 use crate::storage;
 use crate::tags;
-use crate::util::sql;
+use crate::sql;
 //use crate::net;
 
 use super::traits;
