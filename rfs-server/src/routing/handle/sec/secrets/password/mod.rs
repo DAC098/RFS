@@ -4,12 +4,13 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::extract::State;
 use axum::response::IntoResponse;
 use chrono::{Utc, DateTime};
-use rust_kms_local::fs::Wrapper;
 
 use crate::net::{self, error};
 use crate::state::ArcShared;
 use crate::sec::secrets::Key;
 use crate::time;
+
+pub mod version;
 
 pub async fn get(
     State(state): State<ArcShared>,
@@ -25,7 +26,7 @@ pub async fn get(
         for (version, key) in reader.iter() {
             known_versions.push(schema::sec::PasswordListItem {
                 version: *version,
-                created: DateTime::<Utc>::from_timestamp(*key.created() as i64, 0)
+                created: time::utc_to_chrono_datetime(key.created())
                     .ok_or(error::Error::new()
                         .kind("TimestampError")
                         .message("failed to create timestamp for password key"))?
@@ -41,12 +42,9 @@ pub async fn post(
 ) -> error::Result<impl IntoResponse> {
     let wrapper = state.sec().peppers();
     let data = Key::rand_key_data()?;
-    let created = match time::utc_now() {
-        Some(d) => d.as_secs(),
-        None => {
-            return Err(error::Error::new()
-                .source("failed to create timestamp"));
-        }
+    let Some(created) = time::utc_now() else {
+        return Err(error::Error::new()
+            .source("failed to create timestamp"));
     };
 
     let key = Key::new(data, created);

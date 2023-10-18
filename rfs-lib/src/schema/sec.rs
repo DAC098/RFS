@@ -12,8 +12,6 @@ pub struct PasswordListItem {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SessionListItem {
-    #[serde(with = "from_to_str")]
-    pub version: u64,
     pub created: DateTime<Utc>,
 }
 
@@ -29,10 +27,6 @@ pub struct PasswordVersion {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SessionVersion {
-    #[serde(with = "from_to_str")]
-    pub version: u64,
     pub created: DateTime<Utc>,
     pub data: Vec<u8>,
-    #[serde(with = "from_to_str")]
-    pub in_use: u64,
 }

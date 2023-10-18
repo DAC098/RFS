@@ -83,7 +83,8 @@ pub async fn post(
         s
     };
 
-    let session_cookie = session::create_session_cookie(state.auth(), &session);
+    let session_cookie = session::create_session_cookie(state.auth(), &session)
+        .ok_or(error::Error::new().source("session keys rwlock poisoned"))?;
 
     Ok(net::Json::new(json)
         .with_header("set-cookie", session_cookie)

@@ -9,20 +9,9 @@ use crate::config;
 
 use super::secrets;
 
-const BLAKE3_CONTEXT: &str = "rust-file-server 2023-05-12 12:35:00 session tokens";
-
-#[derive(Debug)]
-pub enum SessionKey {
-    Blake3([u8; 32]),
-    HS256([u8; 32]),
-    HS384([u8; 32]),
-    HS512([u8; 32]),
-}
-
 #[derive(Debug)]
 pub struct SessionInfo {
     manager: secrets::SessionManager,
-    key: SessionKey,
     domain: Option<String>,
     secure: bool,
 }
@@ -34,7 +23,7 @@ impl SessionInfo {
         config.kdf.expand(
             rfs_lib::sec::secrets::SESSIONS_KEY_INFO,
             &mut session_key
-        ).map_err(|e| error::Error::new()
+        ).map_err(|_| error::Error::new()
             .kind("KDFExpandFailed")
             .message("failed to expand session key for secrets manager"))?;
 
@@ -46,18 +35,15 @@ impl SessionInfo {
             .message("failed loading data for session secrets manager")
             .source(e))?;
 
-        let key = SessionKey::Blake3([0; 32]);
-
         Ok(SessionInfo {
             manager,
-            key,
             domain: None,
             secure: config.settings.sec.session.secure
         })
     }
 
-    pub fn key(&self) -> &SessionKey {
-        &self.key
+    pub fn keys(&self) -> &secrets::SessionManager {
+        &self.manager
     }
 
     pub fn domain(&self) -> Option<&String> {
@@ -82,7 +68,7 @@ impl Sec {
         config.kdf.expand(
             rfs_lib::sec::secrets::PASSWORDS_KEY_INFO,
             &mut password_key
-        ).map_err(|e| error::Error::new()
+        ).map_err(|_| error::Error::new()
             .kind("KDFExpandFailed")
             .message("failed to expand passwords key for secrets manager"))?;
 

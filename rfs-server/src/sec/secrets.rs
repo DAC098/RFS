@@ -1,5 +1,5 @@
 use std::sync::RwLock;
-use std::fmt;
+use std::time::Duration;
 
 use rust_lib_file_sys::wrapper::Encrypted;
 use rust_lib_history::versioned::Versioned;
@@ -8,15 +8,16 @@ use rand::RngCore;
 use serde::{Serialize, Deserialize};
 
 pub const KEY_DATA_LEN: usize = 32;
+pub const MAX_SESSION_KEYS: usize = 50;
 
 pub type KeyData = [u8; KEY_DATA_LEN];
 pub type PepperManager = Encrypted<RwLock<Versioned<Key>>>;
-pub type SessionManager = Encrypted<RwLock<Fixed<Key, 100>>>;
+pub type SessionManager = Encrypted<RwLock<Fixed<Key, MAX_SESSION_KEYS>>>;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Key {
     data: KeyData,
-    created: u64
+    created: Duration
 }
 
 impl Key {
@@ -28,7 +29,7 @@ impl Key {
         Ok(bytes)
     }
 
-    pub fn new(data: KeyData, created: u64) -> Key {
+    pub fn new(data: KeyData, created: Duration) -> Key {
         Key {
             data,
             created
@@ -39,12 +40,16 @@ impl Key {
         &self.data
     }
 
-    pub fn created(&self) -> &u64 {
+    pub fn created(&self) -> &Duration {
         &self.created
     }
 
     pub fn as_slice(&self) -> &[u8] {
         self.data.as_slice()
+    }
+
+    pub fn into_tuple(self) -> (KeyData, Duration) {
+        (self.data, self.created)
     }
 }
 
@@ -52,7 +57,7 @@ impl Clone for Key {
     fn clone(&self) -> Self {
         Key {
             data: self.data.clone(),
-            created: self.created
+            created: self.created.clone(),
         }
     }
 }

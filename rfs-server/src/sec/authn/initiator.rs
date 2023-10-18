@@ -43,6 +43,7 @@ pub enum LookupError {
     InvalidString,
     InvalidLength,
     InvalidHash,
+    KeysPoisoned,
     SessionNotFound,
     SessionExpired(session::Session),
     SessionUnauthenticated(session::Session),
@@ -77,6 +78,8 @@ impl From<LookupError> for error::Error {
                 .status(StatusCode::UNAUTHORIZED)
                 .kind("InvalidSession")
                 .message("session id is invalid"),
+            LookupError::KeysPoisoned => error::Error::new()
+                .source("session keys rwlock poisoned"),
             LookupError::SessionNotFound => error::Error::new()
                 .status(StatusCode::NOT_FOUND)
                 .kind("SessionNotFound")
@@ -124,7 +127,8 @@ where
             return Err(match err {
                 session::DecodeError::InvalidString => LookupError::InvalidString,
                 session::DecodeError::InvalidLength => LookupError::InvalidLength,
-                session::DecodeError::InvalidHash => LookupError::InvalidHash
+                session::DecodeError::InvalidHash => LookupError::InvalidHash,
+                session::DecodeError::KeysPoisoned => LookupError::KeysPoisoned,
             })
         }
     };

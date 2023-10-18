@@ -136,23 +136,19 @@ async fn init() -> error::Result<()> {
         )
         .route(
             "/sec/secrets/password",
-            get(routing::okay)
-                .post(routing::okay)
+            get(routing::handle::sec::secrets::password::get)
+                .post(routing::handle::sec::secrets::password::post)
         )
         .route(
             "/sec/secrets/password/{version}",
-            get(routing::okay)
-                .delete(routing::okay)
+            get(routing::handle::sec::secrets::password::version::get)
+                .delete(routing::handle::sec::secrets::password::version::delete)
         )
         .route(
             "/sec/secrets/session",
-            get(routing::okay)
-                .delete(routing::okay)
-        )
-        .route(
-            "/sec/secrets/session/{version}",
-            get(routing::okay)
-                .delete(routing::okay)
+            get(routing::handle::sec::secrets::session::get)
+                .post(routing::handle::sec::secrets::session::post)
+                .delete(routing::handle::sec::secrets::session::delete)
         )
         .route(
             "/storage",

@@ -363,6 +363,9 @@ impl Session {
     }
 }
 
+pub type Hash = blake3::Hash;
+
+/*
 type HS256 = Hmac<sha3::Sha3_256>;
 type HS384 = Hmac<sha3::Sha3_384>;
 type HS512 = Hmac<sha3::Sha3_512>;
@@ -374,7 +377,24 @@ pub enum Hash {
     HS384(CtOutput<HS384>),
     HS512(CtOutput<HS512>),
 }
+*/
 
+pub fn create_hash<T>(auth: &state::Sec, token: T) -> Option<Hash>
+where
+    T: AsRef<[u8]>
+{
+    let Some(reader) = auth.session_info().keys().inner().read().ok() else {
+        return None;
+    };
+
+    if let Some(latest) = reader.newest() {
+        Some(blake3::keyed_hash(latest.data(), token.as_ref()))
+    } else {
+        Some(blake3::hash(token.as_ref()))
+    }
+}
+
+/*
 pub fn create_hash<T>(auth: &state::Sec, token: T) -> Hash
 where
     T: AsRef<[u8]>
@@ -403,7 +423,24 @@ where
         }
     }
 }
+*/
 
+pub fn encode_base64<T>(token: T, hash: Hash) -> String
+where
+    T: AsRef<[u8]>
+{
+    let token_ref = token.as_ref();
+
+    let slice = hash.as_bytes();
+
+    let mut joined = Vec::with_capacity(token_ref.len() + slice.len());
+    joined.extend_from_slice(token_ref);
+    joined.extend_from_slice(slice);
+
+    URL_SAFE.encode(joined)
+}
+
+/*
 pub fn encode_base64<T>(token: T, hash: Hash) -> String 
 where
     T: AsRef<[u8]>
@@ -450,14 +487,61 @@ where
 
     URL_SAFE.encode(bytes)
 }
+*/
 
 #[derive(Debug)]
 pub enum DecodeError {
     InvalidString,
     InvalidLength,
     InvalidHash,
+    KeysPoisoned,
 }
 
+pub fn decode_base64<S>(
+    auth: &state::Sec,
+    session_id: S
+) -> Result<(token::SessionToken, Hash), DecodeError>
+where
+    S: AsRef<[u8]>
+{
+    let Ok(mut bytes) = URL_SAFE.decode(session_id) else {
+        return Err(DecodeError::InvalidString);
+    };
+
+    if bytes.len() != token::SESSION_ID_BYTES + blake3::OUT_LEN {
+        return Err(DecodeError::InvalidLength);
+    };
+
+    let token = token::SessionToken::drain_vec(&mut bytes);
+    let hash: [u8; blake3::OUT_LEN] = bytes.try_into()
+        .expect("remaing bytes does not match expected length");
+    let given = blake3::Hash::from(hash);
+
+    {
+        let keys = auth.session_info().keys().inner();
+        let reader = keys.read()
+            .map_err(|_| DecodeError::KeysPoisoned)?;
+
+        for key in reader.iter() {
+            let expected = blake3::keyed_hash(key.data(), token.as_slice());
+
+            if given == expected {
+                return Ok((token, given));
+            }
+        }
+    }
+
+    let empty_key = [0; 32];
+    let expected = blake3::keyed_hash(&empty_key, token.as_slice());
+
+    if given != expected {
+        Err(DecodeError::InvalidHash)
+    } else {
+        Ok((token, given))
+    }
+}
+
+/*
 pub fn decode_base64<S>(auth: &state::Sec, session_id: S) -> Result<(token::SessionToken, Hash), DecodeError>
 where
     S: AsRef<[u8]>
@@ -547,9 +631,12 @@ where
         }
     }
 }
+*/
 
-pub fn create_session_cookie(auth: &state::Sec, session: &Session) -> SetCookie {
-    let hash = create_hash(auth, &session.token);
+pub fn create_session_cookie(auth: &state::Sec, session: &Session) -> Option<SetCookie> {
+    let Some(hash) = create_hash(auth, &session.token) else {
+        return None;
+    };
     let encoded_token = encode_base64(&session.token, hash);
 
     let mut cookie = SetCookie::new("session_id", encoded_token)
@@ -563,7 +650,7 @@ pub fn create_session_cookie(auth: &state::Sec, session: &Session) -> SetCookie 
         cookie.set_domain(domain);
     }
 
-    cookie
+    Some(cookie)
 }
 
 pub fn expire_session_cookie(auth: &state::Sec) -> SetCookie {
