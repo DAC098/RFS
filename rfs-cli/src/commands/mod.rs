@@ -10,6 +10,7 @@ mod storage;
 mod fs;
 mod user;
 mod auth;
+mod sec;
 
 fn append_subcommands(command: Command) -> Command {
     command
@@ -17,6 +18,7 @@ fn append_subcommands(command: Command) -> Command {
         .subcommand(fs::command())
         .subcommand(user::command())
         .subcommand(auth::command())
+        .subcommand(sec::command())
         .subcommand(Command::new("connect")
             .alias("login")
             .about("logs in into the desired server")
@@ -126,6 +128,13 @@ pub fn user(state: &mut AppState, args: &ArgMatches) -> error::Result {
 pub fn auth(state: &mut AppState, args: &ArgMatches) -> error::Result {
     match args.subcommand() {
         Some(("totp", totp_args)) => auth::totp(state, totp_args),
+        _ => unreachable!()
+    }
+}
+
+pub fn sec(state: &mut AppState, args: &ArgMatches) -> error::Result {
+    match args.subcommand() {
+        Some(("secrets", secrets_matches)) => sec::secrets(state, secrets_matches),
         _ => unreachable!()
     }
 }

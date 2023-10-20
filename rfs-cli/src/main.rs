@@ -122,6 +122,7 @@ fn run_subcommand(state: &mut state::AppState, command: &str, matches: &ArgMatch
         "fs" => commands::fs(state, matches),
         "user" => commands::user(state, matches),
         "auth" => commands::auth(state, matches),
+        "sec" => commands::sec(state, matches),
         _ => {
             println!("uknown command");
 
