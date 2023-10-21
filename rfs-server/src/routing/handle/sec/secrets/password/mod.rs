@@ -8,12 +8,14 @@ use chrono::{Utc, DateTime};
 use crate::net::{self, error};
 use crate::state::ArcShared;
 use crate::sec::secrets::Key;
+use crate::sec::authn::initiator;
 use crate::time;
 
 pub mod version;
 
 pub async fn get(
     State(state): State<ArcShared>,
+    _initiator: initiator::Initiator,
 ) -> error::Result<impl IntoResponse> {
     let peppers = state.sec().peppers().inner();
     let mut known_versions;
@@ -39,6 +41,7 @@ pub async fn get(
 
 pub async fn post(
     State(state): State<ArcShared>,
+    _initiator: initiator::Initiator,
 ) -> error::Result<impl IntoResponse> {
     let wrapper = state.sec().peppers();
     let data = Key::rand_key_data()?;

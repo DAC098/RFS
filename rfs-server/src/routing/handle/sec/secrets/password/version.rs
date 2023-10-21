@@ -8,6 +8,7 @@ use serde::Deserialize;
 use crate::net::{self, error};
 use crate::state::ArcShared;
 use crate::sec::secrets::Key;
+use crate::sec::authn::initiator;
 use crate::time;
 
 #[derive(Deserialize)]
@@ -17,6 +18,7 @@ pub struct PathParams {
 
 pub async fn get(
     State(state): State<ArcShared>,
+    _initiator: initiator::Initiator,
     Path(PathParams { version }): Path<PathParams>
 ) -> error::Result<impl IntoResponse> {
     let peppers = state.sec().peppers().inner();
@@ -59,6 +61,7 @@ pub async fn get(
 
 pub async fn delete(
     State(state): State<ArcShared>,
+    _initiator: initiator::Initiator,
     Path(PathParams { version }): Path<PathParams>
 ) -> error::Result<impl IntoResponse> {
     let wrapper = state.sec().peppers();

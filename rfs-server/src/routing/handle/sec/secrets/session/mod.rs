@@ -8,10 +8,12 @@ use serde::Deserialize;
 use crate::net::{self, error};
 use crate::state::ArcShared;
 use crate::sec::secrets::Key;
+use crate::sec::authn::initiator;
 use crate::time;
 
 pub async fn get(
     State(state): State<ArcShared>,
+    _initiator: initiator::Initiator,
 ) -> error::Result<impl IntoResponse> {
     let session_keys = state.sec().session_info().keys().inner();
     let mut known_keys;
@@ -36,6 +38,7 @@ pub async fn get(
 
 pub async fn post(
     State(state): State<ArcShared>,
+    _initiator: initiator::Initiator,
 ) -> error::Result<impl IntoResponse> {
     let wrapper = state.sec().session_info().keys();
     let data = Key::rand_key_data()?;
@@ -71,6 +74,7 @@ pub struct DeleteQuery {
 
 pub async fn delete(
     State(state): State<ArcShared>,
+    _initiator: initiator::Initiator,
     Query(query): Query<DeleteQuery>,
 ) -> error::Result<impl IntoResponse> {
     let wrapper = state.sec().session_info().keys();
