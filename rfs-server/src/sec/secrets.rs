@@ -2,6 +2,7 @@ use std::sync::RwLock;
 use std::time::Duration;
 
 use rust_lib_file_sys::wrapper::Encrypted;
+use rust_lib_file_sys::wrapper::encrypted;
 use rust_lib_history::versioned::Versioned;
 use rust_lib_history::list::fixed::Fixed;
 use rand::RngCore;
@@ -11,8 +12,10 @@ pub const KEY_DATA_LEN: usize = 32;
 pub const MAX_SESSION_KEYS: usize = 50;
 
 pub type KeyData = [u8; KEY_DATA_LEN];
-pub type PepperManager = Encrypted<RwLock<Versioned<Key>>>;
-pub type SessionManager = Encrypted<RwLock<Fixed<Key, MAX_SESSION_KEYS>>>;
+pub type PepperManager = RwLock<Versioned<Key>>;
+pub type SessionManager = RwLock<Fixed<Key, MAX_SESSION_KEYS>>;
+pub type PepperWrapper = Encrypted<PepperManager>;
+pub type SessionWrapper = Encrypted<SessionManager>;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Key {

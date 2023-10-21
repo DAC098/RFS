@@ -4,6 +4,8 @@ use deadpool_postgres::{Manager, ManagerConfig, Pool, RecyclingMethod};
 use crate::config;
 
 pub fn from_config(config: &config::Config) -> Result<Pool, deadpool_postgres::BuildError> {
+    tracing::debug!("creating PostgreSQL connection pool");
+
     let mut pg_config = Config::new();
 
     pg_config.user(config.settings.db.user.as_str());

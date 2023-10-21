@@ -47,12 +47,12 @@ pub async fn get(
             .kind("TimestampError")
             .message("failed to create timestamp for password key"))?;
 
-    let rtn = schema::sec::PasswordVersion {
+    let rtn = rfs_lib::json::Wrapper::new(schema::sec::PasswordVersion {
         version,
         created,
         data: data.into(),
         in_use: count
-    };
+    });
 
     Ok(net::Json::new(rtn))
 }

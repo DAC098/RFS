@@ -9,7 +9,7 @@ create table users (
 
 create table auth_password (
     user_id bigint not null primary key references users(id),
-    version int not null default 0,
+    version bigint not null default 0,
     hash varchar not null
 );
 

@@ -72,7 +72,7 @@ pub fn get(state: &mut AppState, args: &ArgMatches) -> error::Result {
                 .source(json));
         }
 
-        let result = res.json::<rfs_lib::json::ListWrapper<rfs_lib::schema::sec::PasswordListItem>>()?;
+        let result: rfs_lib::json::ListWrapper<Vec<rfs_lib::schema::sec::PasswordListItem>> = res.json()?;
 
         println!("{:?}", result);
     }

@@ -29,7 +29,12 @@ fn load_template_directory(registry: &mut Handlebars<'_>, directory: &PathBuf) -
     use std::fs::read_dir;
 
     let mut dir_queue = Vec::with_capacity(1);
-    dir_queue.push((directory.clone(), read_dir(&directory)?));
+    dir_queue.push((
+        directory.clone(),
+        read_dir(&directory)
+            .map_err(|e| error::Error::from(e)
+                .message("failed reading root template directory"))?
+    ));
 
     // breath first directory loading
     while let Some((path, iter)) = dir_queue.pop() {
@@ -41,7 +46,9 @@ fn load_template_directory(registry: &mut Handlebars<'_>, directory: &PathBuf) -
         for item in iter {
             let entry = item?;
             let entry_path = entry.path();
-            let entry_type = entry.file_type()?;
+            let entry_type = entry.file_type()
+                .map_err(|e| error::Error::from(e)
+                    .message("failed loading file type for template file"))?;
 
             if entry_type.is_file() {
                 let file_name = {
@@ -59,21 +66,6 @@ fn load_template_directory(registry: &mut Handlebars<'_>, directory: &PathBuf) -
                 if ext == "hbs" {
                     let name = get_registry_name(&directory, &entry_path, ".hbs")?;
 
-                    /*
-                    if let Some(specific) = name_parts.next() {
-                        if specific == "partial" {
-                            tracing::debug!(
-                                name = name,
-                                path = %entry_path.display(),
-                                "handlebars partial template"
-                            );
-                            let contents = std::fs::read_to_string(&entry_path)?;
-                            registry.register_partial(name, contents.as_str())?;
-                            continue;
-                        }
-                    }
-                    */
-
                     tracing::debug!(
                         name = name,
                         path = %entry_path.display(),
@@ -85,7 +77,9 @@ fn load_template_directory(registry: &mut Handlebars<'_>, directory: &PathBuf) -
                     tracing::debug!("non handlebars file");
                 }
             } else if entry_type.is_dir() {
-                let entry_iter = read_dir(&entry_path)?;
+                let entry_iter = read_dir(&entry_path)
+                    .map_err(|e| error::Error::from(e)
+                        .message("failed reading template files directory"))?;
 
                 dir_queue.push((entry_path, entry_iter));
             } else {
@@ -107,6 +101,8 @@ pub struct Templates {
 
 impl Templates {
     pub fn from_config(config: &config::Config) -> error::Result<Self> {
+        tracing::debug!("creating Templates state");
+
         let mut registry = Handlebars::new();
         registry.set_dev_mode(config.settings.templates.dev_mode);
 

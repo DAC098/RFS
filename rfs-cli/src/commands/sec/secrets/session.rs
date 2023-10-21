@@ -40,7 +40,7 @@ pub fn get(state: &mut AppState, _args: &ArgMatches) -> error::Result {
             .source(json));
     }
 
-    let result = res.json::<rfs_lib::json::ListWrapper<rfs_lib::schema::sec::SessionListItem>>()?;
+    let result: rfs_lib::json::ListWrapper<Vec<rfs_lib::schema::sec::SessionListItem>> = res.json()?;
 
     println!("{:?}", result);
 
@@ -73,6 +73,7 @@ pub fn remove(state: &mut AppState, _args: &ArgMatches) -> error::Result {
     let path = "/sec/secrets/session";
     let url = state.server.url.join(path)?;
     let res = state.client.delete(url)
+        .query(&[("amount", 1)])
         .send()?;
 
     let status = res.status();

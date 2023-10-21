@@ -140,7 +140,7 @@ async fn init() -> error::Result<()> {
                 .post(routing::handle::sec::secrets::password::post)
         )
         .route(
-            "/sec/secrets/password/{version}",
+            "/sec/secrets/password/:version",
             get(routing::handle::sec::secrets::password::version::get)
                 .delete(routing::handle::sec::secrets::password::version::delete)
         )

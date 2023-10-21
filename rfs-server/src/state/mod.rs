@@ -26,6 +26,8 @@ pub type ArcShared = Arc<Shared>;
 
 impl Shared {
     pub fn from_config(config: &config::Config) -> error::Result<Shared> {
+        tracing::debug!("creating Shared state");
+
         Ok(Shared {
             assets: PathBuf::new(),
             pages: PathBuf::new(),
