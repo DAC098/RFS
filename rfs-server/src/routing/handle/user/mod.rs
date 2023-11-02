@@ -11,6 +11,7 @@ use crate::sec::authn::initiator;
 use crate::sql;
 use crate::user;
 
+pub mod group;
 pub mod user_id;
 
 pub async fn get(

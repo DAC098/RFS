@@ -5,6 +5,7 @@ use snowcloud_flake::i64::SingleIdFlake;
 pub const START_TIME: u64 = 1685862000000;
 
 pub type UserId = SingleIdFlake<43, 8, 12>;
+pub type GroupId = i64;
 pub type FSId = SingleIdFlake<43, 8, 12>;
 pub type StorageId = SingleIdFlake<43, 8, 12>;
 pub type BotId = SingleIdFlake<43, 8, 12>;

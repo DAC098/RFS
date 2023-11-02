@@ -2,6 +2,8 @@ use serde::{Serialize, Deserialize};
 
 use crate::serde::nested_option;
 
+pub mod group;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateUser {
     pub username: String,

@@ -7,6 +7,19 @@ create table users (
     email_verified bool not null default false
 );
 
+create table groups (
+    id bigint not null primary key generated always as identity,
+    name varchar not null unique,
+    created timestamp with time zone not null,
+    updated timestamp with time zone
+);
+
+create table group_users (
+    user_id bigint not null references users (id),
+    group_id bigint not null references groups (id),
+    constraint unique_user_group unique(user_id, group_id)
+);
+
 create table auth_password (
     user_id bigint not null primary key references users(id),
     version bigint not null default 0,

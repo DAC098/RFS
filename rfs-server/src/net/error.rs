@@ -283,6 +283,7 @@ macro_rules! simple_from {
 }
 
 simple_from!(std::io::Error);
+simple_from!(std::fmt::Error);
 
 simple_from!(axum::Error);
 simple_from!(axum::http::Error);

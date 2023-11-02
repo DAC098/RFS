@@ -2,6 +2,8 @@ use rfs_lib::ids;
 use tokio_postgres::{Error as PgError};
 use deadpool_postgres::GenericClient;
 
+pub mod group;
+
 pub async fn check_username<U>(
     conn: &impl GenericClient,
     username: U,

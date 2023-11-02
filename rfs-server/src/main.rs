@@ -183,6 +183,23 @@ async fn init() -> error::Result<()> {
                 .post(routing::handle::user::post)
         )
         .route(
+            "/user/group",
+            get(routing::handle::user::group::get)
+                .post(routing::handle::user::group::post)
+        )
+        .route(
+            "/user/group/:group_id",
+            get(routing::handle::user::group::group_id::get)
+                .patch(routing::handle::user::group::group_id::patch)
+                .delete(routing::handle::user::group::group_id::delete)
+        )
+        .route(
+            "/user/group/:group_id/users",
+            get(routing::handle::user::group::group_id::users::get)
+                .post(routing::handle::user::group::group_id::users::post)
+                //.delete(routing::handle::user::group::group_id::delete)
+        )
+        .route(
             "/user/:user_id",
             get(routing::handle::user::user_id::get)
                 .patch(routing::handle::user::user_id::patch)
