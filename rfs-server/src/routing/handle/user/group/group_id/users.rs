@@ -75,16 +75,27 @@ pub async fn post(
             .message("the requested group was not found"));
     };
 
+    if json.ids.len() == 0 {
+        return Err(error::Error::new()
+            .kind("NoWork")
+            .message("no user ids where specified"));
+    }
+
+    let mut id_iter = json.ids.iter();
     let mut query = String::from(
         "\
-        insert into group_users (user_id, group_id) \
+        insert into group_users (group_id, user_id) \
         values"
     );
     let mut params: sql::ParamsVec = Vec::with_capacity(json.ids.len() + 1);
     params.push(&group_id);
 
-    for id in &json.ids {
-        write!(&mut query, " ($1, ${}", sql::push_param(&mut params, id))?;
+    if let Some(first) = id_iter.next() {
+        write!(&mut query, " ($1, ${})", sql::push_param(&mut params, first))?;
+
+        while let Some(id) = id_iter.next() {
+            write!(&mut query, ", ($1, ${})", sql::push_param(&mut params, id))?;
+        }
     }
 
     write!(&mut query, " on conflict on constraint group_users_pkey do nothing")?;
@@ -113,7 +124,13 @@ pub async fn delete(
             .message("the requested group was not found"));
     };
 
-    let transaction = con.transaction().await?;
+    if json.ids.len() == 0 {
+        return Err(error::Error::new()
+            .kind("NoWork")
+            .message("no user ids where specified"));
+    }
+
+    let transaction = conn.transaction().await?;
 
     let _ = transaction.execute(
         "\

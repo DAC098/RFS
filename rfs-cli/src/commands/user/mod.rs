@@ -4,11 +4,14 @@ use crate::error;
 use crate::util;
 use crate::state::AppState;
 
+mod group;
+
 pub fn command() -> Command {
     Command::new("user")
         .subcommand_required(true)
         .about("interacts with user data on a server")
         .arg(util::default_help_arg())
+        .subcommand(group::command())
         .subcommand(Command::new("create")
             .about("creates a new user")
             .arg(util::default_help_arg())
@@ -47,6 +50,17 @@ pub fn command() -> Command {
                 .conflicts_with("email")
             )
         )
+}
+
+pub fn group(state: &mut AppState, args: &ArgMatches) -> error::Result {
+    match args.subcommand() {
+        Some(("get", get_matches)) => group::get(state, get_matches),
+        Some(("create", create_matches)) => group::create(state, create_matches),
+        Some(("update", update_matches)) => group::update(state, update_matches),
+        Some(("delete", delete_matches)) => group::delete(state, delete_matches),
+        Some(("users", users_matches)) => group::users(state, users_matches),
+        _ => unreachable!()
+    }
 }
 
 pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {

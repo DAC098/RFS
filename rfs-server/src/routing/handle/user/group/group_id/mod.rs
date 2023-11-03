@@ -66,7 +66,7 @@ pub async fn patch(
 
     match transaction.execute(
         "\
-        update table groups \
+        update groups \
         set name = $2 \
         where id = $1",
         &[&group_id, &name]

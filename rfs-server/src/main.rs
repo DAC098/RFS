@@ -197,7 +197,7 @@ async fn init() -> error::Result<()> {
             "/user/group/:group_id/users",
             get(routing::handle::user::group::group_id::users::get)
                 .post(routing::handle::user::group::group_id::users::post)
-                //.delete(routing::handle::user::group::group_id::delete)
+                .delete(routing::handle::user::group::group_id::users::delete)
         )
         .route(
             "/user/:user_id",
