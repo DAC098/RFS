@@ -63,6 +63,30 @@ create table auth_session (
     verify_method smallint not null
 );
 
+create table authz_roles (
+    id bigint primary key generated always as identity,
+    name varchar not null unique
+);
+
+create table authz_permissions (
+    role_id bigint not null references authz_roles (id),
+    scope varchar not null,
+    ability varchar not null,
+    primary key (role_id, scope, ability)
+);
+
+create table group_roles (
+    group_id bigint not null references groups (id),
+    role_id bigint not null references authz_roles (id),
+    primary key (group_id, role_id)
+);
+
+create table user_roles (
+    user_id bigint not null references users (id),
+    role_id bigint not null references authz_roles (id),
+    primary key (user_id, role_id)
+);
+
 create table storage (
     id bigint not null primary key,
 
