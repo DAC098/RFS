@@ -4,11 +4,14 @@ use std::fmt::Debug;
 
 use blake3::Hash;
 use serde::{Serialize, Deserialize};
+use tokio_postgres::{Error as PgError};
+use tokio_postgres::error::SqlState;
 use tokio_postgres::types::{self, ToSql};
 
 pub type PgJson<T> = types::Json<T>;
 
 pub type ParamsVec<'a> = Vec<&'a (dyn ToSql + Sync)>;
+pub type ParamsArray<'a, const N: usize> = [&'a (dyn ToSql + Sync); N];
 
 pub fn push_param<'a, T>(params: &mut ParamsVec<'a>, v: &'a T) -> usize
 where
@@ -68,4 +71,16 @@ where
     T: Serialize + Debug
 {
     types::Json(value)
+}
+
+pub fn unique_constraint_error(error: &PgError) -> Option<&str> {
+    let Some(db_error) = error.as_db_error() else {
+        return None;
+    };
+
+    if *db_error.code() == SqlState::UNIQUE_VIOLATION {
+        db_error.constraint()
+    } else {
+        None
+    }
 }

@@ -151,6 +151,29 @@ async fn init() -> error::Result<()> {
                 .delete(routing::handle::sec::secrets::session::delete)
         )
         .route(
+            "/sec/roles",
+            get(routing::handle::sec::roles::get)
+                .post(routing::handle::sec::roles::post)
+        )
+        .route(
+            "/sec/roles/:role_id",
+            get(routing::handle::sec::roles::role_id::get)
+                .patch(routing::handle::sec::roles::role_id::patch)
+                .delete(routing::handle::sec::roles::role_id::delete)
+        )
+        .route(
+            "/sec/roles/:role_id/users",
+            get(routing::handle::sec::roles::role_id::users::get)
+                .post(routing::handle::sec::roles::role_id::users::post)
+                .delete(routing::handle::sec::roles::role_id::users::delete)
+        )
+        .route(
+            "sec/roles/:role_id/groups",
+            get(routing::handle::sec::roles::role_id::groups::get)
+                .post(routing::handle::sec::roles::role_id::groups::post)
+                .delete(routing::handle::sec::roles::role_id::groups::delete)
+        )
+        .route(
             "/storage",
             get(routing::handle::storage::get)
                 .post(routing::handle::storage::post)

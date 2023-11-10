@@ -5,9 +5,11 @@ use futures::TryStreamExt;
 
 use crate::sql;
 
+pub use rfs_lib::sec::authz::permission::{Ability, Scope};
+
 pub struct Role {
-    id: ids::RoleId,
-    name: String,
+    pub id: ids::RoleId,
+    pub name: String,
 }
 
 impl Role {
@@ -60,62 +62,6 @@ impl Permission {
         }
 
         Ok(list)
-    }
-}
-
-pub enum Ability {
-    Read,
-    Write,
-}
-
-impl Ability {
-    pub fn from_str(v: &str) -> Option<Self> {
-        match v {
-            "read" => Some(Ability::Read),
-            "write" => Some(Ability::Write),
-            _ => None
-        }
-    }
-
-    pub fn as_str(&self) -> &str {
-        match self {
-            Ability::Read => "read",
-            Ability::Write => "write",
-        }
-    }
-}
-
-pub enum Scope {
-    SecSecrets,
-    SecRoles,
-    User,
-    UserGroup,
-    Fs,
-    Storage
-}
-
-impl Scope {
-    pub fn from_str(v: &str) -> Option<Self> {
-        match v {
-            "sec/secrets" => Some(Scope::SecSecrets),
-            "sec/roles" => Some(Scope::SecRoles),
-            "user" => Some(Scope::User),
-            "user/group" => Some(Scope::UserGroup),
-            "fs" => Some(Scope::Fs),
-            "storage" => Some(Scope::Storage),
-            _ => None
-        }
-    }
-
-    pub fn as_str(&self) -> &str {
-        match self {
-            Scope::SecSecrets => "sec/secrets",
-            Scope::SecRoles => "sec/roles",
-            Scope::User => "user",
-            Scope::UserGroup => "user/group",
-            Scope::Fs => "fs",
-            Scope::Storage => "storage",
-        }
     }
 }
 
