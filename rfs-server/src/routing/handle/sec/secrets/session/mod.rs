@@ -9,12 +9,26 @@ use crate::net::{self, error};
 use crate::state::ArcShared;
 use crate::sec::secrets::Key;
 use crate::sec::authn::initiator;
+use crate::sec::authz::permission;
 use crate::time;
 
 pub async fn get(
     State(state): State<ArcShared>,
-    _initiator: initiator::Initiator,
+    initiator: initiator::Initiator,
 ) -> error::Result<impl IntoResponse> {
+    let conn = state.pool().get().await?;
+
+    if !permission::has_ability(
+        &conn,
+        initiator.user().id(),
+        permission::Scope::SecSecrets,
+        permission::Ability::Read,
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDeniend"));
+    }
+
     let session_keys = state.sec().session_info().keys().inner();
     let mut known_keys;
 
@@ -38,8 +52,21 @@ pub async fn get(
 
 pub async fn post(
     State(state): State<ArcShared>,
-    _initiator: initiator::Initiator,
+    initiator: initiator::Initiator,
 ) -> error::Result<impl IntoResponse> {
+    let conn = state.pool().get().await?;
+
+    if !permission::has_ability(
+        &conn,
+        initiator.user().id(),
+        permission::Scope::SecSecrets,
+        permission::Ability::Write,
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
+
     let wrapper = state.sec().session_info().keys();
     let data = Key::rand_key_data()?;
     let Some(created) = time::utc_now() else {
@@ -74,9 +101,22 @@ pub struct DeleteQuery {
 
 pub async fn delete(
     State(state): State<ArcShared>,
-    _initiator: initiator::Initiator,
+    initiator: initiator::Initiator,
     Query(query): Query<DeleteQuery>,
 ) -> error::Result<impl IntoResponse> {
+    let conn = state.pool().get().await?;
+
+    if !permission::has_ability(
+        &conn,
+        initiator.user().id(),
+        permission::Scope::SecSecrets,
+        permission::Ability::Write
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
+
     let wrapper = state.sec().session_info().keys();
 
     let Some(mut amount) = query.amount else {

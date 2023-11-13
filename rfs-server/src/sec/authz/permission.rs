@@ -73,17 +73,19 @@ pub async fn has_ability(
 ) -> Result<bool, PgError> {
     let result = conn.execute(
         "\
-        select id, \
+        select authz_permissions.role_id \
         from authz_permissions \
         join authz_roles on \
             authz_permissions.role_id = authz_roles.id \
-        left join group_roles \
+        left join group_roles on \
             authz_roles.id = group_roles.role_id \
-        left join groups \
+        left join groups on \
             group_roles.group_id = groups.id \
-        left join user_roles \
+        left join group_users on \
+            groups.id = group_users.group_id \
+        left join user_roles on \
             authz_roles.id = user_roles.role_id \
-        where (user_roles.user_id = $1 or user_groups.user_id = $1) and \
+        where (user_roles.user_id = $1 or group_users.user_id = $1) and \
             authz_permissions.scope = $2 and \
             authz_permissions.ability = $3",
         &[user_id, &scope.as_str(), &ability.as_str()]

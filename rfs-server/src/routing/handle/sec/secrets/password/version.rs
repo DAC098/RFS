@@ -9,6 +9,7 @@ use crate::net::{self, error};
 use crate::state::ArcShared;
 use crate::sec::secrets::Key;
 use crate::sec::authn::initiator;
+use crate::sec::authz::permission;
 use crate::time;
 
 #[derive(Deserialize)]
@@ -18,9 +19,22 @@ pub struct PathParams {
 
 pub async fn get(
     State(state): State<ArcShared>,
-    _initiator: initiator::Initiator,
+    initiator: initiator::Initiator,
     Path(PathParams { version }): Path<PathParams>
 ) -> error::Result<impl IntoResponse> {
+    let conn = state.pool().get().await?;
+
+    if !permission::has_ability(
+        &conn,
+        initiator.user().id(),
+        permission::Scope::SecSecrets,
+        permission::Ability::Read
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
+
     let peppers = state.sec().peppers().inner();
 
     let (data, created) = {
@@ -61,9 +75,22 @@ pub async fn get(
 
 pub async fn delete(
     State(state): State<ArcShared>,
-    _initiator: initiator::Initiator,
+    initiator: initiator::Initiator,
     Path(PathParams { version }): Path<PathParams>
 ) -> error::Result<impl IntoResponse> {
+    let conn = state.pool().get().await?;
+
+    if !permission::has_ability(
+        &conn,
+        initiator.user().id(),
+        permission::Scope::SecSecrets,
+        permission::Ability::Write,
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
+
     let wrapper = state.sec().peppers();
 
     let found = {

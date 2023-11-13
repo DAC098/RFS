@@ -9,14 +9,28 @@ use crate::net::{self, error};
 use crate::state::ArcShared;
 use crate::sec::secrets::Key;
 use crate::sec::authn::initiator;
+use crate::sec::authz::permission;
 use crate::time;
 
 pub mod version;
 
 pub async fn get(
     State(state): State<ArcShared>,
-    _initiator: initiator::Initiator,
+    initiator: initiator::Initiator,
 ) -> error::Result<impl IntoResponse> {
+    let conn = state.pool().get().await?;
+
+    if !permission::has_ability(
+        &conn,
+        initiator.user().id(),
+        permission::Scope::SecSecrets,
+        permission::Ability::Read
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenined"));
+    }
+
     let peppers = state.sec().peppers().inner();
     let mut known_versions;
 
@@ -41,8 +55,21 @@ pub async fn get(
 
 pub async fn post(
     State(state): State<ArcShared>,
-    _initiator: initiator::Initiator,
+    initiator: initiator::Initiator,
 ) -> error::Result<impl IntoResponse> {
+    let conn = state.pool().get().await?;
+
+    if !permission::has_ability(
+        &conn,
+        initiator.user().id(),
+        permission::Scope::SecSecrets,
+        permission::Ability::Write
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
+
     let wrapper = state.sec().peppers();
     let data = Key::rand_key_data()?;
     let Some(created) = time::utc_now() else {
