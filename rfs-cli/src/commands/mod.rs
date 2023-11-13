@@ -136,6 +136,7 @@ pub fn auth(state: &mut AppState, args: &ArgMatches) -> error::Result {
 pub fn sec(state: &mut AppState, args: &ArgMatches) -> error::Result {
     match args.subcommand() {
         Some(("secrets", secrets_matches)) => sec::secrets(state, secrets_matches),
+        Some(("roles", roles_matches)) => sec::roles(state, roles_matches),
         _ => unreachable!()
     }
 }

@@ -6,7 +6,7 @@ use crate::sec::authz::permission::{Ability, Scope};
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UpdateRole {
     pub name: Option<String>,
-    pub permissions: Vec<RolePermission>,
+    pub permissions: Option<Vec<RolePermission>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

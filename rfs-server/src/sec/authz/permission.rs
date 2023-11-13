@@ -29,9 +29,9 @@ impl Role {
 }
 
 pub struct Permission {
-    role_id: ids::RoleId,
-    ability: Ability,
-    scope: Scope,
+    pub role_id: ids::RoleId,
+    pub ability: Ability,
+    pub scope: Scope,
 }
 
 impl Permission {

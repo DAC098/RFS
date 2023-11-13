@@ -1,9 +1,8 @@
 use std::fmt;
 use std::str::FromStr;
 use std::marker::PhantomData;
-use core::convert::TryFrom;
 
-use serde::{ser, de};
+use serde::de;
 
 use mime::Mime;
 use serde::Deserialize;

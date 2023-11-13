@@ -168,7 +168,7 @@ async fn init() -> error::Result<()> {
                 .delete(routing::handle::sec::roles::role_id::users::delete)
         )
         .route(
-            "sec/roles/:role_id/groups",
+            "/sec/roles/:role_id/groups",
             get(routing::handle::sec::roles::role_id::groups::get)
                 .post(routing::handle::sec::roles::role_id::groups::post)
                 .delete(routing::handle::sec::roles::role_id::groups::delete)

@@ -75,26 +75,16 @@ pub async fn post(
             .message("no user ids where specified"));
     }
 
-    let mut id_iter = json.ids.iter();
-    let mut query = String::from(
-        "\
+    let query = "\
         insert into user_roles (role_id, user_id) \
-        values"
-    );
-    let mut params: sql::ParamsVec = Vec::with_capacity(json.ids.len() + 1);
-    params.push(&role_id);
+        select $1 as role_id, \
+               users.id as user_id \
+        from users \
+        where users.id = any($2) \
+        on conflict on constraint user_roles_pkey do nothing";
+    let params: sql::ParamsArray<2> = [&role_id, &json.ids];
 
-    if let Some(first) = id_iter.next() {
-        write!(&mut query, " ($1, ${})", sql::push_param(&mut params, first))?;
-
-        while let Some(id) = id_iter.next() {
-            write!(&mut query, ", (&1, &{})", sql::push_param(&mut params, id))?;
-        }
-    }
-
-    write!(&mut query, " on conflict on constraint user_roles_pkey do nothing")?;
-
-    let _ = transaction.execute(query.as_str(), &params).await?;
+    let _ = transaction.execute(query, &params).await?;
 
     transaction.commit().await?;
 
@@ -127,7 +117,7 @@ pub async fn delete(
         "\
         delete from user_roles \
         where role_id = $1 and \
-              user_id <> all($2)",
+              user_id = any($2)",
         &[&role_id, &json.ids]
     ).await?;
 

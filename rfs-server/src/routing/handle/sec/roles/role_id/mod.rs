@@ -11,7 +11,7 @@ use serde::Deserialize;
 use crate::net::{self, error};
 use crate::state::ArcShared;
 use crate::sec::authn::initiator;
-use crate::sec::authz::permission::{Role, Ability, Scope};
+use crate::sec::authz::permission::{Role, Permission, Ability, Scope};
 use crate::sql;
 
 pub mod users;
@@ -88,12 +88,11 @@ pub async fn patch(
             .message("requested role was not found"));
     };
 
-    if json.name.is_none() || json.permissions.len() == 0 {
+    if json.name.is_none() || json.permissions.is_none() {
         return Err(error::Error::new()
             .status(StatusCode::BAD_REQUEST)
             .kind("NoWork"));
     }
-
 
     let name = if let Some(name) = json.name {
         match transaction.execute(
@@ -112,7 +111,6 @@ pub async fn patch(
                             .kind("RoleNameExists")
                             .message("requested role name already exists"));
                     }
-
                 }
 
                 return Err(err.into());
@@ -124,56 +122,77 @@ pub async fn patch(
         original.name
     };
 
-    // not sure how to go about this since authz_permissions has a composite
-    // key so we cannot easily reference a specific row to drop.
-    transaction.execute(
-        "delete from authz_permissiosn where role_id = $1",
-        &[&role_id]
-    ).await?;
+    let mut changed_permissions = None;
 
-    let mut first = true;
-    let mut provided: HashSet<(Scope, Ability)> = HashSet::new();
-    let mut query = String::from("insert into authz_permissions (role_id, scope, ability) values");
-    let mut params: sql::ParamsVec = vec![&role_id];
+    if let Some(permissions) = &json.permissions {
+        // not sure how to go about this since authz_permissions has a composite
+        // key so we cannot easily reference a specific row to drop.
+        transaction.execute(
+            "delete from authz_permissions where role_id = $1",
+            &[&role_id]
+        ).await?;
 
-    for given in &json.permissions {
-        let pair = (given.scope.clone(), given.ability.clone());
-
-        if provided.contains(&pair) {
-            continue;
-        }
-
-        provided.insert(pair);
-
-        if first {
-            write!(
-                &mut query,
-                " ($1, ${}, ${})",
-                sql::push_param(&mut params, &given.scope),
-                sql::push_param(&mut params, &given.ability)
-            )?;
-
-            first = false;
+        if permissions.len() == 0 {
+            changed_permissions = Some(HashSet::new());
         } else {
-            write!(
-                &mut query,
-                ", ($1, ${}, ${})",
-                sql::push_param(&mut params, &given.scope),
-                sql::push_param(&mut params, &given.ability)
-            )?;
+            let mut first = true;
+            let mut provided: HashSet<(Scope, Ability)> = HashSet::new();
+            let mut query = String::from("insert into authz_permissions (role_id, scope, ability) values");
+            let mut params: sql::ParamsVec = vec![&role_id];
+
+            for given in permissions {
+                let pair = (given.scope.clone(), given.ability.clone());
+
+                if provided.contains(&pair) {
+                    continue;
+                }
+
+                provided.insert(pair);
+
+                if first {
+                    write!(
+                        &mut query,
+                        " ($1, ${}, ${})",
+                        sql::push_param(&mut params, &given.scope),
+                        sql::push_param(&mut params, &given.ability)
+                    )?;
+
+                    first = false;
+                } else {
+                    write!(
+                        &mut query,
+                        ", ($1, ${}, ${})",
+                        sql::push_param(&mut params, &given.scope),
+                        sql::push_param(&mut params, &given.ability)
+                    )?;
+                }
+            }
+
+            transaction.execute(query.as_str(), params.as_slice()).await?;
+
+            changed_permissions = Some(provided);
         }
     }
 
-    transaction.execute(query.as_str(), params.as_slice()).await?;
-
     transaction.commit().await?;
 
-    let permissions = provided.into_iter()
-        .map(|(scope, ability)| schema::sec::Permission {
-            scope,
-            ability
-        })
-        .collect();
+    let permissions = if let Some(changed) = changed_permissions {
+        changed.into_iter()
+            .map(|(scope, ability)| schema::sec::Permission {
+                scope,
+                ability
+            })
+            .collect()
+    } else {
+        Permission::retrieve_by_role_id(&conn, &role_id)
+            .await?
+            .into_iter()
+            .map(|perm| schema::sec::Permission {
+                scope: perm.scope,
+                ability: perm.ability
+            })
+            .collect()
+    };
 
     let wrapper = rfs_lib::json::Wrapper::new(schema::sec::Role {
         id: role_id,
