@@ -58,8 +58,8 @@ pub async fn get(
 
     while let Some(row) = permissions_result.try_next().await? {
         permissions.push(schema::sec::Permission {
-            scope: row.get(0),
-            ability: row.get(1),
+            scope: row.get(1),
+            ability: row.get(2),
         });
     }
 
@@ -88,7 +88,7 @@ pub async fn patch(
             .message("requested role was not found"));
     };
 
-    if json.name.is_none() || json.permissions.is_none() {
+    if json.name.is_none() && json.permissions.is_none() {
         return Err(error::Error::new()
             .status(StatusCode::BAD_REQUEST)
             .kind("NoWork"));
