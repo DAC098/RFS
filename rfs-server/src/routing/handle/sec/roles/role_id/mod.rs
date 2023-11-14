@@ -11,7 +11,7 @@ use serde::Deserialize;
 use crate::net::{self, error};
 use crate::state::ArcShared;
 use crate::sec::authn::initiator;
-use crate::sec::authz::permission::{Role, Permission, Ability, Scope};
+use crate::sec::authz::permission::{has_ability, Role, Permission, Ability, Scope};
 use crate::sql;
 
 pub mod users;
@@ -24,10 +24,22 @@ pub struct PathParams {
 
 pub async fn get(
     State(state): State<ArcShared>,
-    _initiator: initiator::Initiator,
+    initiator: initiator::Initiator,
     Path(PathParams { role_id }): Path<PathParams>,
 ) -> error::Result<impl IntoResponse> {
     let conn = state.pool().get().await?;
+
+    if !has_ability(
+        &conn,
+        initiator.user().id(),
+        Scope::SecRoles,
+        Ability::Read,
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
+
     let role_params: sql::ParamsArray<1> = [&role_id];
 
     let (role_result, permissions_result) = match tokio::try_join!(
@@ -74,11 +86,23 @@ pub async fn get(
 
 pub async fn patch(
     State(state): State<ArcShared>,
-    _initiator: initiator::Initiator,
+    initiator: initiator::Initiator,
     Path(PathParams { role_id }): Path<PathParams>,
     axum::Json(json): axum::Json<actions::sec::UpdateRole>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
+
+    if !has_ability(
+        &conn,
+        initiator.user().id(),
+        Scope::SecRoles,
+        Ability::Write
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
+
     let transaction = conn.transaction().await?;
 
     let Some(original) = Role::retrieve(&transaction, &role_id).await? else {
@@ -205,10 +229,22 @@ pub async fn patch(
 
 pub async fn delete(
     State(state): State<ArcShared>,
-    _initiator: initiator::Initiator,
+    initiator: initiator::Initiator,
     Path(PathParams { role_id }): Path<PathParams>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
+
+    if !has_ability(
+        &conn,
+        initiator.user().id(),
+        Scope::SecRoles,
+        Ability::Write
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
+
     let transaction = conn.transaction().await?;
 
     let Some(original) = Role::retrieve(&transaction, &role_id).await? else {

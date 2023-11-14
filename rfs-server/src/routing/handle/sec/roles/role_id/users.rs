@@ -10,7 +10,7 @@ use serde::Deserialize;
 use crate::net::{self, error};
 use crate::state::ArcShared;
 use crate::sec::authn::initiator;
-use crate::sec::authz::permission::Role;
+use crate::sec::authz::permission::{self, Role};
 use crate::sql;
 
 #[derive(Deserialize)]
@@ -20,10 +20,21 @@ pub struct PathParams {
 
 pub async fn get(
     State(state): State<ArcShared>,
-    _initiator: initiator::Initiator,
+    initiator: initiator::Initiator,
     Path(PathParams { role_id }): Path<PathParams>,
 ) -> error::Result<impl IntoResponse> {
     let conn = state.pool().get().await?;
+
+    if !permission::has_ability(
+        &conn,
+        initiator.user().id(),
+        permission::Scope::SecRoles,
+        permission::Ability::Read
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
 
     let Some(_role) = Role::retrieve(&conn, &role_id).await? else {
         return Err(error::Error::new()
@@ -55,11 +66,23 @@ pub async fn get(
 
 pub async fn post(
     State(state): State<ArcShared>,
-    _initiator: initiator::Initiator,
+    initiator: initiator::Initiator,
     Path(PathParams { role_id }): Path<PathParams>,
     axum::Json(json): axum::Json<actions::sec::AddRoleUser>
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
+
+    if !permission::has_ability(
+        &conn,
+        initiator.user().id(),
+        permission::Scope::SecRoles,
+        permission::Ability::Write
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
+
     let transaction = conn.transaction().await?;
 
     let Some(_role) = Role::retrieve(&transaction, &role_id).await? else {
@@ -93,11 +116,23 @@ pub async fn post(
 
 pub async fn delete(
     State(state): State<ArcShared>,
-    _initiator: initiator::Initiator,
+    initiator: initiator::Initiator,
     Path(PathParams { role_id }): Path<PathParams>,
     axum::Json(json): axum::Json<actions::sec::DropRoleUser>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
+
+    if !permission::has_ability(
+        &conn,
+        initiator.user().id(),
+        permission::Scope::SecRoles,
+        permission::Ability::Write
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
+
     let transaction = conn.transaction().await?;
 
     let Some(_role) = Role::retrieve(&transaction, &role_id).await? else {
