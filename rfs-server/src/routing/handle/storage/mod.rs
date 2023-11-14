@@ -12,6 +12,7 @@ use crate::net;
 use crate::net::error;
 use crate::state::ArcShared;
 use crate::sec::authn::initiator;
+use crate::sec::authz::permission;
 use crate::sql;
 use crate::storage;
 use crate::fs;
@@ -25,6 +26,18 @@ pub async fn get(
     _headers: HeaderMap,
 ) -> error::Result<impl IntoResponse> {
     let conn = state.pool().get().await?;
+
+    if !permission::has_ability(
+        &conn,
+        initiator.user().id(),
+        permission::Scope::Storage,
+        permission::Ability::Read,
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
+
     let params = [initiator.user().id()];
 
     let fut = conn.query_raw(
@@ -120,7 +133,16 @@ pub async fn post(
 
     let mut conn = state.pool().get().await?;
 
-    conn.execute("select * from users", &[]).await?;
+    if !permission::has_ability(
+        &conn,
+        initiator.user().id(),
+        permission::Scope::Storage,
+        permission::Ability::Write,
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
 
     let type_: storage::types::Type = match json.type_ {
         CreateStorageType::Local { path } => {

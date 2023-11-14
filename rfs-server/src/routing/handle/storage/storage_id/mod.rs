@@ -11,11 +11,10 @@ use crate::net;
 use crate::net::error;
 use crate::state::ArcShared;
 use crate::sec::authn::initiator;
+use crate::sec::authz::permission;
 use crate::sql;
 use crate::storage;
 use crate::tags;
-
-//pub mod root;
 
 #[derive(Deserialize)]
 pub struct PathParams {
@@ -24,10 +23,21 @@ pub struct PathParams {
 
 pub async fn get(
     State(state): State<ArcShared>,
-    _initiator: initiator::Initiator,
+    initiator: initiator::Initiator,
     Path(PathParams { storage_id }): Path<PathParams>,
 ) -> error::Result<impl IntoResponse> {
     let conn = state.pool().get().await?;
+
+    if !permission::has_ability(
+        &conn,
+        initiator.user().id(),
+        permission::Scope::Storage,
+        permission::Ability::Read,
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
 
     let Some(medium) = storage::Medium::retrieve(
         &conn,
@@ -46,6 +56,12 @@ pub async fn get(
             .message("requested storage item was not found"));
     }
 
+    if medium.user_id != *initiator.user().id() {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
+
     let rtn = rfs_lib::json::Wrapper::new(medium.into_schema());
 
     Ok(net::Json::new(rtn))
@@ -58,6 +74,17 @@ pub async fn put(
     axum::Json(json): axum::Json<UpdateStorage>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
+
+    if !permission::has_ability(
+        &conn,
+        initiator.user().id(),
+        permission::Scope::Storage,
+        permission::Ability::Write,
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
 
     let Some(mut medium) = storage::Medium::retrieve(
         &conn,
@@ -74,6 +101,12 @@ pub async fn put(
             .status(StatusCode::NOT_FOUND)
             .kind("StorageNotFound")
             .message("requested storage item was not found"));
+    }
+
+    if medium.user_id != *initiator.user().id() {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
     }
 
     if !json.has_work() {
@@ -151,12 +184,23 @@ pub async fn put(
 
 pub async fn delete(
     State(state): State<ArcShared>,
-    _initiator: initiator::Initiator,
+    initiator: initiator::Initiator,
     Path(PathParams { storage_id }): Path<PathParams>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    let Some(_medium) = storage::Medium::retrieve(
+    if !permission::has_ability(
+        &conn,
+        initiator.user().id(),
+        permission::Scope::Storage,
+        permission::Ability::Write,
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
+
+    let Some(medium) = storage::Medium::retrieve(
         &conn,
         &storage_id
     ).await? else {
@@ -165,6 +209,12 @@ pub async fn delete(
             .kind("StorageNotFound")
             .message("requested storage item was not found"));
     };
+
+    if medium.user_id != *initiator.user().id() {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
 
     let deleted = chrono::Utc::now();
 
