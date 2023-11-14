@@ -10,6 +10,7 @@ use serde::Deserialize;
 use crate::net::{self, error};
 use crate::state::ArcShared;
 use crate::sec::authn::initiator;
+use crate::sec::authz::permission;
 use crate::sql;
 use crate::user;
 
@@ -20,10 +21,22 @@ pub struct Params {
 
 pub async fn get(
     State(state): State<ArcShared>,
-    _initiator: initiator::Initiator,
+    initiator: initiator::Initiator,
     Path(Params { group_id }): Path<Params>,
 ) -> error::Result<impl IntoResponse> {
     let conn = state.pool().get().await?;
+
+    if !permission::has_ability(
+        &conn,
+        initiator.user().id(),
+        permission::Scope::UserGroup,
+        permission::Ability::Read
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
+
     let params: sql::ParamsVec = vec![&group_id];
 
     let Some(group) = user::group::Group::retrieve(&conn, &group_id).await? else {
@@ -62,11 +75,22 @@ pub async fn get(
 
 pub async fn post(
     State(state): State<ArcShared>,
-    _initiator: initiator::Initiator,
+    initiator: initiator::Initiator,
     Path(Params { group_id }): Path<Params>,
     axum::Json(json): axum::Json<actions::user::group::AddUsers>
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
+
+    if !permission::has_ability(
+        &conn,
+        initiator.user().id(),
+        permission::Scope::UserGroup,
+        permission::Ability::Write,
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
 
     let Some(_group) = user::group::Group::retrieve(&conn, &group_id).await? else {
         return Err(error::Error::new()
@@ -111,11 +135,22 @@ pub async fn post(
 
 pub async fn delete(
     State(state): State<ArcShared>,
-    _initiator: initiator::Initiator,
+    initiator: initiator::Initiator,
     Path(Params { group_id }): Path<Params>,
     axum::Json(json): axum::Json<actions::user::group::DropUsers>
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
+
+    if !permission::has_ability(
+        &conn,
+        initiator.user().id(),
+        permission::Scope::UserGroup,
+        permission::Ability::Write,
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
 
     let Some(_group) = user::group::Group::retrieve(&conn, &group_id).await? else {
         return Err(error::Error::new()

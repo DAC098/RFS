@@ -8,15 +8,28 @@ use tokio_postgres::error::SqlState;
 use crate::net::{self, error};
 use crate::state::ArcShared;
 use crate::sec::authn::initiator;
+use crate::sec::authz::permission;
 use crate::sql;
 
 pub mod group_id;
 
 pub async fn get(
     State(state): State<ArcShared>,
-    _initiator: initiator::Initiator
+    initiator: initiator::Initiator
 ) -> error::Result<impl IntoResponse> {
     let conn = state.pool().get().await?;
+
+    if !permission::has_ability(
+        &conn,
+        initiator.user().id(),
+        permission::Scope::UserGroup,
+        permission::Ability::Read,
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
+
     let params: sql::ParamsVec = vec![];
 
     let result = conn.query_raw(
@@ -44,10 +57,21 @@ pub async fn get(
 
 pub async fn post(
     State(state): State<ArcShared>,
-    _initiator: initiator::Initiator,
+    initiator: initiator::Initiator,
     axum::Json(json): axum::Json<actions::user::group::CreateGroup>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
+
+    if !permission::has_ability(
+        &conn,
+        initiator.user().id(),
+        permission::Scope::UserGroup,
+        permission::Ability::Write
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
 
     let name = json.name;
     let created = chrono::Utc::now();

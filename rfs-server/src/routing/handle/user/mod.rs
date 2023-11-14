@@ -8,6 +8,7 @@ use crate::net;
 use crate::net::error;
 use crate::state::ArcShared;
 use crate::sec::authn::initiator;
+use crate::sec::authz::permission;
 use crate::sql;
 use crate::user;
 
@@ -16,9 +17,21 @@ pub mod user_id;
 
 pub async fn get(
     State(state): State<ArcShared>,
-    _initiator: initiator::Initiator
+    initiator: initiator::Initiator
 ) -> error::Result<impl IntoResponse> {
     let conn = state.pool().get().await?;
+
+    if !permission::has_ability(
+        &conn,
+        initiator.user().id(),
+        permission::Scope::User,
+        permission::Ability::Read
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
+
     let params: sql::ParamsVec = vec![];
 
     let result = conn.query_raw(
@@ -51,12 +64,23 @@ pub async fn get(
 
 pub async fn post(
     State(state): State<ArcShared>,
-    _initiator: initiator::Initiator,
+    initiator: initiator::Initiator,
     axum::Json(json): axum::Json<actions::user::CreateUser>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
-    let id = state.ids().wait_user_id()?;
 
+    if !permission::has_ability(
+        &conn,
+        initiator.user().id(),
+        permission::Scope::User,
+        permission::Ability::Write,
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
+
+    let id = state.ids().wait_user_id()?;
     let username = json.username;
 
     if !rfs_lib::user::username_valid(&username) {

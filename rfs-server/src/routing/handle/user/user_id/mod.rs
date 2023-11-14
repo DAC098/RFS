@@ -10,6 +10,7 @@ use crate::net;
 use crate::net::error;
 use crate::state::ArcShared;
 use crate::sec::authn::initiator;
+use crate::sec::authz::permission;
 use crate::sql;
 use crate::user;
 
@@ -20,10 +21,21 @@ pub struct PathParams {
 
 pub async fn get(
     State(state): State<ArcShared>,
-    _initiator: initiator::Initiator,
+    initiator: initiator::Initiator,
     Path(PathParams { user_id }): Path<PathParams>,
 ) -> error::Result<impl IntoResponse> {
     let conn = state.pool().get().await?;
+
+    if !permission::has_ability(
+        &conn,
+        initiator.user().id(),
+        permission::Scope::User,
+        permission::Ability::Read,
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
 
     let Some(user) = user::User::retrieve(&conn, &user_id).await? else {
         return Err(error::Error::new()
@@ -47,11 +59,22 @@ pub async fn get(
 
 pub async fn patch(
     State(state): State<ArcShared>,
-    _initiator: initiator::Initiator,
+    initiator: initiator::Initiator,
     Path(PathParams { user_id }): Path<PathParams>,
     axum::Json(json): axum::Json<actions::user::UpdateUser>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
+
+    if !permission::has_ability(
+        &conn,
+        initiator.user().id(),
+        permission::Scope::User,
+        permission::Ability::Write,
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
 
     let Some(mut user) = user::User::retrieve(&conn, &user_id).await? else {
         return Err(error::Error::new()
@@ -171,6 +194,17 @@ pub async fn delete(
     Path(PathParams { user_id }): Path<PathParams>,
 ) -> error::Result<impl IntoResponse> {
     let conn = state.pool().get().await?;
+
+    if !permission::has_ability(
+        &conn,
+        initiator.user().id(),
+        permission::Scope::User,
+        permission::Ability::Write
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
 
     let Some(user) = user::User::retrieve(&conn, &user_id).await? else {
         return Err(error::Error::new()
