@@ -196,6 +196,14 @@ impl Item {
         }
     }
 
+    pub fn user_id(&self) -> &ids::UserId {
+        match self {
+            Self::Root(root) => &root.user_id,
+            Self::Directory(dir) => &dir.user_id,
+            Self::File(file) => &file.user_id,
+        }
+    }
+
     pub fn is_file(&self) -> bool {
         match self {
             Self::File(_) => true,

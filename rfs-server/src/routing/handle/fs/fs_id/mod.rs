@@ -15,6 +15,7 @@ use crate::net;
 use crate::net::error;
 use crate::state::ArcShared;
 use crate::sec::authn::initiator;
+use crate::sec::authz::permission;
 use crate::sql;
 use crate::storage;
 use crate::fs;
@@ -69,10 +70,21 @@ pub struct PathParams {
 
 pub async fn get(
     State(state): State<ArcShared>,
-    _initiator: initiator::Initiator,
+    initiator: initiator::Initiator,
     Path(PathParams { fs_id }): Path<PathParams>,
 ) -> error::Result<impl IntoResponse> {
     let conn = state.pool().get().await?;
+
+    if !permission::has_ability(
+        &conn,
+        initiator.user().id(),
+        permission::Scope::Fs,
+        permission::Ability::Read
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
 
     let Some(item) = fs::Item::retrieve(
         &conn,
@@ -83,6 +95,12 @@ pub async fn get(
             .kind("FSItemNotFound")
             .message("requested fs item was not found"));
     };
+
+    if item.user_id() != initiator.user().id() {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
 
     let wrapper = rfs_lib::json::Wrapper::new(item.into_schema());
 
@@ -98,6 +116,17 @@ pub async fn post(
     axum::Json(json): axum::Json<rfs_lib::actions::fs::CreateDir>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
+
+    if !permission::has_ability(
+        &conn,
+        initiator.user().id(),
+        permission::Scope::Fs,
+        permission::Ability::Write,
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
 
     let Some(item) = fs::Item::retrieve(&conn, &fs_id).await? else {
         return Err(error::Error::new()
@@ -265,12 +294,29 @@ pub async fn put(
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
+    if !permission::has_ability(
+        &conn,
+        initiator.user().id(),
+        permission::Scope::Fs,
+        permission::Ability::Write,
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
+
     let Some(item) = fs::Item::retrieve(&conn, &fs_id).await? else {
         return Err(error::Error::new()
             .status(StatusCode::NOT_FOUND)
             .kind("FSNotFound")
             .message("requested fs item was not found"));
     };
+
+    if item.user_id() != initiator.user().id() {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
 
     tracing::debug!(
         "retrieved fs item: {:#?}",
@@ -513,11 +559,22 @@ pub async fn put(
 
 pub async fn patch(
     State(state): State<ArcShared>,
-    _initiator: initiator::Initiator,
+    initiator: initiator::Initiator,
     Path(PathParams { fs_id }): Path<PathParams>,
     axum::Json(json): axum::Json<rfs_lib::actions::fs::UpdateMetadata>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
+
+    if !permission::has_ability(
+        &conn,
+        initiator.user().id(),
+        permission::Scope::Fs,
+        permission::Ability::Write,
+    ).await? {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
 
     let Some(mut item) = fs::Item::retrieve(
         &conn,
@@ -528,6 +585,12 @@ pub async fn patch(
             .kind("FSItemNotFound")
             .message("requested fs item was not found"));
     };
+
+    if item.user_id() != initiator.user().id() {
+        return Err(error::Error::new()
+            .status(StatusCode::UNAUTHORIZED)
+            .kind("PermissionDenied"));
+    }
 
     if !json.has_work() {
         return Err(error::Error::new()
