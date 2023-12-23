@@ -30,22 +30,18 @@ pub async fn get(
         permission::Scope::SecSecrets,
         permission::Ability::Read
     ).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     let peppers = state.sec().peppers().inner();
 
     let (data, created) = {
-        let reader = peppers.read()
-            .map_err(|_| error::Error::new().source("peppers rwlock poisoned"))?;
+        let Ok(reader) = peppers.read() else {
+            return Err(error::Error::new().source("peppers rwlock poisoned"));
+        };
 
         let Some(found) = reader.get(&version) else {
-            return Err(error::Error::new()
-                .status(StatusCode::NOT_FOUND)
-                .kind("SecretNotFound")
-                .message("requested secret version was not found"));
+            return Err(error::Error::api(error::SecKind::SecretNotFound));
         };
 
         found.clone().into_tuple()
@@ -58,10 +54,9 @@ pub async fn get(
         &[&(version as i64)]
     ).await?;
 
-    let created = time::utc_to_chrono_datetime(&created)
-        .ok_or(error::Error::new()
-            .kind("TimestampError")
-            .message("failed to create timestamp for password key"))?;
+    let Some(created) = time::utc_to_chrono_datetime(&created) else {
+        return Err(error::Error::new().source("timetamp error for password key"));
+    };
 
     let rtn = rfs_lib::json::Wrapper::new(schema::sec::PasswordVersion {
         version,
@@ -86,32 +81,26 @@ pub async fn delete(
         permission::Scope::SecSecrets,
         permission::Ability::Write,
     ).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     let wrapper = state.sec().peppers();
 
     let found = {
-        let mut writer = wrapper.inner().write()
-            .map_err(|_| error::Error::new().source("peppers rwlock poisoned"))?;
+        let Ok(mut writer) = wrapper.inner().write() else {
+            return Err(error::Error::new().source("peppers rwlock poisoned"));
+        };
 
         let Some(found) = writer.remove(&version) else {
-            return Err(error::Error::new()
-                .status(StatusCode::NOT_FOUND)
-                .kind("SecretNotFound")
-                .message("requested secret version was not found"));
+            return Err(error::Error::api(error::SecKind::SecretNotFound));
         };
 
         found
     };
 
-    wrapper.save()
-        .map_err(|e| error::Error::new()
-            .kind("FailedSavingPeppers")
-            .message("failed to save updated peppers to file")
-            .source(e))?;
+    if let Err(err) = wrapper.save() {
+        return Err(error::Error::new().source(err));
+    }
 
     Ok(net::Json::empty())
 }

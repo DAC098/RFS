@@ -27,9 +27,7 @@ pub async fn get(
         permission::Scope::User,
         permission::Ability::Read
     ).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     let params: sql::ParamsVec = vec![];
@@ -75,43 +73,41 @@ pub async fn post(
         permission::Scope::User,
         permission::Ability::Write,
     ).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     let id = state.ids().wait_user_id()?;
     let username = json.username;
 
     if !rfs_lib::user::username_valid(&username) {
-        return Err(error::Error::new()
-            .status(StatusCode::BAD_REQUEST)
-            .kind("InvalidUsername")
-            .message("the requested username is invalid"));
+        return Err(error::Error::api((
+            error::GeneralKind::ValidationFailed,
+            error::Detail::with_key("username")
+        )));
     };
 
     let email = if let Some(email) = json.email {
         if !rfs_lib::user::email_valid(&email) {
-            return Err(error::Error::new()
-                .status(StatusCode::BAD_REQUEST)
-                .kind("InvalidEmail")
-                .message("the requested email is invalid"));
+            return Err(error::Error::api((
+                error::GeneralKind::ValidationFailed,
+                error::Detail::with_key("email")
+            )));
         };
 
         let (username_id, email_id) = user::check_username_and_email(&conn, &username, &email).await?;
 
         if username_id.is_some() {
-            return Err(error::Error::new()
-                .status(StatusCode::BAD_REQUEST)
-                .kind("UsernameExists")
-                .message("the requested username is already in use"));
+            return Err(error::Error::api((
+                error::GeneralKind::AlreadyExists,
+                error::Detail::with_key("username")
+            )));
         }
 
         if email_id.is_some() {
-            return Err(error::Error::new()
-                .status(StatusCode::BAD_REQUEST)
-                .kind("EmailExists")
-                .message("the requested email is already in use"));
+            return Err(error::Error::api((
+                error::GeneralKind::AlreadyExists,
+                error::Detail::with_key("email")
+            )));
         }
 
         Some(email)
@@ -119,10 +115,10 @@ pub async fn post(
         let username_id = user::check_username(&conn, &username).await?;
 
         if username_id.is_some() {
-            return Err(error::Error::new()
-                .status(StatusCode::BAD_REQUEST)
-                .kind("UsernameExists")
-                .message("the requested username is already in use"));
+            return Err(error::Error::api((
+                error::GeneralKind::AlreadyExists,
+                error::Detail::with_key("username")
+            )));
         }
 
         None

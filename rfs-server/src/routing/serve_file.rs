@@ -14,9 +14,7 @@ pub async fn handle(
     uri: Uri
 ) -> error::Result<impl IntoResponse> {
     if method != Method::GET {
-        return Err(error::Error::new()
-            .status(StatusCode::METHOD_NOT_ALLOWED)
-            .kind("MethodNotAllowed"));
+        return Err(error::Error::api(error::GeneralKind::InvalidMethod));
     }
 
     let parts = uri.path().split('/');
@@ -24,27 +22,18 @@ pub async fn handle(
 
     for part in parts {
         if part == ".." || part == "." {
-            return Err(error::Error::new()
-                .status(StatusCode::BAD_REQUEST)
-                .kind("InvalidUri")
-                .message("relative paths are not allowed"));
+            return Err(error::Error::api(error::GeneralKind::InvalidUri));
         } else {
             working.push(part);
         }
     }
 
     if !working.try_exists()? {
-        return Err(error::Error::new()
-            .status(StatusCode::NOT_FOUND)
-            .kind("NotFound")
-            .message("requested item was not found"));
+        return Err(error::Error::api(error::GeneralKind::NotFound));
     }
 
     if !working.is_file() {
-        return Err(error::Error::new()
-            .status(StatusCode::BAD_REQUEST)
-            .kind("InvalidFile")
-            .message("requested item is not a file"));
+        return Err(error::Error::api(error::GeneralKind::InvalidRequest));
     }
 
     net::fs::stream_file(working).await

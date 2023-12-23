@@ -19,10 +19,7 @@ pub async fn get(
     let conn = state.pool().get().await?;
 
     let Some(totp) = totp::Totp::retrieve(&conn, initiator.user().id()).await? else {
-        return Err(error::Error::new()
-            .status(StatusCode::NOT_FOUND)
-            .kind("TotpNotFound")
-            .message("requested totp was not found"));
+        return Err(error::Error::api(error::GeneralKind::NotFound));
     };
 
     let rtn = rfs_lib::json::Wrapper::new(rfs_lib::schema::auth::Totp {
@@ -43,18 +40,15 @@ pub async fn post(
     let mut conn = state.pool().get().await?;
 
     if let Some(_existing) = totp::Totp::retrieve(&conn, initiator.user().id()).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::BAD_REQUEST)
-            .kind("TotpExists")
-            .message("totp already exists"));
+        return Err(error::Error::api(error::GeneralKind::AlreadyExists));
     }
 
     let algo = if let Some(given) = json.algo {
         let Ok(algo) = totp::Algo::try_from(given) else {
-            return Err(error::Error::new()
-                .status(StatusCode::BAD_REQUEST)
-                .kind("InvalidAlgo")
-                .message("algo provided is invalid"));
+            return Err(error::Error::api((
+                error::GeneralKind::InvalidData,
+                error::Detail::with_key("algo")
+            )));
         };
 
         algo
@@ -64,10 +58,10 @@ pub async fn post(
 
     let digits: u32 = if let Some(given) = json.digits {
         if !rfs_lib::sec::authn::totp::digits_valid(&given) {
-            return Err(error::Error::new()
-                .status(StatusCode::BAD_REQUEST)
-                .kind("InvalidDigits")
-                .message("digits provided is invalid"));
+            return Err(error::Error::api((
+                error::GeneralKind::InvalidData,
+                error::Detail::with_key("digits")
+            )));
         }
 
         given
@@ -77,10 +71,10 @@ pub async fn post(
 
     let step: u64 = if let Some(given) = json.step {
         if !rfs_lib::sec::authn::totp::step_valid(&given) {
-            return Err(error::Error::new()
-                .status(StatusCode::BAD_REQUEST)
-                .kind("InvalidStep")
-                .message("step provided is invalid"));
+            return Err(error::Error::api((
+                error::GeneralKind::InvalidData,
+                error::Detail::with_key("step")
+            )));
         }
 
         given
@@ -132,18 +126,15 @@ pub async fn patch(
     let mut regen = false;
 
     let Some(mut totp) = totp::Totp::retrieve(&conn, initiator.user().id()).await? else {
-        return Err(error::Error::new()
-            .status(StatusCode::NOT_FOUND)
-            .kind("TotpNotFound")
-            .message("totp not found"));
+        return Err(error::Error::api(error::GeneralKind::NotFound));
     };
 
     if let Some(given) = json.algo {
         let Ok(algo) = totp::Algo::try_from(given) else {
-            return Err(error::Error::new()
-                .status(StatusCode::BAD_REQUEST)
-                .kind("InvalidAlgo")
-                .message("algo provided is invalid"));
+            return Err(error::Error::api((
+                error::GeneralKind::InvalidData,
+                error::Detail::with_key("algo")
+            )));
         };
 
         totp.set_algo(algo);
@@ -152,10 +143,10 @@ pub async fn patch(
 
     if let Some(given) = json.digits {
         if !rfs_lib::sec::authn::totp::digits_valid(&given) {
-            return Err(error::Error::new()
-                .status(StatusCode::BAD_REQUEST)
-                .kind("InvalidDigits")
-                .message("digits provided is invalid"));
+            return Err(error::Error::api((
+                error::GeneralKind::InvalidData,
+                error::Detail::with_key("digits")
+            )));
         }
 
         totp.set_digits(given);
@@ -164,10 +155,10 @@ pub async fn patch(
 
     if let Some(given) = json.step {
         if !rfs_lib::sec::authn::totp::step_valid(&given) {
-            return Err(error::Error::new()
-                .status(StatusCode::BAD_REQUEST)
-                .kind("InvalidStep")
-                .message("step provided is invalid"));
+            return Err(error::Error::api((
+                error::GeneralKind::InvalidData,
+                error::Detail::with_key("step")
+            )));
         }
 
         totp.set_step(given);

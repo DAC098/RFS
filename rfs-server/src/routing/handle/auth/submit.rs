@@ -20,18 +20,12 @@ pub async fn post(
 
     let mut session = match initiator::lookup_header_map(state.auth(), &conn, &headers).await {
         Ok(_initiator) => {
-            return Err(error::Error::new()
-                .status(StatusCode::BAD_REQUEST)
-                .kind("AlreadyAuthenticated")
-                .message("session already authenticated"));
+            return Err(error::Error::api(error::AuthKind::AlreadyAuthenticated));
         },
         Err(err) => match err {
             LookupError::SessionUnauthenticated(session) => session,
             LookupError::SessionUnverified(_) => {
-                return Err(error::Error::new()
-                    .status(StatusCode::BAD_REQUEST)
-                    .kind("VerifyRequired")
-                    .message("session already authenticated, must verify"));
+                return Err(error::Error::api(error::AuthKind::VerifyRequired));
             },
             _ => {
                 return Err(err.into());
@@ -45,19 +39,13 @@ pub async fn post(
                 session.authenticated = true;
             },
             _ => {
-                return Err(error::Error::new()
-                    .status(StatusCode::UNAUTHORIZED)
-                    .kind("InvalidAuthMethod")
-                    .message("invalid auth method provided"));
+                return Err(error::Error::api(error::AuthKind::InvalidAuthMethod));
             }
         },
         actions::auth::SubmitAuth::Password(given) => match session.auth_method {
             AuthMethod::Password => {
                 if !rfs_lib::sec::authn::password_valid(&given) {
-                    return Err(error::Error::new()
-                        .status(StatusCode::BAD_REQUEST)
-                        .kind("InvalidPassword")
-                        .message("the provided password is an invalid format"));
+                    return Err(error::Error::api(error::AuthKind::InvalidPassword));
                 };
 
                 let Some(user_password) = password::Password::retrieve(
@@ -69,8 +57,9 @@ pub async fn post(
                 };
 
                 {
-                    let reader = peppers.read()
-                        .map_err(|_| error::Error::new().source("peppers rwlock poisoned"))?;
+                    let Ok(reader) = peppers.read() else {
+                        return Err(error::Error::new().source("peppers rwlock poisoned"));
+                    };
 
                     let Some(pepper) = reader.get(&user_password.version) else {
                         return Err(error::Error::new()
@@ -78,20 +67,14 @@ pub async fn post(
                     };
 
                     if !user_password.verify(&given, pepper.data())? {
-                        return Err(error::Error::new()
-                            .status(StatusCode::UNAUTHORIZED)
-                            .kind("InvalidPassword")
-                            .message("provided password is invalid"));
+                        return Err(error::Error::api(error::AuthKind::InvalidPassword));
                     }
                 }
 
                 session.authenticated = true;
             },
             _ => {
-                return Err(error::Error::new()
-                    .status(StatusCode::UNAUTHORIZED)
-                    .kind("InvalidAuthMethod")
-                    .message("invalid auth method provided"));
+                return Err(error::Error::api(error::AuthKind::InvalidAuthMethod));
             }
         }
     }

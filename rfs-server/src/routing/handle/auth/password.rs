@@ -17,32 +17,32 @@ pub async fn post(
     let peppers = state.sec().peppers().inner();
 
     if !rfs_lib::sec::authn::password_valid(&json.updated) {
-        return Err(error::Error::new()
-            .status(StatusCode::BAD_REQUEST)
-            .kind("InvalidPassword")
-            .message("the new password is an invalid format"));
+        return Err(error::Error::api((
+            error::GeneralKind::ValidationFailed,
+            error::Detail::Keys(vec![String::from("password")]),
+        )));
     };
 
     if json.updated != json.confirm {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("InvalidUpdatedPassword")
-            .message("miss match updated and confirmed"));
+        return Err(error::Error::api((
+            error::GeneralKind::InvalidData,
+            error::Detail::Keys(vec![String::from("confirm")])
+        )));
     }
 
     if let Some(current) = Password::retrieve(&conn, initiator.user().id()).await? {
         let Some(given) = json.current else {
-            return Err(error::Error::new()
-                .status(StatusCode::UNAUTHORIZED)
-                .kind("PasswordNotProvided")
-                .message("current password is required"));
+            return Err(error::Error::api((
+                error::GeneralKind::MissingData,
+                error::Detail::Keys(vec![String::from("current")])
+            )));
         };
 
         if !rfs_lib::sec::authn::password_valid(&given) {
-            return Err(error::Error::new()
-                .status(StatusCode::BAD_REQUEST)
-                .kind("InvalidPassword")
-                .message("the current password is an invalid format"));
+            return Err(error::Error::api((
+                error::GeneralKind::ValidationFailed,
+                error::Detail::Keys(vec![String::from("password")])
+            )));
         };
 
         let salt = password::gen_salt()?;
@@ -65,10 +65,10 @@ pub async fn post(
             };
 
             if !current.verify(given, secret)? {
-                return Err(error::Error::new()
-                    .status(StatusCode::UNAUTHORIZED)
-                    .kind("InvalidPassword")
-                    .message("provided password is invalid"));
+                return Err(error::Error::api((
+                    error::GeneralKind::InvalidData,
+                    error::Detail::Keys(vec![String::from("password")])
+                )));
             }
 
             if let Some((ver, pepper)) = reader.latest_version() {
@@ -135,10 +135,10 @@ pub async fn delete(
         initiator.user().id()
     ).await? {
         let Some(given) = json.current else {
-            return Err(error::Error::new()
-                .status(StatusCode::UNAUTHORIZED)
-                .kind("PasswordNotProvided")
-                .message("current password is required"));
+            return Err(error::Error::api((
+                error::GeneralKind::MissingData,
+                error::Detail::Keys(vec![String::from("current")]),
+            )));
         };
 
         {
@@ -157,10 +157,10 @@ pub async fn delete(
             };
 
             if !current.verify(given, secret)? {
-                return Err(error::Error::new()
-                    .status(StatusCode::UNAUTHORIZED)
-                    .kind("InvalidPassword")
-                    .message("provided password is invalid"));
+                return Err(error::Error::api((
+                    error::GeneralKind::InvalidData,
+                    error::Detail::Keys(vec![String::from("current")])
+                )));
             }
         }
 

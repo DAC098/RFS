@@ -35,9 +35,7 @@ pub async fn get(
         Scope::SecRoles,
         Ability::Read,
     ).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     let role_params: sql::ParamsArray<1> = [&role_id];
@@ -54,10 +52,7 @@ pub async fn get(
     ) {
         Ok((Some(role), permissions)) => (role, permissions),
         Ok((None, _)) => {
-            return Err(error::Error::new()
-                .status(StatusCode::NOT_FOUND)
-                .kind("RoleNotFound")
-                .message("requested role was not found"));
+            return Err(error::Error::api(error::SecKind::RoleNotFound));
         },
         Err(err) => {
             return Err(err.into());
@@ -98,24 +93,17 @@ pub async fn patch(
         Scope::SecRoles,
         Ability::Write
     ).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied))
     }
 
     let transaction = conn.transaction().await?;
 
     let Some(original) = Role::retrieve(&transaction, &role_id).await? else {
-        return Err(error::Error::new()
-            .status(StatusCode::NOT_FOUND)
-            .kind("RoleNotFound")
-            .message("requested role was not found"));
+        return Err(error::Error::api(error::SecKind::RoleNotFound));
     };
 
     if json.name.is_none() && json.permissions.is_none() {
-        return Err(error::Error::new()
-            .status(StatusCode::BAD_REQUEST)
-            .kind("NoWork"));
+        return Err(error::Error::api(error::GeneralKind::NoWork));
     }
 
     let name = if let Some(name) = json.name {
@@ -130,10 +118,10 @@ pub async fn patch(
             Err(err) => {
                 if let Some(constraint) = sql::unique_constraint_error(&err) {
                     if constraint == "authz_roles_name_key" {
-                        return Err(error::Error::new()
-                            .status(StatusCode::BAD_REQUEST)
-                            .kind("RoleNameExists")
-                            .message("requested role name already exists"));
+                        return Err(error::Error::api((
+                            error::GeneralKind::AlreadyExists,
+                            error::Detail::with_key("name")
+                        )));
                     }
                 }
 
@@ -240,18 +228,13 @@ pub async fn delete(
         Scope::SecRoles,
         Ability::Write
     ).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     let transaction = conn.transaction().await?;
 
     let Some(original) = Role::retrieve(&transaction, &role_id).await? else {
-        return Err(error::Error::new()
-            .status(StatusCode::NOT_FOUND)
-            .kind("RoleNotFound")
-            .message("requested role was not found"));
+        return Err(error::Error::api(error::SecKind::RoleNotFound));
     };
 
     let query_params: sql::ParamsArray<1> = [&role_id];

@@ -43,7 +43,6 @@ pub enum LookupError {
     InvalidString,
     InvalidLength,
     InvalidHash,
-    KeysPoisoned,
     SessionNotFound,
     SessionExpired(session::Session),
     SessionUnauthenticated(session::Session),
@@ -52,6 +51,8 @@ pub enum LookupError {
     UserNotFound(Mechanism),
 
     MechanismNotFound,
+
+    KeysPoisoned,
 
     Database(tokio_postgres::Error),
     HeaderToStr(axum::http::header::ToStrError),
@@ -74,38 +75,18 @@ impl From<LookupError> for error::Error {
         match e {
             LookupError::InvalidString |
             LookupError::InvalidLength |
-            LookupError::InvalidHash => error::Error::new()
-                .status(StatusCode::UNAUTHORIZED)
-                .kind("InvalidSession")
-                .message("session id is invalid"),
+            LookupError::InvalidHash => error::Error::api(error::AuthKind::InvalidSession),
+            LookupError::SessionNotFound => error::Error::api(error::AuthKind::SessionNotFound),
+            LookupError::SessionExpired(_session) => error::Error::api(error::AuthKind::SessionExpired),
+            LookupError::SessionUnauthenticated(_session) => error::Error::api(error::AuthKind::SessionUnauthenticated),
+            LookupError::SessionUnverified(_session) => error::Error::api(error::AuthKind::SessionUnverified),
+
+            LookupError::UserNotFound(_authorization) => error::Error::api(error::UserKind::NotFound),
+
+            LookupError::MechanismNotFound => error::Error::api(error::AuthKind::MechanismNotFound),
+
             LookupError::KeysPoisoned => error::Error::new()
                 .source("session keys rwlock poisoned"),
-            LookupError::SessionNotFound => error::Error::new()
-                .status(StatusCode::NOT_FOUND)
-                .kind("SessionNotFound")
-                .message("session was not found"),
-            LookupError::SessionExpired(_session) => error::Error::new()
-                .status(StatusCode::UNAUTHORIZED)
-                .kind("SessionExpired")
-                .message("session has expired"),
-            LookupError::SessionUnauthenticated(_session) => error::Error::new()
-                .status(StatusCode::UNAUTHORIZED)
-                .kind("SessionUnauthenticated")
-                .message("session has not been authenticated"),
-            LookupError::SessionUnverified(_session) => error::Error::new()
-                .status(StatusCode::UNAUTHORIZED)
-                .kind("SessionUnverified")
-                .message("session has not been verified"),
-
-            LookupError::UserNotFound(_authorization) => error::Error::new()
-                .status(StatusCode::NOT_FOUND)
-                .kind("UserNotFound")
-                .message("authorization user was not found"),
-
-            LookupError::MechanismNotFound => error::Error::new()
-                .status(StatusCode::UNAUTHORIZED)
-                .kind("MechanismNotFound")
-                .message("authorization not provided"),
 
             LookupError::Database(e) => e.into(),
             LookupError::HeaderToStr(e) => e.into(),

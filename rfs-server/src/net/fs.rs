@@ -39,10 +39,10 @@ where
     let path_ref = path.as_ref();
 
     if !path_ref.try_exists()? {
-        Err(error::Error::new()
-            .status(StatusCode::NOT_FOUND)
-            .kind("NotFound")
-            .message(format!("{} was not found", name.as_ref())))
+        Err(error::Error::api((
+            error::GeneralKind::NotFound,
+            format!("{} was not found", name.as_ref())
+        )))
     } else {
         Ok(stream_file(path_ref).await?)
     }

@@ -31,16 +31,11 @@ pub async fn get(
         permission::Scope::SecRoles,
         permission::Ability::Read,
     ).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     let Some(_role) = Role::retrieve(&conn, &role_id).await? else {
-        return Err(error::Error::new()
-            .status(StatusCode::NOT_FOUND)
-            .kind("RoleNotFound")
-            .message("requested role was not found"));
+        return Err(error::Error::api(error::SecKind::RoleNotFound));
     };
 
     let query_params: sql::ParamsArray<1> = [&role_id];
@@ -78,24 +73,17 @@ pub async fn post(
         permission::Scope::SecRoles,
         permission::Ability::Write,
     ).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     let transaction = conn.transaction().await?;
 
     let Some(_role) = Role::retrieve(&transaction, &role_id).await? else {
-        return Err(error::Error::new()
-            .status(StatusCode::NOT_FOUND)
-            .kind("RoleNotFound")
-            .message("requested role was not found"));
+        return Err(error::Error::api(error::SecKind::RoleNotFound));
     };
 
     if json.ids.len() == 0 {
-        return Err(error::Error::new()
-            .kind("NoWork")
-            .message("no group ids where specified"));
+        return Err(error::Error::api(error::GeneralKind::NoWork));
     }
 
     let query = "\
@@ -128,24 +116,17 @@ pub async fn delete(
         permission::Scope::SecRoles,
         permission::Ability::Write
     ).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     let transaction = conn.transaction().await?;
 
     let Some(_role) = Role::retrieve(&transaction, &role_id).await? else {
-        return Err(error::Error::new()
-            .status(StatusCode::NOT_FOUND)
-            .kind("RoleNotFound")
-            .message("requested role was not found"));
+        return Err(error::Error::api(error::SecKind::RoleNotFound));
     };
 
     if json.ids.len() == 0 {
-        return Err(error::Error::new()
-            .kind("NoWork")
-            .message("no group ids where specified"));
+        return Err(error::Error::api(error::GeneralKind::NoWork));
     }
 
     let _ = transaction.execute(

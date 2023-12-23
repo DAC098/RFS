@@ -26,26 +26,27 @@ pub async fn get(
         permission::Scope::SecSecrets,
         permission::Ability::Read
     ).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenined"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     let peppers = state.sec().peppers().inner();
     let mut known_versions;
 
     {
-        let reader = peppers.read()
-            .map_err(|_| error::Error::new().source("peppers rwlock poisoned"))?;
+        let Ok(reader) = peppers.read() else {
+            return Err(error::Error::new().source("peppers rwlock poisoned"));
+        };
+
         known_versions = Vec::with_capacity(reader.len());
 
         for (version, key) in reader.iter() {
+            let Some(created) = time::utc_to_chrono_datetime(key.created()) else {
+                return Err(error::Error::new().source("timestamp error for password key"));
+            };
+
             known_versions.push(schema::sec::PasswordListItem {
                 version: *version,
-                created: time::utc_to_chrono_datetime(key.created())
-                    .ok_or(error::Error::new()
-                        .kind("TimestampError")
-                        .message("failed to create timestamp for password key"))?
+                created
             });
         }
     }
@@ -65,33 +66,28 @@ pub async fn post(
         permission::Scope::SecSecrets,
         permission::Ability::Write
     ).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     let wrapper = state.sec().peppers();
     let data = Key::rand_key_data()?;
     let Some(created) = time::utc_now() else {
-        return Err(error::Error::new()
-            .source("failed to create timestamp"));
+        return Err(error::Error::new().source("failed to create timestamp"));
     };
 
     let key = Key::new(data, created);
 
     {
-        let mut writer = wrapper.inner().write()
-            .map_err(|_| error::Error::new()
-                .source("peppers rwlock poisoned"))?;
+        let Ok(mut writer) = wrapper.inner().write() else {
+            return Err(error::Error::new().source("peppers rwlock poisoned"));
+        };
 
         writer.update(key);
     }
 
-    wrapper.save()
-        .map_err(|e| error::Error::new()
-            .kind("failedSavingPeppers")
-            .message("failed to save updated peppers to file")
-            .source(e))?;
+    if let Err(err) = wrapper.save() {
+        return Err(error::Error::new().source(err));
+    }
 
     Ok(net::Json::empty())
 }

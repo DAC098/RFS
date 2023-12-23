@@ -24,26 +24,25 @@ pub async fn get(
         permission::Scope::SecSecrets,
         permission::Ability::Read,
     ).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDeniend"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     let session_keys = state.sec().session_info().keys().inner();
     let mut known_keys;
 
     {
-        let reader = session_keys.read()
-            .map_err(|_| error::Error::new().source("session keys rwlock poisoned"))?;
+        let Ok(reader) = session_keys.read() else {
+            return Err(error::Error::new().source("session keys rwlock poisoned"));
+        };
+
         known_keys = Vec::with_capacity(reader.stored());
 
         for key in reader.iter() {
-            known_keys.push(schema::sec::SessionListItem {
-                created: time::utc_to_chrono_datetime(key.created())
-                    .ok_or(error::Error::new()
-                        .kind("TimestampError")
-                        .message("failed to create timestamp for session key"))?
-            });
+            let Some(created) = time::utc_to_chrono_datetime(key.created()) else {
+                return Err(error::Error::new().source("timestamp error for session key"));
+            };
+
+            known_keys.push(schema::sec::SessionListItem { created });
         }
     }
 
@@ -62,34 +61,28 @@ pub async fn post(
         permission::Scope::SecSecrets,
         permission::Ability::Write,
     ).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     let wrapper = state.sec().session_info().keys();
     let data = Key::rand_key_data()?;
     let Some(created) = time::utc_now() else {
-        return Err(error::Error::new()
-            .kind("TimestampError")
-            .source("failed to create timestamp"));
+        return Err(error::Error::new().source("timestamp error for session key"));
     };
 
     let key = Key::new(data, created);
 
     {
-        let mut writer = wrapper.inner().write()
-            .map_err(|_| error::Error::new()
-                .source("session keys rwlock poisoned"))?;
+        let Ok(mut writer) = wrapper.inner().write() else {
+            return Err(error::Error::new().source("session keys rwlock poisoned"));
+        };
 
         writer.push(key);
     }
 
-    wrapper.save()
-        .map_err(|e| error::Error::new()
-            .kind("FailedSavingSessionKeys")
-            .message("failed to save updated session keys to file")
-            .source(e))?;
+    if let Err(err) = wrapper.save() {
+        return Err(error::Error::new().source(err));
+    }
 
     Ok(net::Json::empty())
 }
@@ -112,9 +105,7 @@ pub async fn delete(
         permission::Scope::SecSecrets,
         permission::Ability::Write
     ).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     let wrapper = state.sec().session_info().keys();
@@ -128,9 +119,9 @@ pub async fn delete(
     }
 
     {
-        let mut writer = wrapper.inner().write()
-            .map_err(|_| error::Error::new()
-                .source("session keys rwlock poisoned"))?;
+        let Ok(mut writer) = wrapper.inner().write() else {
+            return Err(error::Error::new().source("session keys rwlock poisoned"));
+        };
 
         while amount > 0 {
             if let None = writer.pop() {
@@ -141,11 +132,9 @@ pub async fn delete(
         }
     }
 
-    wrapper.save()
-        .map_err(|e| error::Error::new()
-            .kind("FailedSavingSessionKeys")
-            .message("failed to save updated session keys to file")
-            .source(e))?;
+    if let Err(err) = wrapper.save() {
+        return Err(error::Error::new().source(err));
+    }
 
     Ok(net::Json::empty())
 }

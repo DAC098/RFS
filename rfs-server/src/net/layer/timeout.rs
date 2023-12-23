@@ -28,9 +28,7 @@ where
     fn from(err: TimeoutError<E>) -> Self {
         match err {
             TimeoutError::Service(e) => e.into(),
-            TimeoutError::Timeout => error::Error::new()
-                .status(StatusCode::REQUEST_TIMEOUT)
-                .kind("Timeout")
+            TimeoutError::Timeout => error::Error::api(error::GeneralKind::Timeout)
         }
     }
 }

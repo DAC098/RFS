@@ -21,10 +21,9 @@ pub async fn post(
 
     match initiator::lookup_header_map(state.auth(), &conn, &headers).await {
         Ok(_) => {
-            return Err(error::Error::new()
-                .status(StatusCode::BAD_REQUEST)
-                .kind("AlreadyAuthenticated")
-                .message("session already authenticated"));
+            return Err(error::Error::api(
+                error::AuthKind::AlreadyAuthenticated
+            ));
         },
         Err(err) => match err {
             LookupError::MechanismNotFound => {},
@@ -35,17 +34,17 @@ pub async fn post(
     }
 
     if !rfs_lib::user::username_valid(&json.username) {
-        return Err(error::Error::new()
-            .status(StatusCode::BAD_REQUEST)
-            .kind("InvalidUsername")
-            .message("the requested username is an invalid format"));
+        return Err(error::Error::api((
+            error::GeneralKind::ValidationFailed,
+            error::Detail::Keys(vec![String::from("username")])
+        )));
     };
 
     let Some(user) = user::User::query_with_username(&mut conn, &json.username).await? else {
-        return Err(error::Error::new()
-            .status(StatusCode::NOT_FOUND)
-            .kind("UserNotFound")
-            .message("provided username was not found"));
+        return Err(error::Error::api((
+            error::GeneralKind::NotFound,
+            error::Detail::Keys(vec![String::from("username")])
+        )));
     };
 
     let mut builder = session::Session::builder(user.id().clone());

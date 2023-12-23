@@ -32,18 +32,13 @@ pub async fn get(
         permission::Scope::UserGroup,
         permission::Ability::Read
     ).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     let params: sql::ParamsVec = vec![&group_id];
 
     let Some(group) = user::group::Group::retrieve(&conn, &group_id).await? else {
-        return Err(error::Error::new()
-            .status(StatusCode::NOT_FOUND)
-            .kind("GroupNotFound")
-            .message("the requested group was not found"));
+        return Err(error::Error::api(error::UserKind::GroupNotFound));
     };
 
     let result = conn.query_raw(
@@ -87,22 +82,15 @@ pub async fn post(
         permission::Scope::UserGroup,
         permission::Ability::Write,
     ).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     let Some(_group) = user::group::Group::retrieve(&conn, &group_id).await? else {
-        return Err(error::Error::new()
-            .status(StatusCode::NOT_FOUND)
-            .kind("GroupNotFound")
-            .message("the requested group was not found"));
+        return Err(error::Error::api(error::UserKind::GroupNotFound));
     };
 
     if json.ids.len() == 0 {
-        return Err(error::Error::new()
-            .kind("NoWork")
-            .message("no user ids where specified"));
+        return Err(error::Error::api(error::GeneralKind::NoWork));
     }
 
     let mut id_iter = json.ids.iter();
@@ -147,22 +135,15 @@ pub async fn delete(
         permission::Scope::UserGroup,
         permission::Ability::Write,
     ).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     let Some(_group) = user::group::Group::retrieve(&conn, &group_id).await? else {
-        return Err(error::Error::new()
-            .status(StatusCode::NOT_FOUND)
-            .kind("GroupNotFound")
-            .message("the requested group was not found"));
+        return Err(error::Error::api(error::UserKind::GroupNotFound));
     };
 
     if json.ids.len() == 0 {
-        return Err(error::Error::new()
-            .kind("NoWork")
-            .message("no user ids where specified"));
+        return Err(error::Error::api(error::GeneralKind::NoWork));
     }
 
     let transaction = conn.transaction().await?;

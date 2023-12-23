@@ -28,9 +28,7 @@ pub async fn get(
         Scope::SecRoles,
         Ability::Read,
     ).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     let params: sql::ParamsVec = vec![];
@@ -71,9 +69,7 @@ pub async fn post(
         Scope::SecRoles,
         Ability::Write
     ).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     let transaction = conn.transaction().await?;
@@ -89,10 +85,10 @@ pub async fn post(
         Err(err) => {
             if let Some(constraint) = sql::unique_constraint_error(&err) {
                 if constraint == "authz_roles_name_key" {
-                    return Err(error::Error::new()
-                        .status(StatusCode::BAD_REQUEST)
-                        .kind("RoleNameExists")
-                        .message("requested role name already exists"));
+                    return Err(error::Error::api((
+                        error::GeneralKind::AlreadyExists,
+                        error::Detail::with_key("name")
+                    )));
                 }
             }
 

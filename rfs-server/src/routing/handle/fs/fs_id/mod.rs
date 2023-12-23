@@ -44,21 +44,15 @@ where
         if let Some(checked) = written.checked_add(wrote) {
             written = checked;
         } else {
-            return Err(error::Error::new()
-                .status(StatusCode::BAD_REQUEST)
-                .kind("MaxFileSize")
-                .message("the provided file is too large for the system"));
+            return Err(error::Error::api(error::FsKind::MaxSize));
         }
     }
 
     writer.flush().await?;
 
-    let size = TryFrom::try_from(written)
-        .map_err(|_| error::Error::new()
-            .status(StatusCode::BAD_REQUEST)
-            .kind("MaxFileSize")
-            .message("the provided file is too large for the system")
-            .source("total bytes written exceeds u64?"))?;
+    let Ok(size) = TryFrom::try_from(written) else {
+        return Err(error::Error::api(error::FsKind::MaxSize));
+    };
 
     Ok(size)
 }
@@ -81,25 +75,18 @@ pub async fn get(
         permission::Scope::Fs,
         permission::Ability::Read
     ).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     let Some(item) = fs::Item::retrieve(
         &conn,
         &fs_id
     ).await? else {
-        return Err(error::Error::new()
-            .status(StatusCode::NOT_FOUND)
-            .kind("FSItemNotFound")
-            .message("requested fs item was not found"));
+        return Err(error::Error::api(error::FsKind::NotFound));
     };
 
     if item.user_id() != initiator.user().id() {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     let wrapper = rfs_lib::json::Wrapper::new(item.into_schema());
@@ -123,26 +110,18 @@ pub async fn post(
         permission::Scope::Fs,
         permission::Ability::Write,
     ).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     let Some(item) = fs::Item::retrieve(&conn, &fs_id).await? else {
-        return Err(error::Error::new()
-            .status(StatusCode::NOT_FOUND)
-            .kind("FSNotFound")
-            .message("requested fs item was not found"));
+        return Err(error::Error::api(error::FsKind::NotFound));
     };
 
     let Some(medium) = storage::Medium::retrieve(
         &conn,
         item.storage_id()
     ).await? else {
-        return Err(error::Error::new()
-            .status(StatusCode::NOT_FOUND)
-            .kind("StorageNotFound")
-            .message("requested storage item was not found"));
+        return Err(error::Error::api(error::StorageKind::NotFound));
     };
 
     let transaction = conn.transaction().await?;
@@ -153,10 +132,10 @@ pub async fn post(
 
     let comment = if let Some(given) = json.comment {
         if !rfs_lib::fs::comment_valid(&given) {
-            return Err(error::Error::new()
-                .status(StatusCode::BAD_REQUEST)
-                .kind("InvalidComment")
-                .message("the provided comment is an invalid format"));
+            return Err(error::Error::api((
+                error::GeneralKind::ValidationFailed,
+                error::Detail::with_key("comment")
+            )));
         }
 
         Some(given)
@@ -168,10 +147,10 @@ pub async fn post(
     let parent;
 
     if !rfs_lib::fs::basename_valid(&basename) {
-        return Err(error::Error::new()
-            .status(StatusCode::BAD_REQUEST)
-            .kind("InvalidBasename")
-            .message("the provided basename is an invalid format"));
+        return Err(error::Error::api((
+            error::GeneralKind::ValidationFailed,
+            error::Detail::with_key("basename")
+        )));
     }
 
     match item {
@@ -184,10 +163,9 @@ pub async fn post(
             parent = dir.id.clone();
         },
         fs::Item::File(_) => {
-            return Err(error::Error::new()
-                .status(StatusCode::BAD_REQUEST)
-                .kind("InvalidFSItem")
-                .message("cannot create directory under file"));
+            return Err(error::Error::api(
+                error::FsKind::InvalidType
+            ));
         }
     }
 
@@ -243,10 +221,10 @@ pub async fn post(
 
     let tags = if let Some(tags) = json.tags {
         if !tags::validate_map(&tags) {
-            return Err(error::Error::new()
-                .status(StatusCode::BAD_REQUEST)
-                .kind("InvalidTags")
-                .message("the provided tags contain invalid values"));
+            return Err(error::Error::api((
+                error::GeneralKind::ValidationFailed,
+                error::Detail::with_key("tags")
+            )));
         }
 
         tags::create_tags(&transaction, "fs_tags", "fs_id", &id, &tags).await?;
@@ -300,22 +278,21 @@ pub async fn put(
         permission::Scope::Fs,
         permission::Ability::Write,
     ).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(
+            error::AuthKind::PermissionDenied
+        ));
     }
 
     let Some(item) = fs::Item::retrieve(&conn, &fs_id).await? else {
-        return Err(error::Error::new()
-            .status(StatusCode::NOT_FOUND)
-            .kind("FSNotFound")
-            .message("requested fs item was not found"));
+        return Err(error::Error::api(
+            error::FsKind::NotFound
+        ));
     };
 
     if item.user_id() != initiator.user().id() {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(
+            error::AuthKind::PermissionDenied
+        ));
     }
 
     tracing::debug!(
@@ -327,10 +304,9 @@ pub async fn put(
         &conn,
         item.storage_id()
     ).await? else {
-        return Err(error::Error::new()
-            .status(StatusCode::NOT_FOUND)
-            .kind("StorageNotFound")
-            .message("requested storage item was not found"));
+        return Err(error::Error::api(
+            error::StorageKind::NotFound
+        ));
     };
 
     let transaction = conn.transaction().await?;
@@ -339,10 +315,7 @@ pub async fn put(
     let mime = if let Some(value) = headers.get("content-type") {
         mime::Mime::from_str(value.to_str()?)?
     } else {
-        return Err(error::Error::new()
-            .status(StatusCode::BAD_REQUEST)
-            .kind("NoContentType")
-            .message("no content-type was specified for the file"));
+        return Err(error::Error::api(error::FsKind::NoContentType));
     };
 
     let rtn = if !item.is_file() {
@@ -358,24 +331,21 @@ pub async fn put(
         } else if let Some(value) = headers.get("x-basename") {
             value.to_str()?.to_owned()
         } else {
-            return Err(error::Error::new()
-                .status(StatusCode::BAD_REQUEST)
-                .kind("NoBasename")
-                .message("no basename was provided"));
+            return Err(error::Error::api((
+                error::GeneralKind::MissingData,
+                error::Detail::with_key("basename")
+            )));
         };
 
         if !rfs_lib::fs::basename_valid(&basename) {
-            return Err(error::Error::new()
-                .status(StatusCode::BAD_REQUEST)
-                .kind("InvalidBasename")
-                .message("the provided basename is an invalid format"));
+            return Err(error::Error::api((
+                error::GeneralKind::ValidationFailed,
+                error::Detail::with_key("basename")
+            )));
         }
 
         if let Some(_id) = fs::name_check(&transaction, item.id(), &basename).await? {
-            return Err(error::Error::new()
-                .status(StatusCode::BAD_REQUEST)
-                .kind("AlreadyExists")
-                .message("the given basename already exists in this container"));
+            return Err(error::Error::api(error::GeneralKind::AlreadyExists));
         }
 
         match item {
@@ -401,10 +371,10 @@ pub async fn put(
                 );
 
                 if full.try_exists()? {
-                    return Err(error::Error::new()
-                        .status(StatusCode::BAD_REQUEST)
-                        .kind("FileExists")
-                        .message("a file exists that is unknown to the server"));
+                    return Err(error::Error::api((
+                        error::GeneralKind::AlreadyExists,
+                        "an unknown file already exists in this location"
+                    )));
                 }
 
                 let mut hasher = blake3::Hasher::new();
@@ -430,12 +400,10 @@ pub async fn put(
             let pg_mime_type = mime.type_().as_str();
             let pg_mime_subtype = mime.subtype().as_str();
             let pg_hash = hash.as_bytes().as_slice();
-            let pg_size: i64 = TryFrom::try_from(size)
-                .map_err(|_| error::Error::new()
-                    .status(StatusCode::BAD_REQUEST)
-                    .kind("MaxFileSize")
-                    .message("the provided file is too large for the system")
-                    .source("total bytes written exceeds i64"))?;
+            let Ok(pg_size): Result<i64, _> = TryFrom::try_from(size) else {
+                return Err(error::Error::api(error::FsKind::MaxSize)
+                    .source("total bytes written exceeds i64"));
+            };
 
             let _ = transaction.execute(
                 "\
@@ -493,10 +461,7 @@ pub async fn put(
         let hash: blake3::Hash;
 
         if mime != file.mime {
-            return Err(error::Error::new()
-                .status(StatusCode::BAD_REQUEST)
-                .kind("MimeMismatch")
-                .message("the providied mime type does not match the current file"));
+            return Err(error::Error::api(error::FsKind::MimeMismatch));
         }
 
         match &medium.type_ {
@@ -505,10 +470,7 @@ pub async fn put(
                 full.push(&file.basename);
 
                 if !full.try_exists()? {
-                    return Err(error::Error::new()
-                        .status(StatusCode::NOT_FOUND)
-                        .kind("FileNotFound")
-                        .message("the requested file does not exist on the system"));
+                    return Err(error::Error::api(error::FsKind::NotFound));
                 }
 
                 let mut hasher = blake3::Hasher::new();
@@ -525,12 +487,10 @@ pub async fn put(
 
         {
             let pg_hash = hash.as_bytes().as_slice();
-            let pg_size: i64 = TryFrom::try_from(size)
-                .map_err(|_| error::Error::new()
-                    .status(StatusCode::BAD_REQUEST)
-                    .kind("MaxFileSize")
-                    .message("the provided file is too large for the system")
-                    .source("total bytes written exceeds i64"))?;
+            let Ok(pg_size): Result<i64, _> = TryFrom::try_from(size) else {
+                return Err(error::Error::api(error::FsKind::MaxSize)
+                    .source("total bytes written exceeds i64"));
+            };
 
             let _ = transaction.execute(
                 "\
@@ -571,32 +531,22 @@ pub async fn patch(
         permission::Scope::Fs,
         permission::Ability::Write,
     ).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     let Some(mut item) = fs::Item::retrieve(
         &conn,
         &fs_id
     ).await? else {
-        return Err(error::Error::new()
-            .status(StatusCode::NOT_FOUND)
-            .kind("FSItemNotFound")
-            .message("requested fs item was not found"));
+        return Err(error::Error::api(error::FsKind::NotFound));
     };
 
     if item.user_id() != initiator.user().id() {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     if !json.has_work() {
-        return Err(error::Error::new()
-            .status(StatusCode::BAD_REQUEST)
-            .kind("NoWork")
-            .message("requested update with no changes"));
+        return Err(error::Error::api(error::GeneralKind::NoWork));
     }
 
     tracing::debug!("action {:?}", json);
@@ -636,10 +586,7 @@ pub async fn patch(
 
     if let Some(tags) = json.tags {
         if !tags::validate_map(&tags) {
-            return Err(error::Error::new()
-                .status(StatusCode::BAD_REQUEST)
-                .kind("InvalidTags")
-                .message("the provided tags are in an invalid format"));
+            return Err(error::Error::api(error::TagKind::InvalidTags));
         }
 
         tags::update_tags(

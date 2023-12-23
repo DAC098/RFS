@@ -26,10 +26,7 @@ pub async fn get(
         initiator.user().id(),
         &key_id
     ).await? else {
-        return Err(error::Error::new()
-            .status(StatusCode::NOT_FOUND)
-            .kind("KeyNotFound")
-            .message("requested totp recovery hash was not found"));
+        return Err(error::Error::api(error::GeneralKind::NotFound));
     };
 
     let rtn = rfs_lib::json::Wrapper::new(rfs_lib::schema::auth::TotpRecovery {
@@ -55,25 +52,19 @@ pub async fn patch(
         initiator.user().id(),
         &key_id
     ).await? else {
-        return Err(error::Error::new()
-            .status(StatusCode::NOT_FOUND)
-            .kind("KeyNotFound")
-            .message("requested totp recovery hash was not found"));
+        return Err(error::Error::api(error::GeneralKind::NotFound));
     };
 
     if let Some(new_key) = json.key {
         if !rfs_lib::sec::authn::totp::recovery::key_valid(&new_key) {
-            return Err(error::Error::new()
-                .status(StatusCode::BAD_REQUEST)
-                .kind("InvalidKey")
-                .message("the provided key is an invalid format"));
+            return Err(error::Error::api((
+                error::GeneralKind::InvalidData,
+                error::Detail::with_key("key")
+            )));
         }
 
         if totp::recovery::key_exists(&conn, initiator.user().id(), &new_key).await? {
-            return Err(error::Error::new()
-                .status(StatusCode::BAD_REQUEST)
-                .kind("KeyExits")
-                .message("the provided key already exists"));
+            return Err(error::Error::api(error::GeneralKind::AlreadyExists));
         }
 
         hash.set_key(new_key);
@@ -111,10 +102,7 @@ pub async fn delete(
         initiator.user().id(),
         &key_id
     ).await? else {
-        return Err(error::Error::new()
-            .status(StatusCode::NOT_FOUND)
-            .kind("KeyNotFound")
-            .message("requested totp recovery hash was not found"));
+        return Err(error::Error::api(error::GeneralKind::NotFound));
     };
 
     let transaction = conn.transaction().await?;

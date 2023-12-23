@@ -33,9 +33,7 @@ pub async fn get(
         permission::Scope::Storage,
         permission::Ability::Read,
     ).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     let params = [initiator.user().id()];
@@ -139,18 +137,13 @@ pub async fn post(
         permission::Scope::Storage,
         permission::Ability::Write,
     ).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     let type_: storage::types::Type = match json.type_ {
         CreateStorageType::Local { path } => {
             if !path.is_absolute() {
-                return Err(error::Error::new()
-                    .status(StatusCode::BAD_REQUEST)
-                    .kind("NotAbsolutePath")
-                    .source("the requested path is not absolute"));
+                return Err(error::Error::api(error::StorageKind::NotAbsolutePath));
             }
 
             let metadata = match path.metadata() {
@@ -158,10 +151,7 @@ pub async fn post(
                 Err(err) => {
                     match err.kind() {
                         std::io::ErrorKind::NotFound => {
-                            return Err(error::Error::new()
-                                .status(StatusCode::NOT_FOUND)
-                                .kind("DirectoryNotFound")
-                                .message("the requested directory was not found on the system"));
+                            return Err(error::Error::api(error::StorageKind::DirNotFound));
                         },
                         _ => {
                             return Err(err.into())
@@ -171,10 +161,7 @@ pub async fn post(
             };
 
             if !metadata.is_dir() {
-                return Err(error::Error::new()
-                    .status(StatusCode::BAD_REQUEST)
-                    .kind("PathNotDirectory")
-                    .message("the requested path is not a directory"));
+                return Err(error::Error::api(error::StorageKind::NotDirectory));
             }
 
             tokio::fs::create_dir_all(&path).await?;
@@ -189,17 +176,17 @@ pub async fn post(
     let created = chrono::Utc::now();
 
     if !rfs_lib::storage::name_valid(&json.name) {
-        return Err(error::Error::new()
-            .status(StatusCode::BAD_REQUEST)
-            .kind("InvalidName")
-            .message("the provided name is an invalid format"));
+        return Err(error::Error::api((
+            error::GeneralKind::ValidationFailed,
+            error::Detail::with_key("name")
+        )));
     };
 
     if storage::name_check(&transaction, &initiator.user().id(), &json.name).await?.is_some() {
-        return Err(error::Error::new()
-            .status(StatusCode::BAD_REQUEST)
-            .kind("NameExists")
-            .message("the requested name already exists"));
+        return Err(error::Error::api((
+            error::GeneralKind::AlreadyExists,
+            error::Detail::with_key("name")
+        )));
     }
 
     {
@@ -213,10 +200,7 @@ pub async fn post(
         ).await?;
 
         if !tags::validate_map(&json.tags) {
-            return Err(error::Error::new()
-                .status(StatusCode::BAD_REQUEST)
-                .kind("InvalidTags")
-                .message("the provided tags are in an invalid format"));
+            return Err(error::Error::api(error::TagKind::InvalidTags));
         }
 
         tags::create_tags(&transaction, "storage_tags", "storage_id", &id, &json.tags).await?;

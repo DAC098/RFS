@@ -58,17 +58,14 @@ pub async fn post(
     let mut conn = state.pool().get().await?;
 
     if !rfs_lib::sec::authn::totp::recovery::key_valid(&json.key) {
-        return Err(error::Error::new()
-            .status(StatusCode::BAD_REQUEST)
-            .kind("InvalidKey")
-            .message("the provided key is an invalid format"));
+        return Err(error::Error::api((
+            error::GeneralKind::InvalidData,
+            error::Detail::with_key("key")
+        )));
     };
 
     if totp::recovery::key_exists(&conn, initiator.user().id(), &json.key).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::BAD_REQUEST)
-            .kind("KeyExits")
-            .message("the provided key already exists"));
+        return Err(error::Error::api(error::GeneralKind::AlreadyExists));
     }
 
     let hash = totp::recovery::create_hash()?;

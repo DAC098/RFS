@@ -18,18 +18,12 @@ pub async fn post(
 
     let mut session = match initiator::lookup_header_map(state.auth(), &conn, &headers).await {
         Ok(_initiator) => {
-            return Err(error::Error::new()
-                .status(StatusCode::BAD_REQUEST)
-                .kind("AlreadyAuthenticated")
-                .message("session already verified"));
+            return Err(error::Error::api(error::AuthKind::AlreadyAuthenticated));
         },
         Err(err) => match err {
             LookupError::SessionUnverified(session) => session,
             LookupError::SessionUnauthenticated(_) => {
-                return Err(error::Error::new()
-                    .status(StatusCode::UNAUTHORIZED)
-                    .kind("AuthRequired")
-                    .message("session must be authenticated"));
+                return Err(error::Error::api(error::AuthKind::AuthRequired));
             },
             _ => {
                 return Err(err.into());
@@ -41,10 +35,7 @@ pub async fn post(
         SubmitVerify::None => match session.verify_method {
             VerifyMethod::None => {},
             _ => {
-                return Err(error::Error::new()
-                    .status(StatusCode::UNAUTHORIZED)
-                    .kind("InvalidAuthMethod")
-                    .message("invalid auth method provided"));
+                return Err(error::Error::api(error::AuthKind::InvalidAuthMethod));
             }
         },
         SubmitVerify::Totp(code) => match session.verify_method {
@@ -61,18 +52,12 @@ pub async fn post(
                 match result {
                     VerifyResult::Valid => {},
                     _ => {
-                        return Err(error::Error::new()
-                            .status(StatusCode::UNAUTHORIZED)
-                            .kind("InvalidCode")
-                            .message("invalid totp code provided"));
+                        return Err(error::Error::api(error::AuthKind::InvalidTotp,));
                     }
                 }
             },
             _ => {
-                return Err(error::Error::new()
-                    .status(StatusCode::UNAUTHORIZED)
-                    .kind("InvalidAuthMethod")
-                    .message("invalid auth method provided"));
+                return Err(error::Error::api(error::AuthKind::InvalidAuthMethod));
             }
         },
         SubmitVerify::TotpHash(hash) => match session.verify_method {
@@ -82,17 +67,11 @@ pub async fn post(
                     &session.user_id, 
                     &hash
                 ).await? else {
-                    return Err(error::Error::new()
-                        .status(StatusCode::UNAUTHORIZED)
-                        .kind("TotpHashInvalid")
-                        .message("given totp hash is not valid"));
+                    return Err(error::Error::api(error::AuthKind::InvalidTotpHash));
                 };
 
                 if *totp_hash.used() || !totp_hash.verify(hash) {
-                    return Err(error::Error::new()
-                        .status(StatusCode::UNAUTHORIZED)
-                        .kind("TotpHashInvalid")
-                        .message("given totp hash is not valid"));
+                    return Err(error::Error::api(error::AuthKind::InvalidTotpHash));
                 }
 
                 totp_hash.set_used();
@@ -106,10 +85,7 @@ pub async fn post(
                 }
             },
             _ => {
-                return Err(error::Error::new()
-                    .status(StatusCode::UNAUTHORIZED)
-                    .kind("InvalidAuthMethod")
-                    .message("invalid auth method provided"));
+                return Err(error::Error::api(error::AuthKind::InvalidAuthMethod));
             }
         }
     }

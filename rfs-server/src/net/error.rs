@@ -1,3 +1,4 @@
+use rfs_api::error::ApiErrorKind;
 use bytes::{BufMut, BytesMut};
 use axum::body::Full;
 use axum::http::StatusCode;
@@ -5,46 +6,33 @@ use axum::http::header::{HeaderMap, ACCEPT};
 use axum::response::{Response, IntoResponse};
 use tracing::Level;
 
-const DEFAULT_ACCEPT_VALUE: &str = "application/json";
+pub use rfs_api::error::{
+    ApiError,
+    Detail,
+    GeneralKind,
+    StorageKind,
+    FsKind,
+    TagKind,
+    UserKind,
+    AuthKind,
+    SecKind
+};
 
 type BoxDynError = Box<dyn std::error::Error + Send + Sync>;
 
-fn handle_error_json(inner: Inner) -> Response {
-    let mut json = rfs_lib::json::Error::new(inner.kind);
-
-    if let Some(msg) = inner.msg {
-        json.set_message(msg);
-    }
-
+pub fn error_json_response(status: StatusCode, error: ApiError) -> Response {
     let buf = {
         let mut buf = BytesMut::with_capacity(128).writer();
-        serde_json::to_writer(&mut buf, &json).unwrap();
+        serde_json::to_writer(&mut buf, &error).unwrap();
 
         buf.into_inner().freeze()
     };
 
     Response::builder()
-        .status(inner.status)
+        .status(status)
         .header("content-type", "application/json")
         .header("content-length", buf.len())
         .body(Full::new(buf))
-        .unwrap()
-        .into_response()
-}
-
-fn handle_error_text(inner: Inner) -> Response {
-    let mut body = inner.kind;
-
-    if let Some(msg) = inner.msg {
-        body.push_str(": ");
-        body.push_str(&msg);
-    }
-
-    Response::builder()
-        .status(inner.status)
-        .header("content-type", "text/plain")
-        .header("content-length", body.len())
-        .body(body)
         .unwrap()
         .into_response()
 }
@@ -58,7 +46,7 @@ where
 {
     let error = error.into();
 
-    if let Some(err) = error.inner.src.as_ref() {
+    if let Some(err) = error.src.as_ref() {
         tracing::event!(
             Level::ERROR,
             "unhandled error when prcessing request: {:#?}",
@@ -66,72 +54,59 @@ where
         );
     }
 
-    let accept_value = if let Some(found) = headers.get(ACCEPT) {
-        let Ok(p) = found.to_str() else {
-            return handle_error_json(error.inner);
-        };
-
-        p
-    } else {
-        DEFAULT_ACCEPT_VALUE
-    };
-
-    let mut iter = mime::MimeIter::new(accept_value);
-
-    while let Some(check) = iter.next() {
-        if let Ok(part) = check {
-            if part.type_() == "text" {
-                if part.subtype() == "plain" {
-                    return handle_error_text(error.inner);
-                }
-            } else if part.type_() == "application" {
-                if part.subtype() == "json" {
-                    return handle_error_json(error.inner);
-                }
-            }
-        }
-    }
-
-    handle_error_json(error.inner)
-}
-
-#[derive(Debug)]
-pub struct Inner {
-    status: StatusCode,
-    kind: String,
-    msg: Option<String>,
-    src: Option<BoxDynError>,
+    error_json_response(error.status, error.inner)
 }
 
 #[derive(Debug)]
 pub struct Error {
-    inner: Inner,
+    status: StatusCode,
+    inner: ApiError,
+    src: Option<BoxDynError>,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
 
 impl Error {
     pub fn new() -> Self {
+        let inner = ApiError::from(GeneralKind::InternalFailure);
+        let status = inner.kind().into();
+
         Error {
-            inner: Inner {
-                status: StatusCode::INTERNAL_SERVER_ERROR,
-                kind: String::from("InternalServerError"),
-                msg: None,
-                src: None,
-            },
+            status,
+            inner,
+            src: None,
+        }
+    }
+
+    pub fn api<T>(value: T) -> Self
+    where
+        T: Into<ApiError>
+    {
+        let err = value.into();
+        let status = err.kind().into();
+
+        Error {
+            status,
+            inner: err,
+            src: None
         }
     }
 
     pub fn status(mut self, status: StatusCode) -> Self {
-        self.inner.status = status;
+        self.status = status;
         self
     }
 
     pub fn kind<K>(mut self, kind: K) -> Self
     where
-        K: Into<String>
+        K: Into<ApiErrorKind>
     {
-        self.inner.kind = kind.into();
+        self.inner = self.inner.with_kind(kind);
+        self
+    }
+
+    pub fn detail(mut self, detail: Detail) -> Self {
+        self.inner = self.inner.with_detail(detail);
         self
     }
 
@@ -139,7 +114,7 @@ impl Error {
     where
         M: Into<String>
     {
-        self.inner.msg = Some(msg.into());
+        self.inner = self.inner.with_message(msg.into());
         self
     }
 
@@ -147,17 +122,16 @@ impl Error {
     where
         S: Into<BoxDynError>
     {
-        self.inner.src = Some(src.into());
+        self.src = Some(src.into());
         self
     }
-
 }
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.inner.kind)?;
+        write!(f, "{}", self.inner.kind())?;
 
-        if let Some(msg) = self.inner.msg.as_ref() {
+        if let Some(msg) = self.inner.message() {
             write!(f, ": {}", msg)?;
         }
 
@@ -167,13 +141,13 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.inner.src.as_ref().map(|v| & **v as _)
+        self.src.as_ref().map(|v| & **v as _)
     }
 }
 
 impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
-        if let Some(err) = self.inner.src.as_ref() {
+        if let Some(err) = self.src.as_ref() {
             tracing::event!(
                 Level::ERROR,
                 "unhandled error when prcessing request: {:#?}",
@@ -181,7 +155,19 @@ impl axum::response::IntoResponse for Error {
             );
         }
 
-        handle_error_json(self.inner)
+        error_json_response(self.status, self.inner)
+    }
+}
+
+impl From<ApiError> for Error {
+    fn from(api_err: ApiError) -> Self {
+        let status = api_err.kind().into();
+
+        Error {
+            status,
+            inner: api_err,
+            src: None,
+        }
     }
 }
 
@@ -254,7 +240,7 @@ macro_rules! simple_from {
         impl From<$e> for Error {
             fn from(err: $e) -> Self {
                 Error::new()
-                    .kind($k)
+                    //.kind($k)
                     .source(err)
             }
         }
@@ -263,7 +249,7 @@ macro_rules! simple_from {
         impl From<$e> for Error {
             fn from(err: $e) -> Self {
                 Error::new()
-                    .kind($k)
+                    //.kind($k)
                     .message($m)
                     .source(err)
             }
@@ -274,7 +260,7 @@ macro_rules! simple_from {
             fn from(err: $e) -> Self {
                 Error::new()
                     .status($s)
-                    .kind($k)
+                    //.kind($k)
                     .message($m)
                     .source(err)
             }
@@ -289,16 +275,12 @@ simple_from!(axum::Error);
 simple_from!(axum::http::Error);
 simple_from!(
     axum::http::header::ToStrError,
-    "InvalidHeaderValue",
-    "header value contained non utf-8 characters",
-    StatusCode::BAD_REQUEST
+    GeneralKind::InvalidHeaderValue
 );
 
 simple_from!(
     mime::FromStrError,
-    "InvalidMimeType",
-    "given invalid mime type value",
-    StatusCode::BAD_REQUEST
+    GeneralKind::InvalidMimeType
 );
 
 simple_from!(handlebars::RenderError);

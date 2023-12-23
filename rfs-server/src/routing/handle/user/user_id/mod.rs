@@ -32,16 +32,11 @@ pub async fn get(
         permission::Scope::User,
         permission::Ability::Read,
     ).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     let Some(user) = user::User::retrieve(&conn, &user_id).await? else {
-        return Err(error::Error::new()
-            .status(StatusCode::NOT_FOUND)
-            .kind("UserNotFound")
-            .message("requested user was not found"));
+        return Err(error::Error::api(error::UserKind::NotFound));
     };
 
     let email = user.email.map(|e| schema::user::Email {
@@ -71,23 +66,15 @@ pub async fn patch(
         permission::Scope::User,
         permission::Ability::Write,
     ).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     let Some(mut user) = user::User::retrieve(&conn, &user_id).await? else {
-        return Err(error::Error::new()
-            .status(StatusCode::NOT_FOUND)
-            .kind("UserNotFound")
-            .message("requested user was not found"));
+        return Err(error::Error::api(error::UserKind::NotFound));
     };
 
     if !json.has_work() {
-        return Err(error::Error::new()
-            .status(StatusCode::BAD_REQUEST)
-            .kind("NoWork")
-            .message("requested update with no changes"));
+        return Err(error::Error::api(error::GeneralKind::NoWork));
     }
 
     let transaction = conn.transaction().await?;
@@ -102,18 +89,18 @@ pub async fn patch(
             use_comma = true;
 
             if !rfs_lib::user::username_valid(&username) {
-                return Err(error::Error::new()
-                    .status(StatusCode::BAD_REQUEST)
-                    .kind("InvalidUsername")
-                    .message("the requested username is invalid"));
+                return Err(error::Error::api((
+                    error::GeneralKind::ValidationFailed,
+                    error::Detail::with_key("username")
+                )));
             };
 
             if let Some(found_id) = user::check_username(&transaction, &username).await? {
                 if found_id != user_id {
-                    return Err(error::Error::new()
-                        .status(StatusCode::BAD_REQUEST)
-                        .kind("UsernameExists")
-                        .message("the requested username is already in use"));
+                    return Err(error::Error::api((
+                        error::GeneralKind::AlreadyExists,
+                        error::Detail::with_key("username")
+                    )));
                 }
             }
 
@@ -135,18 +122,18 @@ pub async fn patch(
 
             if let Some(email) = opt_email {
                 if !rfs_lib::user::email_valid(&email) {
-                    return Err(error::Error::new()
-                        .status(StatusCode::BAD_REQUEST)
-                        .kind("InvalidEmail")
-                        .message("the requested email is invalid"));
+                    return Err(error::Error::api((
+                        error::GeneralKind::ValidationFailed,
+                        error::Detail::with_key("email")
+                    )));
                 };
 
                 if let Some(found_id) = user::check_email(&transaction, &email).await? {
                     if found_id != user_id {
-                        return Err(error::Error::new()
-                            .status(StatusCode::BAD_REQUEST)
-                            .kind("EmailExists")
-                            .message("the requested email is already in use"));
+                        return Err(error::Error::api((
+                            error::GeneralKind::AlreadyExists,
+                            error::Detail::with_key("email")
+                        )));
                     }
                 }
 
@@ -201,23 +188,15 @@ pub async fn delete(
         permission::Scope::User,
         permission::Ability::Write
     ).await? {
-        return Err(error::Error::new()
-            .status(StatusCode::UNAUTHORIZED)
-            .kind("PermissionDenied"));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     let Some(user) = user::User::retrieve(&conn, &user_id).await? else {
-        return Err(error::Error::new()
-            .status(StatusCode::NOT_FOUND)
-            .kind("UserNotFound")
-            .message("requested user was not found"));
+        return Err(error::Error::api(error::UserKind::NotFound));
     };
 
     if user.id == user_id {
-        return Err(error::Error::new()
-            .status(StatusCode::BAD_REQUEST)
-            .kind("CannotDeleteSelf")
-            .message("you cannot delete your account"));
+        return Err(error::Error::api(error::GeneralKind::Noop));
     }
 
     // this will need to be decided along with the fs and storage delete update
