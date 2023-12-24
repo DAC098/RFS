@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use clap::Parser;
+
 use axum::Router;
 use axum::error_handling::HandleErrorLayer;
 use tower::ServiceBuilder;

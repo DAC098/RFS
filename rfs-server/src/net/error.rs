@@ -2,7 +2,7 @@ use rfs_api::error::ApiErrorKind;
 use bytes::{BufMut, BytesMut};
 use axum::body::Full;
 use axum::http::StatusCode;
-use axum::http::header::{HeaderMap, ACCEPT};
+use axum::http::header::{HeaderMap};
 use axum::response::{Response, IntoResponse};
 use tracing::Level;
 
@@ -38,7 +38,7 @@ pub fn error_json_response(status: StatusCode, error: ApiError) -> Response {
 }
 
 pub async fn handle_error<E>(
-    headers: HeaderMap,
+    _headers: HeaderMap,
     error: E
 ) -> Response
 where
@@ -92,11 +92,13 @@ impl Error {
         }
     }
 
+    #[allow(dead_code)]
     pub fn status(mut self, status: StatusCode) -> Self {
         self.status = status;
         self
     }
 
+    #[allow(dead_code)]
     pub fn kind<K>(mut self, kind: K) -> Self
     where
         K: Into<ApiErrorKind>
@@ -105,11 +107,13 @@ impl Error {
         self
     }
 
+    #[allow(dead_code)]
     pub fn detail(mut self, detail: Detail) -> Self {
         self.inner = self.inner.with_detail(detail);
         self
     }
 
+    #[allow(dead_code)]
     pub fn message<M>(mut self, msg: M) -> Self
     where
         M: Into<String>

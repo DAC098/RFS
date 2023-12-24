@@ -2,7 +2,7 @@ use std::ops::Deref;
 use std::pin::Pin;
 use std::future::Future;
 
-use axum::http::StatusCode;
+
 use axum::http::header::{HeaderMap, HeaderValue, GetAll};
 use axum::http::request::Parts;
 use axum::extract::FromRequestParts;

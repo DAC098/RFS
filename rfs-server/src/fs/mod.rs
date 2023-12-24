@@ -1,4 +1,4 @@
-use std::path::{PathBuf, Path};
+use std::path::PathBuf;
 
 use rfs_lib::ids;
 use rfs_lib::schema;
@@ -10,8 +10,6 @@ use crate::sql;
 
 pub mod consts;
 pub mod traits;
-//pub mod checksum;
-//pub mod stream;
 
 pub mod root;
 pub use root::Root;
@@ -34,54 +32,6 @@ where
     ).await?;
 
     Ok(check.map(|row| row.get(0)))
-}
-
-pub fn validate_dir<P>(name: &str, cwd: &PathBuf, path: P) -> std::io::Result<PathBuf>
-where
-    P: AsRef<Path>
-{
-    use std::io::{Error as IoError, ErrorKind};
-
-    let path_ref = path.as_ref();
-
-    let rtn = if !path_ref.is_absolute() {
-        match std::fs::canonicalize(cwd.join(path_ref)) {
-            Ok(p) => p,
-            Err(err) => {
-                return Err(match err.kind() {
-                    ErrorKind::NotFound => {
-                        let mut msg = String::new();
-                        msg.push_str("given ");
-                        msg.push_str(name);
-                        msg.push_str(" does not exist");
-
-                        IoError::new(ErrorKind::NotFound, msg)
-                    },
-                    _ => err
-                });
-            }
-        }
-    } else {
-        path_ref.to_path_buf()
-    };
-
-    if !rtn.try_exists()? {
-        let mut msg = String::new();
-        msg.push_str("given ");
-        msg.push_str(name);
-        msg.push_str(" does not exist");
-
-        return Err(IoError::new(ErrorKind::NotFound, msg));
-    } else if !rtn.is_dir() {
-        let mut msg = String::new();
-        msg.push_str("given ");
-        msg.push_str(name);
-        msg.push_str(" is not a directory");
-
-        return Err(IoError::new(ErrorKind::NotFound, msg));
-    }
-
-    Ok(rtn)
 }
 
 #[derive(Debug)]

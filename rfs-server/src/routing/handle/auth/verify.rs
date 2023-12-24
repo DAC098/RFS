@@ -1,5 +1,5 @@
 use rfs_lib::actions::auth::SubmitVerify;
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap};
 use axum::extract::State;
 use axum::response::IntoResponse;
 

@@ -2,12 +2,12 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::net::{SocketAddr, IpAddr};
-use std::default::Default;
+
 
 use clap::Parser;
 
 use crate::error;
-use crate::state;
+
 
 pub mod shape;
 
@@ -130,7 +130,7 @@ impl Db {
 }
 
 pub mod sec {
-    use std::default::Default;
+    
 
     use crate::error;
     use super::shape;
@@ -185,7 +185,7 @@ pub mod sec {
             Ok(Secrets::Local {})
         }
 
-        pub(super) fn merge(&mut self, secrets: shape::sec::Secrets) -> error::Result<()> {
+        pub(super) fn merge(&mut self, _secrets: shape::sec::Secrets) -> error::Result<()> {
             Ok(())
         }
     }

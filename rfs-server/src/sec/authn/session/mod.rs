@@ -3,7 +3,6 @@ use chrono::{DateTime, Utc};
 use base64::{Engine, engine::general_purpose::URL_SAFE};
 use tokio_postgres::{Error as PgError};
 use deadpool_postgres::GenericClient;
-use hmac::{Hmac, Mac, digest::CtOutput};
 
 use crate::sec::state;
 use crate::net::error::Error as NetError;

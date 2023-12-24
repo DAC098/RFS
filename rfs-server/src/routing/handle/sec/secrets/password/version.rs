@@ -1,13 +1,13 @@
-use rfs_lib::{schema, actions};
-use axum::http::StatusCode;
+use rfs_lib::{schema};
+
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
-use chrono::{Utc, DateTime};
+
 use serde::Deserialize;
 
 use crate::net::{self, error};
 use crate::state::ArcShared;
-use crate::sec::secrets::Key;
+
 use crate::sec::authn::initiator;
 use crate::sec::authz::permission;
 use crate::time;
@@ -86,7 +86,7 @@ pub async fn delete(
 
     let wrapper = state.sec().peppers();
 
-    let found = {
+    let _found = {
         let Ok(mut writer) = wrapper.inner().write() else {
             return Err(error::Error::new().source("peppers rwlock poisoned"));
         };

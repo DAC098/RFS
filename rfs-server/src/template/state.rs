@@ -4,7 +4,7 @@ use handlebars::Handlebars;
 
 use crate::error;
 use crate::config;
-use crate::fs;
+
 
 fn get_registry_name<'a>(base: &PathBuf, path: &'a PathBuf, strip_ext: &str) -> error::Result<&'a str> {
     let stripped = path.strip_prefix(base)

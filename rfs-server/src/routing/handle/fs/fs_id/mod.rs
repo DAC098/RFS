@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use rfs_lib::ids;
 use tokio::io::{AsyncWriteExt, BufWriter};
 use axum::debug_handler;
-use axum::http::{StatusCode, HeaderMap};
+use axum::http::{HeaderMap};
 use axum::extract::{Path, Query, State, BodyStream};
 use axum::response::IntoResponse;
 use deadpool_postgres::GenericClient;

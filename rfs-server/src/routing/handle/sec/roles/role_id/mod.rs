@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 use std::fmt::Write;
 
-use rfs_lib::{ids, schema, actions};
-use axum::http::StatusCode;
+use rfs_lib::{schema, actions};
+
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use futures::TryStreamExt;
@@ -233,7 +233,7 @@ pub async fn delete(
 
     let transaction = conn.transaction().await?;
 
-    let Some(original) = Role::retrieve(&transaction, &role_id).await? else {
+    let Some(_original) = Role::retrieve(&transaction, &role_id).await? else {
         return Err(error::Error::api(error::SecKind::RoleNotFound));
     };
 

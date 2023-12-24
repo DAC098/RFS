@@ -1,7 +1,5 @@
-use std::fmt::Write;
-
 use rfs_lib::{ids, schema, actions};
-use axum::http::StatusCode;
+
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use futures::TryStreamExt;
@@ -38,7 +36,7 @@ pub async fn get(
         return Err(error::Error::api(error::SecKind::RoleNotFound));
     };
 
-    let query_params: sql::ParamsArray<1> = [&role_id];
+    let _query_params: sql::ParamsArray<1> = [&role_id];
     let result = conn.query_raw(
         "select user_id from user_roles where role_id = $1",
         [&role_id]

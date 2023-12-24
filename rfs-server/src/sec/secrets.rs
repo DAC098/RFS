@@ -2,7 +2,7 @@ use std::sync::RwLock;
 use std::time::Duration;
 
 use rust_lib_file_sys::wrapper::Encrypted;
-use rust_lib_file_sys::wrapper::encrypted;
+
 use rust_lib_history::versioned::Versioned;
 use rust_lib_history::list::fixed::Fixed;
 use rand::RngCore;

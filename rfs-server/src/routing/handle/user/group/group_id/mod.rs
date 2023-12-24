@@ -1,8 +1,8 @@
 use rfs_lib::{ids, schema, actions};
-use axum::http::StatusCode;
+
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
-use futures::TryStreamExt;
+
 use tokio_postgres::error::SqlState;
 use serde::{Deserialize};
 
@@ -36,7 +36,7 @@ pub async fn get(
         return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
-    let params: sql::ParamsVec = vec![&group_id];
+    let _params: sql::ParamsVec = vec![&group_id];
 
     let Some(group) = user::group::Group::retrieve(&conn, &group_id).await? else {
         return Err(error::Error::api(error::UserKind::GroupNotFound));
@@ -85,7 +85,7 @@ pub async fn patch(
         where id = $1",
         &[&group_id, &name]
     ).await {
-        Ok(c) => {},
+        Ok(_c) => {},
         Err(err) => {
             let Some(db_error) = err.as_db_error() else {
                 return Err(err.into());

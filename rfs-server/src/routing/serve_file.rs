@@ -1,6 +1,6 @@
 use axum::debug_handler;
 use axum::extract::State;
-use axum::http::{Method, StatusCode, Uri};
+use axum::http::{Method, Uri};
 use axum::response::IntoResponse;
 
 use crate::net;

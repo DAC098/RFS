@@ -2,7 +2,7 @@ use std::fmt::Write;
 
 use rfs_lib::ids;
 use rfs_lib::actions::storage::{UpdateStorage, UpdateStorageType};
-use axum::http::StatusCode;
+
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use serde::Deserialize;
