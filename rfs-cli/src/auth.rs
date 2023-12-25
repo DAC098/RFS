@@ -11,7 +11,7 @@ fn submit_user(
             username: username.clone()
         };
 
-        let url = state.server.url.join("/auth/request")?;
+        let url = state.server.url.join("/auth/session/request")?;
         let res = state.client.post(url)
             .json(&body)
             .send()?;
@@ -57,7 +57,7 @@ fn submit_auth(
                 let password = rpassword::prompt_password(&prompt)?;
                 let auth_method = rfs_lib::actions::auth::SubmitAuth::Password(password);
 
-                let url = state.server.url.join("/auth/submit")?;
+                let url = state.server.url.join("/auth/session/submit")?;
                 let res = state.client.post(url)
                     .json(&auth_method)
                     .send()?;
@@ -114,7 +114,7 @@ fn submit_verify(
                     }
                 }
 
-                let url = state.server.url.join("/auth/verify")?;
+                let url = state.server.url.join("/auth/session/verify")?;
                 let res = state.client.post(url)
                     .json(&verify_method)
                     .send()?;
@@ -156,6 +156,21 @@ pub fn connect(state: &mut AppState) -> error::Result<()> {
     Ok(())
 }
 
-pub fn disconnect(_state: &mut AppState) -> error::Result<()> {
+pub fn disconnect(state: &mut AppState) -> error::Result<()> {
+    let url = state.server.url.join("/auth/session/drop")?;
+    let res = state.client.delete(url)
+        .send()?;
+
+    let status = res.status();
+
+    if status != reqwest::StatusCode::OK {
+        let json = res.json::<rfs_lib::json::Error>()?;
+
+        return Err(error::Error::new()
+            .kind("FailedSessionDrop")
+            .message("failed to drop the current client session")
+            .source(json));
+    }
+
     Ok(())
 }
