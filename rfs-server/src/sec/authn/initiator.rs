@@ -20,22 +20,14 @@ pub enum Mechanism {
 }
 
 pub struct Initiator {
-    user: user::User,
-    bot: Option<()>,
-    mechanism: Mechanism
+    pub user: user::User,
+    pub bot: Option<()>,
+    pub mechanism: Mechanism
 }
 
 impl Initiator {
     pub fn user(&self) -> &user::User {
         &self.user
-    }
-
-    pub fn bot(&self) -> Option<&()> {
-        self.bot.as_ref()
-    }
-
-    pub fn mechanism(&self) -> &Mechanism {
-        &self.mechanism
     }
 }
 

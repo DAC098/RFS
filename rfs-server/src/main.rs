@@ -85,7 +85,7 @@ fn main() {
 }
 
 async fn init() -> error::Result<()> {
-    use axum::routing::{get, post};
+    use axum::routing::{get, post, delete};
 
     let config = config::get_config()?;
     let state = state::Shared::from_config(&config)?;
@@ -110,6 +110,10 @@ async fn init() -> error::Result<()> {
         .route(
             "/auth/session/verify",
             post(routing::handle::auth::session::verify::post)
+        )
+        .route(
+            "/auth/session/drop",
+            delete(routing::handle::auth::session::drop::delete)
         )
         .route(
             "/auth/password",
