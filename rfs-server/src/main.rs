@@ -100,16 +100,16 @@ async fn init() -> error::Result<()> {
             get(routing::handle::auth::get)
         )
         .route(
-            "/auth/request",
-            post(routing::handle::auth::request::post)
+            "/auth/session/request",
+            post(routing::handle::auth::session::request::post)
         )
         .route(
-            "/auth/submit",
-            post(routing::handle::auth::submit::post)
+            "/auth/session/submit",
+            post(routing::handle::auth::session::submit::post)
         )
         .route(
-            "/auth/verify",
-            post(routing::handle::auth::verify::post)
+            "/auth/session/verify",
+            post(routing::handle::auth::session::verify::post)
         )
         .route(
             "/auth/password",

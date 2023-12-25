@@ -6,9 +6,7 @@ use serde::Serialize;
 use crate::net::{self, error};
 use crate::state::ArcShared;
 
-pub mod request;
-pub mod submit;
-pub mod verify;
+pub mod session;
 pub mod password;
 pub mod totp;
 
