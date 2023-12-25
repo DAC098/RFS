@@ -47,10 +47,6 @@ impl Key {
         &self.created
     }
 
-    pub fn as_slice(&self) -> &[u8] {
-        self.data.as_slice()
-    }
-
     pub fn into_tuple(self) -> (KeyData, Duration) {
         (self.data, self.created)
     }

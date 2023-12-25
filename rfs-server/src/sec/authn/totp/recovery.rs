@@ -1,5 +1,4 @@
 use std::fmt::Write;
-use futures::TryStreamExt;
 
 use rfs_lib::ids;
 use rfs_lib::history::HistoryField;
@@ -108,57 +107,6 @@ impl Hash {
             Ok(None)
         }
     }
-
-    pub async fn retrieve(
-        conn: &impl GenericClient,
-        user_id: &ids::UserId
-    ) -> Result<Vec<Self>, PgError> {
-        let result = conn.query_raw(
-            "\
-            select auth_totp_hash.user_id, \
-                   auth_totp_hash.key, \
-                   auth_totp_hash.hash, \
-                   auth_totp_hash.used \
-            from auth_totp_hash \
-            where auth_totp_hash.user_id = $1",
-            [user_id]
-        ).await?;
-
-        futures::pin_mut!(result);
-
-        let mut rtn = Vec::with_capacity(3);
-
-        while let Some(row) = result.try_next().await? {
-            if rtn.len() == rtn.capacity() {
-                rtn.reserve(3);
-            }
-
-            rtn.push(Hash {
-                user_id: row.get(0),
-                key: HistoryField::new(row.get(1)),
-                hash: HistoryField::new(row.get(2)),
-                used: HistoryField::new(row.get(3))
-            });
-        }
-
-        rtn.shrink_to_fit();
-
-        Ok(rtn)
-    }
-
-    /*
-    pub fn user_id(&self) -> &ids::UserId {
-        &self.user_id
-    }
-
-    pub fn key(&self) -> &str {
-        self.key.get_str()
-    }
-
-    pub fn hash(&self) -> &str {
-        self.hash.get_str()
-    }
-    */
 
     pub fn used(&self) -> &bool {
         self.used.get()

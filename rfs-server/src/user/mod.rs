@@ -101,14 +101,6 @@ impl User {
     pub fn id(&self) -> &ids::UserId {
         &self.id
     }
-
-    pub fn username(&self) -> &String {
-        &self.username
-    }
-
-    pub fn email(&self) -> Option<&UserEmail> {
-        self.email.as_ref()
-    }
 }
 
 impl User {
