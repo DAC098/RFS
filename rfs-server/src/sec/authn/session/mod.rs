@@ -1,5 +1,5 @@
 use rfs_lib::ids;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use base64::{Engine, engine::general_purpose::URL_SAFE};
 use tokio_postgres::{Error as PgError};
 use deadpool_postgres::GenericClient;
@@ -55,8 +55,7 @@ impl VerifyMethod {
 }
 
 pub enum BuilderError {
-    TokenExists,
-    InvalidExpires,
+    TokenAttempts,
     UtcOverflow,
 
     Pg(PgError),
@@ -87,10 +86,8 @@ impl From<token::UniqueError> for BuilderError {
 impl From<BuilderError> for NetError {
     fn from(err: BuilderError) -> NetError {
         match err {
-            BuilderError::TokenExists => NetError::new()
-                .source("failed to generate a unique token for the session"),
-            BuilderError::InvalidExpires => NetError::new()
-                .source("expires date is before the issued_on date"),
+            BuilderError::TokenAttempts => NetError::new()
+                .source("ran out of token attempts"),
             BuilderError::UtcOverflow => NetError::new()
                 .source("date time value overflowed"),
             BuilderError::Pg(err) => err.into(),
@@ -101,41 +98,11 @@ impl From<BuilderError> for NetError {
 
 pub struct SessionBuilder {
     user_id: ids::UserId,
-    token: Option<token::SessionToken>,
-    issued_on: Option<DateTime<Utc>>,
-    expires: Option<DateTime<Utc>>,
-    authenticated: Option<bool>,
-    verified: Option<bool>,
     auth_method: Option<AuthMethod>,
     verify_method: Option<VerifyMethod>
 }
 
 impl SessionBuilder {
-    pub fn token(&mut self, token: token::SessionToken) -> &mut Self {
-        self.token = Some(token);
-        self
-    }
-
-    pub fn issued_on(&mut self, date: DateTime<Utc>) -> &mut Self {
-        self.issued_on = Some(date);
-        self
-    }
-
-    pub fn expires(&mut self, date: DateTime<Utc>) -> &mut Self {
-        self.expires = Some(date);
-        self
-    }
-
-    pub fn authenticated(&mut self, value: bool) -> &mut Self {
-        self.authenticated = Some(value);
-        self
-    }
-
-    pub fn verified(&mut self, value: bool) -> &mut Self {
-        self.verified = Some(value);
-        self
-    }
-
     pub fn auth_method(&mut self, method: AuthMethod) -> &mut Self {
         self.auth_method = Some(method);
         self
@@ -147,68 +114,41 @@ impl SessionBuilder {
     }
 
     pub async fn build(self, conn: &impl GenericClient) -> Result<Session, BuilderError> {
+        let authenticated;
+        let verified;
         let user_id = self.user_id;
         let dropped = false;
-        let issued_on = self.issued_on.unwrap_or(Utc::now());
-        let token = if let Some(token) = self.token {
-            if !token::exists_check(conn, &token).await? {
-                return Err(BuilderError::TokenExists);
-            }
+        let issued_on = Utc::now();
+        let duration = chrono::Duration::days(7);
 
-            token
-        } else {
-            token::SessionToken::unique(conn, 10).await?.unwrap()
-        };
-        let expires = if let Some(expires) = self.expires {
-            if expires <= issued_on {
-                return Err(BuilderError::InvalidExpires);
-            }
-
-            expires
-        } else {
-            let duration = chrono::Duration::days(7);
-
-            let Some(expires) = issued_on.clone().checked_add_signed(duration) else {
-                return Err(BuilderError::UtcOverflow);
-            };
-
-            expires
+        let Some(token) = token::SessionToken::unique(conn, 10).await? else {
+            return Err(BuilderError::TokenAttempts);
         };
 
-        let authenticated_calc;
-        let verified_calc;
+        let Some(expires) = issued_on.clone().checked_add_signed(duration) else {
+            return Err(BuilderError::UtcOverflow);
+        };
+
         let auth_method = if let Some(method) = self.auth_method {
-            match method {
-                AuthMethod::None => {
-                    authenticated_calc = true;
-                }
-                _ => {
-                    authenticated_calc = false;
-                }
-            }
-
+            authenticated = matches!(method, AuthMethod::None);
             method
         } else {
-            authenticated_calc = true;
+            authenticated = true;
             AuthMethod::None
         };
-        let verify_method = if let Some(method) = self.verify_method {
-            match method {
-                VerifyMethod::None => {
-                    verified_calc = true;
-                }
-                _ => {
-                    verified_calc = false;
-                }
-            }
 
-            method
-        } else {
-            verified_calc = true;
+        let verify_method = if matches!(auth_method, AuthMethod::None) {
+            verified = true;
             VerifyMethod::None
+        } else {
+            if let Some(method) = self.verify_method {
+                verified = matches!(method, VerifyMethod::None);
+                method
+            } else {
+                verified = true;
+                VerifyMethod::None
+            }
         };
-        let authenticated = self.authenticated.unwrap_or(authenticated_calc);
-        let verified = self.verified.unwrap_or(verified_calc);
 
         {
             let auth_method_int = auth_method.as_i16();
@@ -245,7 +185,7 @@ impl SessionBuilder {
         Ok(Session {
             token,
             user_id,
-            dropped: false,
+            dropped,
             issued_on,
             expires,
             authenticated,
@@ -273,11 +213,6 @@ impl Session {
     pub fn builder(user_id: ids::UserId) -> SessionBuilder {
         SessionBuilder {
             user_id,
-            token: None,
-            issued_on: None,
-            expires: None,
-            authenticated: None,
-            verified: None,
             auth_method: None,
             verify_method: None,
         }
@@ -364,20 +299,6 @@ impl Session {
 
 pub type Hash = blake3::Hash;
 
-/*
-type HS256 = Hmac<sha3::Sha3_256>;
-type HS384 = Hmac<sha3::Sha3_384>;
-type HS512 = Hmac<sha3::Sha3_512>;
-
-#[derive(Clone)]
-pub enum Hash {
-    Blake3(blake3::Hash),
-    HS256(CtOutput<HS256>),
-    HS384(CtOutput<HS384>),
-    HS512(CtOutput<HS512>),
-}
-*/
-
 pub fn create_hash<T>(auth: &state::Sec, token: T) -> Option<Hash>
 where
     T: AsRef<[u8]>
@@ -393,37 +314,6 @@ where
     }
 }
 
-/*
-pub fn create_hash<T>(auth: &state::Sec, token: T) -> Hash
-where
-    T: AsRef<[u8]>
-{
-    match auth.session_info().key() {
-        state::SessionKey::Blake3(key) => {
-            Hash::Blake3(blake3::keyed_hash(key, token.as_ref()))
-        },
-        state::SessionKey::HS256(key) => {
-            let mut mac = HS256::new_from_slice(key).unwrap();
-            mac.update(token.as_ref());
-
-            Hash::HS256(mac.finalize())
-        },
-        state::SessionKey::HS384(key) => {
-            let mut mac = HS384::new_from_slice(key).unwrap();
-            mac.update(token.as_ref());
-
-            Hash::HS384(mac.finalize())
-        },
-        state::SessionKey::HS512(key) => {
-            let mut mac = HS512::new_from_slice(key).unwrap();
-            mac.update(token.as_ref());
-
-            Hash::HS512(mac.finalize())
-        }
-    }
-}
-*/
-
 pub fn encode_base64<T>(token: T, hash: Hash) -> String
 where
     T: AsRef<[u8]>
@@ -438,55 +328,6 @@ where
 
     URL_SAFE.encode(joined)
 }
-
-/*
-pub fn encode_base64<T>(token: T, hash: Hash) -> String 
-where
-    T: AsRef<[u8]>
-{
-    let token_ref = token.as_ref();
-
-    let bytes = match hash {
-        Hash::Blake3(hash) => {
-            let slice = hash.as_bytes();
-
-            let mut joined = Vec::with_capacity(token_ref.len() + slice.len());
-            joined.extend_from_slice(token_ref);
-            joined.extend_from_slice(slice);
-            joined
-        },
-        Hash::HS256(hash) => {
-            let bytes = hash.into_bytes();
-            let slice = bytes.as_slice();
-
-            let mut joined = Vec::with_capacity(token_ref.len() + slice.len());
-            joined.extend_from_slice(token_ref);
-            joined.extend_from_slice(slice);
-            joined
-        },
-        Hash::HS384(hash) => {
-            let bytes = hash.into_bytes();
-            let slice = bytes.as_slice();
-
-            let mut joined = Vec::with_capacity(token_ref.len() + slice.len());
-            joined.extend_from_slice(token_ref);
-            joined.extend_from_slice(slice);
-            joined
-        },
-        Hash::HS512(hash) => {
-            let bytes = hash.into_bytes();
-            let slice = bytes.as_slice();
-
-            let mut joined = Vec::with_capacity(token_ref.len() + slice.len());
-            joined.extend_from_slice(token_ref);
-            joined.extend_from_slice(slice);
-            joined
-        }
-    };
-
-    URL_SAFE.encode(bytes)
-}
-*/
 
 #[derive(Debug)]
 pub enum DecodeError {
@@ -539,98 +380,6 @@ where
         Ok((token, given))
     }
 }
-
-/*
-pub fn decode_base64<S>(auth: &state::Sec, session_id: S) -> Result<(token::SessionToken, Hash), DecodeError>
-where
-    S: AsRef<[u8]>
-{
-    let mut bytes = match URL_SAFE.decode(session_id) {
-        Ok(b) => b,
-        Err(_) => {
-            return Err(DecodeError::InvalidString);
-        }
-    };
-
-    match auth.session_info().key() {
-        state::SessionKey::Blake3(key) => {
-            if bytes.len() != token::SESSION_ID_BYTES + blake3::OUT_LEN {
-                return Err(DecodeError::InvalidLength);
-            }
-
-            let token = token::SessionToken::drain_vec(&mut bytes);
-            let mut hash = [0; blake3::OUT_LEN];
-            let mut index = 0;
-
-            for b in bytes.drain(0..blake3::OUT_LEN) {
-                hash[index] = b;
-                index += 1;
-            }
-
-            let given = blake3::Hash::from(hash);
-            let expected = blake3::keyed_hash(key, &token.as_slice());
-
-            if given != expected {
-                Err(DecodeError::InvalidHash)
-            } else {
-                Ok((token, Hash::Blake3(given)))
-            }
-        },
-        state::SessionKey::HS256(key) => {
-            if bytes.len() != token::SESSION_ID_BYTES + 32 {
-                return Err(DecodeError::InvalidLength);
-            }
-
-            let token = token::SessionToken::drain_vec(&mut bytes);
-
-            let mut mac = HS256::new_from_slice(key).unwrap();
-            mac.update(&token.as_slice());
-
-            let verify = mac.clone();
-
-            if verify.verify_slice(&bytes).is_err() {
-                Err(DecodeError::InvalidHash)
-            } else {
-                Ok((token, Hash::HS256(mac.finalize())))
-            }
-        },
-        state::SessionKey::HS384(key) => {
-            if bytes.len() != token::SESSION_ID_BYTES + 48 {
-                return Err(DecodeError::InvalidLength);
-            }
-
-            let token = token::SessionToken::drain_vec(&mut bytes);
-            let mut mac = HS384::new_from_slice(key).unwrap();
-            mac.update(&token.as_slice());
-
-            let verify = mac.clone();
-
-            if verify.verify_slice(&bytes).is_err() {
-                Err(DecodeError::InvalidHash)
-            } else {
-                Ok((token, Hash::HS384(mac.finalize())))
-            }
-        },
-        state::SessionKey::HS512(key) => {
-            if bytes.len() != token::SESSION_ID_BYTES + 64 {
-                return Err(DecodeError::InvalidLength);
-            }
-
-            let token = token::SessionToken::drain_vec(&mut bytes);
-            let mut mac = HS512::new_from_slice(key).unwrap();
-            mac.update(&token.as_slice());
-
-            let verify = mac.clone();
-
-            if verify.verify_slice(&bytes).is_err() {
-                Err(DecodeError::InvalidHash)
-            } else {
-                Ok((token, Hash::HS512(mac.finalize())))
-            }
-        }
-    }
-}
-*/
 
 pub fn create_session_cookie(auth: &state::Sec, session: &Session) -> Option<SetCookie> {
     let Some(hash) = create_hash(auth, &session.token) else {

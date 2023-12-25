@@ -92,15 +92,3 @@ impl From<Vec<u8>> for SessionToken {
         Self::from_vec(vec)
     }
 }
-
-pub async fn exists_check<T>(conn: &impl GenericClient, token: T) -> Result<bool, PgError>
-where
-    T: AsRef<[u8]>
-{
-    let count = conn.execute(
-        "select token from auth_session where token = $1",
-        &[&token.as_ref()]
-    ).await?;
-
-    Ok(count != 0)
-}
