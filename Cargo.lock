@@ -1511,6 +1511,54 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4389f1d5789befaf6029ebd9f7dac4af7f7e3d61b69d4f30e2ac02b57e7712b0"
 
 [[package]]
+name = "rfs"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.21.2",
+ "bincode",
+ "blake3",
+ "bytes",
+ "chacha20poly1305",
+ "chrono",
+ "clap",
+ "data-encoding",
+ "deadpool-postgres",
+ "email_address",
+ "file-sys",
+ "futures",
+ "handlebars",
+ "history",
+ "hkdf",
+ "hmac",
+ "hyper",
+ "lazy_static",
+ "mime",
+ "pin-project",
+ "rand",
+ "rfs-api",
+ "rfs-lib",
+ "rust-argon2",
+ "rust-kms-local",
+ "rust-otp",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha1",
+ "sha2",
+ "sha3",
+ "snowcloud-cloud",
+ "tokio",
+ "tokio-postgres",
+ "tokio-util",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+]
+
+[[package]]
 name = "rfs-api"
 version = "0.1.0"
 dependencies = [
@@ -1583,54 +1631,6 @@ dependencies = [
  "serde",
  "serde_json",
  "snowcloud-flake",
-]
-
-[[package]]
-name = "rfs-server"
-version = "0.1.0"
-dependencies = [
- "axum",
- "base64 0.21.2",
- "bincode",
- "blake3",
- "bytes",
- "chacha20poly1305",
- "chrono",
- "clap",
- "data-encoding",
- "deadpool-postgres",
- "email_address",
- "file-sys",
- "futures",
- "handlebars",
- "history",
- "hkdf",
- "hmac",
- "hyper",
- "lazy_static",
- "mime",
- "pin-project",
- "rand",
- "rfs-api",
- "rfs-lib",
- "rust-argon2",
- "rust-kms-local",
- "rust-otp",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha1",
- "sha2",
- "sha3",
- "snowcloud-cloud",
- "tokio",
- "tokio-postgres",
- "tokio-util",
- "tower",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "url",
 ]
 
 [[package]]
