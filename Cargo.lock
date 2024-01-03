@@ -1562,9 +1562,13 @@ dependencies = [
 name = "rfs-api"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "http",
+ "mime",
+ "rfs-lib",
  "serde",
  "serde_json",
+ "snowcloud-flake",
  "strum",
 ]
 

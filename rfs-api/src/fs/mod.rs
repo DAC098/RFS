@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use serde::{Serialize, Deserialize};
 use snowcloud_flake::serde_ext::string_id;
 
-use crate::tags::Tags;
+use crate::Tags;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Type {
@@ -65,7 +65,7 @@ pub struct File {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UpdateMetadata {
-    pub tags: Option<HashMap<String, Option<String>>>,
+    pub tags: Option<Tags>,
     pub comment: Option<String>,
 }
 
@@ -80,7 +80,7 @@ impl UpdateMetadata {
 pub enum CreateItem {
     Dir {
         basename: String,
-        tags: Option<HashMap<String, Option<String>>>,
+        tags: Option<Tags>,
         comment: Option<String>,
     }
 }
@@ -88,7 +88,7 @@ pub enum CreateItem {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateDir {
     pub basename: String,
-    pub tags: Option<HashMap<String, Option<String>>>,
+    pub tags: Option<Tags>,
     pub comment: Option<String>,
 }
 

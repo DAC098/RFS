@@ -17,6 +17,9 @@ path = "./rfs-api"
 [workspace.dependencies.rfs-lib]
 path = "./rfs-lib"
 
+[workspace.dependencies.snowcloud-flake]
+git = "https://github.com/DAC098/snowcloud"
+
 [workspace.dependencies.clap]
 version = "4.3.0"
 features = ["derive"]
