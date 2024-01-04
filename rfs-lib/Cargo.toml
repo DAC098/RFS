@@ -10,8 +10,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 mime = { workspace = true }
 chrono = { workspace = true }
+snowcloud-flake = { workspace = true, features = ["serde", "postgres"] }
+
 email_address = { version = "0.2.4" }
-snowcloud-flake = { git = "https://github.com/DAC098/snowcloud", features = ["serde", "postgres"] }
 bytes = { version = "1" }
 postgres-types = { version = "0.2.6", features = ["derive"] }
 

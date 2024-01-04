@@ -51,7 +51,6 @@ impl From<&AuthKind> for StatusCode {
             AuthKind::SessionUnauthenticated |
             AuthKind::MechanismNotFound => StatusCode::UNAUTHORIZED,
             AuthKind::AlreadyAuthenticated |
-            AuthKind::VerifyRequired |
             AuthKind::InvalidAuthMethod => StatusCode::BAD_REQUEST,
         }
     }
