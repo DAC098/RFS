@@ -257,20 +257,27 @@ async fn init() -> error::Result<()> {
         )
         .with_state(Arc::new(state));
 
-    let sock_addr = config.settings.listen_socket();
-    let server = hyper::Server::try_bind(&sock_addr)
-        .map_err(|error| error::Error::new()
-            .message(format!("failed to bind to socket address: {:#?}", sock_addr))
-            .source(error)
-        )?
-        .serve(router.into_make_service());
+    let listener = tokio::net::TcpListener::bind(config.settings.listen_socket())
+        .await
+        .map_err(|err| error::Error::new()
+            .message("failed to bind to socket address")
+            .source(err))?;
 
-    tracing::info!(
-        addr = %server.local_addr(),
-        "server listening",
-    );
+    {
+        let local_addr = listener.local_addr()
+            .map_err(|err| error::Error::new()
+                .message("failed to retrieve tcp listener address")
+                .source(err))?;
 
-    if let Err(err) = server.await {
+        tracing::info!(
+            addr = %local_addr,
+            "tcp socket listening"
+        );
+    }
+
+    let serve = axum::serve(listener, router);
+
+    if let Err(err) = serve.await {
         Err(error::Error::new()
             .message("server error")
             .source(err))

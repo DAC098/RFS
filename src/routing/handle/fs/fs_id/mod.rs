@@ -6,8 +6,10 @@ use rfs_lib::ids;
 use tokio::io::{AsyncWriteExt, BufWriter};
 use axum::debug_handler;
 use axum::http::{HeaderMap};
-use axum::extract::{Path, Query, State, BodyStream};
+use axum::body::{Body, Bytes};
+use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
+use futures::{Stream, StreamExt};
 use deadpool_postgres::GenericClient;
 use serde::Deserialize;
 
@@ -21,16 +23,16 @@ use crate::storage;
 use crate::fs;
 use crate::tags;
 
-async fn stream_to_writer<W>(
-    mut stream: BodyStream,
+async fn stream_to_writer<S, E, W>(
+    mut stream: S,
     hasher: &mut blake3::Hasher,
     writer: &mut W,
 ) -> error::Result<u64>
 where
-    W: tokio::io::AsyncWrite + Unpin
+    S: Stream<Item = Result<Bytes, E>> + Unpin,
+    W: tokio::io::AsyncWrite + Unpin,
+    error::Error: From<E>,
 {
-    use futures::StreamExt;
-
     let mut written: usize = 0;
 
     while let Some(result) = stream.next().await {
@@ -268,7 +270,7 @@ pub async fn put(
     headers: HeaderMap,
     Path(PathParams { fs_id }): Path<PathParams>,
     Query(PutQuery { basename, overwrite: _ }): Query<PutQuery>,
-    stream: BodyStream,
+    stream: Body,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
@@ -385,7 +387,7 @@ pub async fn put(
                     .await?;
                 let mut writer = BufWriter::new(file);
 
-                size = stream_to_writer(stream, &mut hasher, &mut writer).await?;
+                size = stream_to_writer(stream.into_data_stream(), &mut hasher, &mut writer).await?;
                 hash = hasher.finalize();
 
                 storage::fs::Storage::Local(storage::fs::Local {
@@ -480,7 +482,11 @@ pub async fn put(
                     .await?;
                 let mut writer = BufWriter::new(file);
 
-                size = stream_to_writer(stream, &mut hasher, &mut writer).await?;
+                size = stream_to_writer(
+                    stream.into_data_stream(), 
+                    &mut hasher, 
+                    &mut writer
+                ).await?;
                 hash = hasher.finalize();
             }
         };

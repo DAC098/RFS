@@ -5,8 +5,7 @@ pub mod trace {
     use std::time::Duration;
 
     use axum::http::{Request, Response};
-    use axum::body::BoxBody;
-    use hyper::Body;
+    use axum::body::Body;
     use tracing::Span;
     use tower_http::classify::ServerErrorsFailureClass;
 
@@ -36,7 +35,7 @@ pub mod trace {
         */
     }
 
-    pub fn on_response(response: &Response<BoxBody>, latency: Duration, span: &Span) {
+    pub fn on_response(response: &Response<Body>, latency: Duration, span: &Span) {
         span.record("s", &tracing::field::display(response.status()));
 
         tracing::info!("{:#?}", latency)

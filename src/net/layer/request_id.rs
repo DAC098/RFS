@@ -7,6 +7,7 @@ use axum::http::Request;
 
 type Counter = Arc<AtomicU64>;
 
+#[derive(Debug, Clone)]
 pub struct RequestId {
     id: u64,
 }

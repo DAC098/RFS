@@ -1,6 +1,5 @@
 use rfs_api::error::ApiErrorKind;
 use bytes::{BufMut, BytesMut};
-use axum::body::Full;
 use axum::http::StatusCode;
 use axum::http::header::{HeaderMap};
 use axum::response::{Response, IntoResponse};
@@ -32,7 +31,7 @@ pub fn error_json_response(status: StatusCode, error: ApiError) -> Response {
         .status(status)
         .header("content-type", "application/json")
         .header("content-length", buf.len())
-        .body(Full::new(buf))
+        .body(axum::body::Body::from(buf))
         .unwrap()
         .into_response()
 }

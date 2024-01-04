@@ -1,5 +1,4 @@
 use bytes::{BufMut, BytesMut};
-use axum::body::Full;
 use axum::http::{
     StatusCode,
     HeaderName,
@@ -111,7 +110,7 @@ where
         };
 
         Ok(self.builder.header("content-type", "application/json")
-            .body(Full::new(buf_froze))?
+            .body(axum::body::Body::from(buf_froze))?
             .into_response())
     }
 }

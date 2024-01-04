@@ -3,13 +3,13 @@ use std::path::Path;
 use tokio::fs::{File, OpenOptions};
 use tokio_util::io::ReaderStream;
 use axum::http::StatusCode;
-use axum::body::StreamBody;
+use axum::body::Body;
 use axum::response::Response;
 
 use crate::net;
 use crate::net::error;
 
-pub async fn stream_file<P>(path: P) -> error::Result<Response<StreamBody<ReaderStream<File>>>>
+pub async fn stream_file<P>(path: P) -> error::Result<Response<Body>>
 where
     P: AsRef<Path>,
 {
@@ -28,10 +28,10 @@ where
         .status(StatusCode::OK)
         .header("content-type", mime.to_string())
         .header("content-length", metadata.len())
-        .body(StreamBody::new(stream))?)
+        .body(Body::from_stream(stream))?)
 }
 
-pub async fn response_file<N, P>(name: N, path: P) -> error::Result<Response<StreamBody<ReaderStream<File>>>>
+pub async fn response_file<N, P>(name: N, path: P) -> error::Result<Response<Body>>
 where
     N: AsRef<str>,
     P: AsRef<Path>,
