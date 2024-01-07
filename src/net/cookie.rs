@@ -1,7 +1,11 @@
 use std::time::Duration;
 
-use axum::http::{HeaderValue, header::InvalidHeaderValue};
+use axum::body::Body;
+use axum::http::{StatusCode, HeaderValue, header::InvalidHeaderValue};
+use axum::response::{Response, ResponseParts, IntoResponse, IntoResponseParts};
 use chrono::{DateTime, Utc};
+
+use crate::net::error;
 
 pub enum SameSite {
     Strict,
@@ -219,3 +223,27 @@ impl TryFrom<SetCookie> for HeaderValue {
     }
 }
 
+impl IntoResponseParts for SetCookie {
+    type Error = error::Error;
+
+    fn into_response_parts(self, mut res: ResponseParts) -> Result<ResponseParts, Self::Error> {
+        let value = self.into_header_value()
+            .map_err(|err| error::Error::new()
+                .context("failed to change SetCookie into HeaderValue")
+                .source(err))?;
+
+        res.headers_mut().insert("set-cookie", value);
+
+        Ok(res)
+    }
+}
+
+impl IntoResponse for SetCookie {
+    fn into_response(self) -> Response {
+        Response::builder()
+            .status(StatusCode::OK)
+            .header("set-cookie", self)
+            .body(Body::empty())
+            .unwrap()
+    }
+}

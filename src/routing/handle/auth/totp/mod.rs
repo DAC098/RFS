@@ -1,11 +1,10 @@
 use std::convert::Into;
 
-use rfs_lib::actions;
 use axum::http::StatusCode;
 use axum::extract::State;
 use axum::response::IntoResponse;
 
-use crate::net::{self, error};
+use crate::net::error;
 use crate::state::ArcShared;
 use crate::sec::authn::initiator::Initiator;
 use crate::sec::authn::totp;
@@ -18,28 +17,26 @@ pub async fn get(
 ) -> error::Result<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
-    let Some(totp) = totp::Totp::retrieve(&conn, initiator.user().id()).await? else {
-        return Err(error::Error::api(error::GeneralKind::NotFound));
+    let Some(totp) = totp::Totp::retrieve(&conn, &initiator.user.id).await? else {
+        return Err(error::Error::api(error::AuthKind::TotpNotFound));
     };
 
-    let rtn = rfs_lib::json::Wrapper::new(rfs_lib::schema::auth::Totp {
+    Ok(rfs_api::Payload::new(rfs_api::auth::totp::Totp {
         algo: totp.algo.get().to_string(),
         secret: totp.secret.into(),
         digits: totp.digits.into(),
         step: totp.step.into()
-    });
-
-    Ok(net::Json::new(rtn))
+    }))
 }
 
 pub async fn post(
     State(state): State<ArcShared>,
     initiator: Initiator,
-    axum::Json(json): axum::Json<actions::auth::CreateTotp>,
+    axum::Json(json): axum::Json<rfs_api::auth::totp::CreateTotp>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    if let Some(_existing) = totp::Totp::retrieve(&conn, initiator.user().id()).await? {
+    if let Some(_existing) = totp::Totp::retrieve(&conn, &initiator.user.id).await? {
         return Err(error::Error::api(error::GeneralKind::AlreadyExists));
     }
 
@@ -105,28 +102,27 @@ pub async fn post(
 
     transaction.commit().await?;
 
-    let rtn = rfs_lib::json::Wrapper::new(rfs_lib::schema::auth::Totp {
-        algo: algo.to_string(),
-        secret,
-        digits,
-        step
-    })
-        .with_message("created totp");
-
-    Ok(net::Json::new(rtn)
-       .with_status(StatusCode::CREATED))
+    Ok((
+        StatusCode::CREATED,
+        rfs_api::Payload::new(rfs_api::auth::totp::Totp {
+            algo: algo.to_string(),
+            secret,
+            digits,
+            step
+        })
+    ))
 }
 
 pub async fn patch(
     State(state): State<ArcShared>,
     initiator: Initiator,
-    axum::Json(json): axum::Json<actions::auth::UpdateTotp>,
+    axum::Json(json): axum::Json<rfs_api::auth::totp::UpdateTotp>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
     let mut regen = false;
 
     let Some(mut totp) = totp::Totp::retrieve(&conn, initiator.user().id()).await? else {
-        return Err(error::Error::api(error::GeneralKind::NotFound));
+        return Err(error::Error::api(error::AuthKind::TotpNotFound));
     };
 
     if let Some(given) = json.algo {
@@ -175,14 +171,12 @@ pub async fn patch(
 
     transaction.commit().await?;
 
-    let rtn = rfs_lib::json::Wrapper::new(rfs_lib::schema::auth::Totp {
+    Ok(rfs_api::Payload::new(rfs_api::auth::totp::Totp {
         algo: totp.algo.get().to_string(),
         secret: totp.secret.into(),
         digits: totp.digits.into(),
         step: totp.step.into()
-    });
-
-    Ok(net::Json::new(rtn))
+    }))
 }
 
 pub async fn delete(
@@ -191,22 +185,20 @@ pub async fn delete(
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    if let Some(totp) = totp::Totp::retrieve(&conn, initiator.user().id()).await? {
-        let transaction = conn.transaction().await?;
+    let Some(record) = totp::Totp::retrieve(&conn, initiator.user().id()).await? else {
+        return Err(error::Error::api(error::AuthKind::TotpNotFound));
+    };
 
-        totp.delete(&transaction).await?;
+    let transaction = conn.transaction().await?;
 
-        transaction.execute(
-            "delete from auth_totp_hash where user_id = $1",
-            &[initiator.user().id()]
-        ).await?;
+    record.delete(&transaction).await?;
 
-        transaction.commit().await?;
+    transaction.execute(
+        "delete from auth_totp_hash where user_id = $1",
+        &[&initiator.user.id]
+    ).await?;
 
-        Ok(net::Json::empty()
-           .with_message("deleted totp"))
-    } else {
-        Ok(net::Json::empty()
-           .with_message("no totp available"))
-    }
+    transaction.commit().await?;
+
+    Ok(StatusCode::OK)
 }

@@ -1,11 +1,10 @@
-use rfs_lib::{schema};
-
+use axum::http::StatusCode;
 use axum::extract::{Query, State};
 use axum::response::IntoResponse;
 
 use serde::Deserialize;
 
-use crate::net::{self, error};
+use crate::net::error;
 use crate::state::ArcShared;
 use crate::sec::secrets::Key;
 use crate::sec::authn::initiator;
@@ -20,7 +19,7 @@ pub async fn get(
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         permission::Scope::SecSecrets,
         permission::Ability::Read,
     ).await? {
@@ -42,11 +41,11 @@ pub async fn get(
                 return Err(error::Error::new().source("timestamp error for session key"));
             };
 
-            known_keys.push(schema::sec::SessionListItem { created });
+            known_keys.push(rfs_api::sec::secrets::SessionListItem { created });
         }
     }
 
-    Ok(net::Json::new(rfs_lib::json::ListWrapper::with_vec(known_keys)))
+    Ok(rfs_api::ListPayload::with_vec(known_keys))
 }
 
 pub async fn post(
@@ -57,7 +56,7 @@ pub async fn post(
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         permission::Scope::SecSecrets,
         permission::Ability::Write,
     ).await? {
@@ -84,7 +83,7 @@ pub async fn post(
         return Err(error::Error::new().source(err));
     }
 
-    Ok(net::Json::empty())
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize)]
@@ -101,7 +100,7 @@ pub async fn delete(
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         permission::Scope::SecSecrets,
         permission::Ability::Write
     ).await? {
@@ -111,11 +110,11 @@ pub async fn delete(
     let wrapper = state.sec().session_info().keys();
 
     let Some(mut amount) = query.amount else {
-        return Ok(net::Json::empty());
+        return Ok(StatusCode::NO_CONTENT);
     };
 
     if amount == 0 {
-        return Ok(net::Json::empty());
+        return Ok(StatusCode::NO_CONTENT);
     }
 
     {
@@ -136,5 +135,5 @@ pub async fn delete(
         return Err(error::Error::new().source(err));
     }
 
-    Ok(net::Json::empty())
+    Ok(StatusCode::NO_CONTENT)
 }

@@ -12,7 +12,10 @@ serde_json = { workspace = true }
 snowcloud-flake = { workspace = true, features = ["serde"] }
 mime = { workspace = true }
 chrono = { workspace = true }
+bytes = { workspace = true }
+tracing = { workspace = true }
 
 strum = { version = "0.25", features = ["derive"] }
 http = { version = "1" }
+axum-core = { version = "0.4" }
 

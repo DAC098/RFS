@@ -1,9 +1,9 @@
-use rfs_lib::actions::auth::SubmitVerify;
-use axum::http::{HeaderMap};
+use rfs_api::auth::session::SubmittedVerify;
+use axum::http::{StatusCode, HeaderMap};
 use axum::extract::State;
 use axum::response::IntoResponse;
 
-use crate::net::{self, error};
+use crate::net::error;
 use crate::state::ArcShared;
 use crate::sec::authn::totp;
 use crate::sec::authn::initiator::{self, LookupError};
@@ -12,7 +12,7 @@ use crate::sec::authn::session::VerifyMethod;
 pub async fn post(
     State(state): State<ArcShared>,
     headers: HeaderMap,
-    axum::Json(json): axum::Json<SubmitVerify>,
+    axum::Json(json): axum::Json<SubmittedVerify>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
@@ -31,18 +31,14 @@ pub async fn post(
         }
     };
 
+    let transaction = conn.transaction().await?;
+
     match json {
-        SubmitVerify::None => match session.verify_method {
-            VerifyMethod::None => {},
-            _ => {
-                return Err(error::Error::api(error::AuthKind::InvalidAuthMethod));
-            }
-        },
-        SubmitVerify::Totp(code) => match session.verify_method {
+        SubmittedVerify::Totp(code) => match session.verify_method {
             VerifyMethod::Totp => {
                 use rust_otp::VerifyResult;
 
-                let Some(totp) = totp::Totp::retrieve(&conn, &session.user_id).await? else {
+                let Some(totp) = totp::Totp::retrieve(&transaction, &session.user_id).await? else {
                     return Err(error::Error::new()
                         .source("session required totp verify but user totp was not found"));
                 };
@@ -52,7 +48,7 @@ pub async fn post(
                 match result {
                     VerifyResult::Valid => {},
                     _ => {
-                        return Err(error::Error::api(error::AuthKind::InvalidTotp,));
+                        return Err(error::Error::api(error::AuthKind::InvalidTotp));
                     }
                 }
             },
@@ -60,11 +56,11 @@ pub async fn post(
                 return Err(error::Error::api(error::AuthKind::InvalidAuthMethod));
             }
         },
-        SubmitVerify::TotpHash(hash) => match session.verify_method {
+        SubmittedVerify::TotpHash(hash) => match session.verify_method {
             VerifyMethod::Totp => {
                 let Some(mut totp_hash) = totp::recovery::Hash::retrieve_hash(
-                    &conn, 
-                    &session.user_id, 
+                    &transaction,
+                    &session.user_id,
                     &hash
                 ).await? else {
                     return Err(error::Error::api(error::AuthKind::InvalidTotpHash));
@@ -76,13 +72,7 @@ pub async fn post(
 
                 totp_hash.set_used();
 
-                {
-                    let transaction = conn.transaction().await?;
-
-                    totp_hash.update(&transaction).await?;
-
-                    transaction.commit().await?;
-                }
+                totp_hash.update(&transaction).await?;
             },
             _ => {
                 return Err(error::Error::api(error::AuthKind::InvalidAuthMethod));
@@ -92,15 +82,9 @@ pub async fn post(
 
     session.verified = true;
 
-    {
-        let transaction = conn.transaction().await?;
+    session.update(&transaction).await?;
 
-        session.update(&transaction).await?;
+    transaction.commit().await?;
 
-        transaction.commit().await?;
-    }
-
-    Ok(net::Json::empty()
-        .with_message("session verified")
-        .into_response())
+    Ok(StatusCode::NO_CONTENT)
 }

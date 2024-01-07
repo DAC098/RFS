@@ -1,4 +1,22 @@
+use rfs_lib::ids;
+
 use serde::{Serialize, Deserialize};
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Totp {
+    pub algo: String,
+    pub secret: Vec<u8>,
+    pub digits: u32,
+    pub step: u64
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TotpRecovery {
+    pub user_id: ids::UserId,
+    pub key: String,
+    pub hash: String,
+    pub used: bool
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateTotp {

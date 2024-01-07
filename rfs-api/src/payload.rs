@@ -1,4 +1,38 @@
+use http::StatusCode;
+use axum_core::body::Body;
+use axum_core::response::{Response, IntoResponse};
 use serde::{Serialize, Deserialize};
+use bytes::{BytesMut, BufMut};
+
+fn serialize_to_json(
+    data: &impl Serialize
+) -> Result<Response, serde_json::Error> {
+    let froze = {
+
+        let mut buf = BytesMut::with_capacity(128).writer();
+        serde_json::to_writer(&mut buf, data)?;
+
+        buf.into_inner().freeze()
+    };
+
+    Ok(Response::builder()
+       .status(StatusCode::OK)
+       .header("content-type", "applicatin/json")
+       .header("content-length", froze.len())
+       .body(Body::from(froze))
+       .unwrap())
+}
+
+fn error_json() -> Response {
+    let body = r#"{"kind":"InternalFailure"}"#;
+
+    Response::builder()
+        .status(StatusCode::INTERNAL_SERVER_ERROR)
+        .header("content-type", "applicaiton/json")
+        .header("content-length", body.len())
+        .body(Body::from(body))
+        .unwrap()
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Payload<T> {
@@ -106,6 +140,21 @@ where
                 } else {
                     write!(f, "{}", self.payload)
                 }
+            }
+        }
+    }
+}
+
+impl<T> IntoResponse for Payload<T>
+where
+    T: Serialize
+{
+    fn into_response(self) -> Response {
+        match serialize_to_json(&self) {
+            Ok(res) => res,
+            Err(err) => {
+                tracing::error!("Payload<T> serialization error {:?}", err);
+                error_json()
             }
         }
     }
@@ -243,6 +292,21 @@ where
                 } else {
                     write!(f, "({}) {}", self.total, self.payload)
                 }
+            }
+        }
+    }
+}
+
+impl<T> IntoResponse for ListPayload<T>
+where
+    T: Serialize
+{
+    fn into_response(self) -> Response {
+        match serialize_to_json(&self) {
+            Ok(res) => res,
+            Err(err) => {
+                tracing::error!("ListPayload<T> serialization error {:?}", err);
+                error_json()
             }
         }
     }

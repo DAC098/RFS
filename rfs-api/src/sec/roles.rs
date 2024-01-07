@@ -1,6 +1,8 @@
 use rfs_lib::ids;
+use rfs_lib::serde::from_to_str;
 use rfs_lib::sec::authz::permission::{Ability, Scope};
 
+use snowcloud_flake::serde_ext::string_id;
 use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Serialize, Deserialize)]

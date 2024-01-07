@@ -1,11 +1,10 @@
-use rfs_lib::{schema, actions};
-
+use axum::http::StatusCode;
 use axum::extract::State;
 use axum::response::IntoResponse;
 use futures::TryStreamExt;
 use tokio_postgres::error::SqlState;
 
-use crate::net::{self, error};
+use crate::net::error;
 use crate::state::ArcShared;
 use crate::sec::authn::initiator;
 use crate::sec::authz::permission;
@@ -21,7 +20,7 @@ pub async fn get(
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         permission::Scope::UserGroup,
         permission::Ability::Read,
     ).await? {
@@ -40,7 +39,7 @@ pub async fn get(
     let mut list = Vec::new();
 
     while let Some(row) = result.try_next().await? {
-        let item = schema::user::group::ListItem {
+        let item = rfs_api::users::groups::ListItem {
             id: row.get(0),
             name: row.get(1),
         };
@@ -48,21 +47,19 @@ pub async fn get(
         list.push(item);
     }
 
-    let wrapper = rfs_lib::json::ListWrapper::with_vec(list);
-
-    Ok(net::Json::new(wrapper))
+    Ok(rfs_api::ListPayload::new(list))
 }
 
 pub async fn post(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    axum::Json(json): axum::Json<actions::user::group::CreateGroup>,
+    axum::Json(json): axum::Json<rfs_api::users::groups::CreateGroup>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         permission::Scope::UserGroup,
         permission::Ability::Write
     ).await? {
@@ -74,8 +71,7 @@ pub async fn post(
 
     let transaction = conn.transaction().await?;
 
-    let result = match transaction.query_one(
-        "\
+    let result = match transaction.query_one( "\
         insert into groups (name, created) \
         values ($1, $2) \
         returning id",
@@ -104,7 +100,7 @@ pub async fn post(
         }
     };
 
-    let rtn = schema::user::group::Group {
+    let rtn = rfs_api::users::groups::Group {
         id: result.get(0),
         name,
         created,
@@ -113,7 +109,8 @@ pub async fn post(
 
     transaction.commit().await?;
 
-    let wrapper = rfs_lib::json::Wrapper::new(rtn);
-
-    Ok(net::Json::new(wrapper))
+    Ok((
+        StatusCode::CREATED,
+        rfs_api::Payload::new(rtn)
+    ))
 }

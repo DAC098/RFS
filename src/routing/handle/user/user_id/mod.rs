@@ -1,12 +1,12 @@
 use std::fmt::Write;
 
-use rfs_lib::{ids, schema, actions};
+use rfs_lib::ids;
 
+use axum::http::StatusCode;
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use serde::Deserialize;
 
-use crate::net;
 use crate::net::error;
 use crate::state::ArcShared;
 use crate::sec::authn::initiator;
@@ -28,7 +28,7 @@ pub async fn get(
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         permission::Scope::User,
         permission::Ability::Read,
     ).await? {
@@ -39,30 +39,29 @@ pub async fn get(
         return Err(error::Error::api(error::UserKind::NotFound));
     };
 
-    let email = user.email.map(|e| schema::user::Email {
+    let email = user.email.map(|e| rfs_api::users::Email {
         email: e.email,
         verified: e.verified
     });
-    let rtn = rfs_lib::json::Wrapper::new(schema::user::User {
+
+    Ok(rfs_api::Payload::new(rfs_api::users::User {
         id: user.id,
         username: user.username,
         email
-    });
-
-    Ok(net::Json::new(rtn))
+    }))
 }
 
 pub async fn patch(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
     Path(PathParams { user_id }): Path<PathParams>,
-    axum::Json(json): axum::Json<actions::user::UpdateUser>,
+    axum::Json(json): axum::Json<rfs_api::users::UpdateUser>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         permission::Scope::User,
         permission::Ability::Write,
     ).await? {
@@ -162,17 +161,16 @@ pub async fn patch(
         transaction.execute(update_query.as_str(), update_params.as_slice()).await?;
     }
 
-    let email = user.email.map(|e| schema::user::Email {
+    let email = user.email.map(|e| rfs_api::users::Email {
         email: e.email,
         verified: e.verified
     });
-    let rtn = rfs_lib::json::Wrapper::new(schema::user::User {
+
+    Ok(rfs_api::Payload::new(rfs_api::users::User {
         id: user.id,
         username: user.username,
         email
-    });
-
-    Ok(net::Json::new(rtn))
+    }))
 }
 
 pub async fn delete(
@@ -184,7 +182,7 @@ pub async fn delete(
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         permission::Scope::User,
         permission::Ability::Write
     ).await? {
@@ -200,5 +198,5 @@ pub async fn delete(
     }
 
     // this will need to be decided along with the fs and storage delete update
-    Ok(net::Json::empty())
+    Ok(StatusCode::NO_CONTENT)
 }

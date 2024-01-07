@@ -1,13 +1,13 @@
 use std::fmt::Write;
 
 use rfs_lib::ids;
-use rfs_lib::actions::storage::{UpdateStorage, UpdateStorageType};
+use rfs_api::fs::storage::{UpdateStorage, UpdateStorageType};
 
+use axum::http::StatusCode;
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use serde::Deserialize;
 
-use crate::net;
 use crate::net::error;
 use crate::state::ArcShared;
 use crate::sec::authn::initiator;
@@ -30,7 +30,7 @@ pub async fn get(
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         permission::Scope::Storage,
         permission::Ability::Read,
     ).await? {
@@ -52,9 +52,7 @@ pub async fn get(
         return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
-    let rtn = rfs_lib::json::Wrapper::new(medium.into_schema());
-
-    Ok(net::Json::new(rtn))
+    Ok(rfs_api::Payload::new(medium.into_schema()))
 }
 
 pub async fn put(
@@ -67,7 +65,7 @@ pub async fn put(
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         permission::Scope::Storage,
         permission::Ability::Write,
     ).await? {
@@ -110,7 +108,7 @@ pub async fn put(
                 )));
             };
 
-            if let Some(found_id) = storage::name_check(&transaction, initiator.user().id(), &name).await? {
+            if let Some(found_id) = storage::name_check(&transaction, &initiator.user.id, &name).await? {
                 if found_id != storage_id {
                     return Err(error::Error::api((
                         error::GeneralKind::AlreadyExists,
@@ -153,10 +151,7 @@ pub async fn put(
 
     transaction.commit().await?;
 
-    let rtn = rfs_lib::json::Wrapper::new(medium.into_schema())
-        .with_message("updated storage");
-
-    Ok(net::Json::new(rtn))
+    Ok(rfs_api::Payload::new(medium.into_schema()))
 }
 
 pub async fn delete(
@@ -168,7 +163,7 @@ pub async fn delete(
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         permission::Scope::Storage,
         permission::Ability::Write,
     ).await? {
@@ -182,7 +177,7 @@ pub async fn delete(
         return Err(error::Error::api(error::StorageKind::NotFound));
     };
 
-    if medium.user_id != *initiator.user().id() {
+    if medium.user_id != initiator.user.id {
         return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
@@ -202,8 +197,5 @@ pub async fn delete(
         &[&storage_id, &deleted]
     ).await?;
 
-    let body = rfs_lib::json::Wrapper::new(())
-        .with_message("deleted storage");
-
-    Ok(net::Json::new(body))
+    Ok(StatusCode::OK)
 }

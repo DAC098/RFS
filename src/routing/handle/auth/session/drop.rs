@@ -1,7 +1,6 @@
 use axum::http::{StatusCode, HeaderMap};
-use axum::body::Body;
 use axum::extract::State;
-use axum::response::{Response, IntoResponse};
+use axum::response::IntoResponse;
 
 use crate::net::error;
 use crate::state::ArcShared;
@@ -26,11 +25,10 @@ pub async fn delete(
 
             transaction.commit().await?;
 
-            Ok(Response::builder()
-                .status(StatusCode::OK)
-                .header("set-cookie", expire_session_cookie(state.auth()))
-                .body(Body::empty())
-                .unwrap())
+            Ok((
+                StatusCode::NO_CONTENT,
+                expire_session_cookie(state.auth())
+            ))
         }
     }
 }

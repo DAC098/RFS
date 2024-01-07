@@ -1,9 +1,8 @@
-use rfs_lib::actions;
-
+use axum::http::StatusCode;
 use axum::extract::State;
 use axum::response::IntoResponse;
 
-use crate::net::{self, error};
+use crate::net::error;
 use crate::state::ArcShared;
 use crate::sec::authn::initiator::Initiator;
 use crate::sec::authn::password::{self, Password};
@@ -11,7 +10,7 @@ use crate::sec::authn::password::{self, Password};
 pub async fn post(
     State(state): State<ArcShared>,
     initiator: Initiator,
-    axum::Json(json): axum::Json<actions::auth::CreatePassword>,
+    axum::Json(json): axum::Json<rfs_api::auth::password::CreatePassword>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
     let peppers = state.sec().peppers().inner();
@@ -30,7 +29,7 @@ pub async fn post(
         )));
     }
 
-    if let Some(current) = Password::retrieve(&conn, initiator.user().id()).await? {
+    if let Some(current) = Password::retrieve(&conn, &initiator.user.id).await? {
         let Some(given) = json.current else {
             return Err(error::Error::api((
                 error::GeneralKind::MissingData,
@@ -118,65 +117,59 @@ pub async fn post(
         transaction.commit().await?;
     }
 
-    Ok(net::Json::empty()
-        .with_message("password updated successfully"))
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn delete(
     State(state): State<ArcShared>,
     initiator: Initiator,
-    axum::Json(json): axum::Json<actions::auth::DeletePassword>,
+    axum::Json(json): axum::Json<rfs_api::auth::password::DeletePassword>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
     let peppers = state.sec().peppers().inner();
 
-    if let Some(current) = Password::retrieve(
-        &conn,
-        initiator.user().id()
-    ).await? {
-        let Some(given) = json.current else {
-            return Err(error::Error::api((
-                error::GeneralKind::MissingData,
-                error::Detail::Keys(vec![String::from("current")]),
-            )));
-        };
+    let Some(current) = Password::retrieve(&conn, &initiator.user.id).await? else {
+        return Err(error::Error::api(error::AuthKind::PasswordNotFound));
+    };
 
-        {
-            let reader = peppers.read()
-                .map_err(|_| error::Error::new().source("peppers rwlock poisoned"))?;
+    let Some(given) = json.current else {
+        return Err(error::Error::api((
+            error::GeneralKind::MissingData,
+            error::Detail::Keys(vec![String::from("current")]),
+        )));
+    };
 
-            let secret = if current.version == 0 {
-                &[]
-            } else {
-                let Some(secret) = reader.get(&current.version) else {
-                    return Err(error::Error::new()
-                        .source("password secret version not found. unable to verify user password"));
-                };
+    {
+        let reader = peppers.read()
+            .map_err(|_| error::Error::new().source("peppers rwlock poisoned"))?;
 
-                secret.data().as_slice()
+        let secret = if current.version == 0 {
+            &[]
+        } else {
+            let Some(secret) = reader.get(&current.version) else {
+                return Err(error::Error::new()
+                    .source("password secret version not found. unable to verify user password"));
             };
 
-            if !current.verify(given, secret)? {
-                return Err(error::Error::api((
-                    error::GeneralKind::InvalidData,
-                    error::Detail::Keys(vec![String::from("current")])
-                )));
-            }
+            secret.data().as_slice()
+        };
+
+        if !current.verify(given, secret)? {
+            return Err(error::Error::api((
+                error::GeneralKind::InvalidData,
+                error::Detail::Keys(vec![String::from("current")])
+            )));
         }
-
-        let transaction = conn.transaction().await?;
-
-        let _ = transaction.execute(
-            "delete from auth_password where user_id = $1",
-            &[initiator.user().id()]
-        ).await?;
-
-        transaction.commit().await?;
-
-        Ok(net::Json::empty()
-           .with_message("password deleted successfuly"))
-    } else {
-        Ok(net::Json::empty()
-           .with_message("no password found"))
     }
+
+    let transaction = conn.transaction().await?;
+
+    let _ = transaction.execute(
+        "delete from auth_password where user_id = $1",
+        &[initiator.user().id()]
+    ).await?;
+
+    transaction.commit().await?;
+
+    Ok(StatusCode::NO_CONTENT)
 }

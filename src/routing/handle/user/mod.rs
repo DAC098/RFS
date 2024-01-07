@@ -1,10 +1,8 @@
-use rfs_lib::{schema, actions};
-
+use axum::http::StatusCode;
 use axum::extract::State;
 use axum::response::IntoResponse;
 use futures::TryStreamExt;
 
-use crate::net;
 use crate::net::error;
 use crate::state::ArcShared;
 use crate::sec::authn::initiator;
@@ -23,7 +21,7 @@ pub async fn get(
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         permission::Scope::User,
         permission::Ability::Read
     ).await? {
@@ -47,7 +45,7 @@ pub async fn get(
     let mut list = Vec::with_capacity(10);
 
     while let Some(row) = result.try_next().await? {
-        let item = schema::user::ListItem {
+        let item = rfs_api::users::ListItem {
             id: row.get(0),
             username: row.get(1),
         };
@@ -55,21 +53,19 @@ pub async fn get(
         list.push(item);
     }
 
-    let wrapper = rfs_lib::json::ListWrapper::with_vec(list);
-
-    Ok(net::Json::new(wrapper))
+    Ok(rfs_api::ListPayload::with_vec(list))
 }
 
 pub async fn post(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    axum::Json(json): axum::Json<actions::user::CreateUser>,
+    axum::Json(json): axum::Json<rfs_api::users::CreateUser>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         permission::Scope::User,
         permission::Ability::Write,
     ).await? {
@@ -133,16 +129,17 @@ pub async fn post(
 
     transaction.commit().await?;
 
-    let email = email.map(|v| schema::user::Email {
+    let email = email.map(|v| rfs_api::users::Email {
         email: v,
         verified: false
     });
 
-    let rtn = rfs_lib::json::Wrapper::new(schema::user::User {
-        id,
-        username,
-        email
-    });
-
-    Ok(net::Json::new(rtn))
+    Ok((
+        StatusCode::CREATED,
+        rfs_api::Payload::new(rfs_api::users::User {
+            id,
+            username,
+            email
+        })
+    ))
 }

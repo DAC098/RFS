@@ -1,4 +1,4 @@
-use axum::http::HeaderMap;
+use axum::http::{StatusCode, HeaderMap};
 use axum::extract::State;
 use axum::response::IntoResponse;
 use serde::Serialize;
@@ -40,8 +40,6 @@ pub async fn get(
         ).await?.into_response())
     }
 
-    Ok(net::Json::empty()
-        .with_message("no-op")
-        .into_response())
+    Ok(StatusCode::NO_CONTENT.into_response())
 }
 

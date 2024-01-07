@@ -1,10 +1,9 @@
-use rfs_lib::actions;
-
+use axum::http::StatusCode;
 use axum::extract::{Path, State};
-use axum::response::{IntoResponse};
+use axum::response::IntoResponse;
 use serde::Deserialize;
 
-use crate::net::{self, error};
+use crate::net::error;
 use crate::state::ArcShared;
 use crate::sec::authn::initiator::Initiator;
 use crate::sec::authn::totp;
@@ -23,33 +22,31 @@ pub async fn get(
 
     let Some(hash) = totp::recovery::Hash::retrieve_key(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         &key_id
     ).await? else {
-        return Err(error::Error::api(error::GeneralKind::NotFound));
+        return Err(error::Error::api(error::AuthKind::TotpRecoveryNotFound));
     };
 
-    let rtn = rfs_lib::json::Wrapper::new(rfs_lib::schema::auth::TotpRecovery {
+    Ok(rfs_api::Payload::new(rfs_api::auth::totp::TotpRecovery {
         user_id: hash.user_id,
         key: hash.key.into(),
         hash: hash.hash.into(),
         used: hash.used.into(),
-    });
-
-    Ok(net::Json::new(rtn))
+    }))
 }
 
 pub async fn patch(
     State(state): State<ArcShared>,
     initiator: Initiator,
     Path(PathParams { key_id }): Path<PathParams>,
-    axum::Json(json): axum::Json<actions::auth::UpdateTotpHash>,
+    axum::Json(json): axum::Json<rfs_api::auth::totp::UpdateTotpHash>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
     let Some(mut hash) = totp::recovery::Hash::retrieve_key(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         &key_id
     ).await? else {
         return Err(error::Error::api(error::GeneralKind::NotFound));
@@ -80,14 +77,12 @@ pub async fn patch(
 
     transaction.commit().await?;
 
-    let rtn = rfs_lib::json::Wrapper::new(rfs_lib::schema::auth::TotpRecovery {
+    Ok(rfs_api::Payload::new(rfs_api::auth::totp::TotpRecovery {
         user_id: hash.user_id,
         key: hash.key.into(),
         hash: hash.hash.into(),
-        used: hash.used.into()
-    });
-
-    Ok(net::Json::new(rtn))
+        used: hash.used.into(),
+    }))
 }
 
 pub async fn delete(
@@ -99,10 +94,10 @@ pub async fn delete(
 
     let Some(hash) = totp::recovery::Hash::retrieve_key(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         &key_id
     ).await? else {
-        return Err(error::Error::api(error::GeneralKind::NotFound));
+        return Err(error::Error::api(error::AuthKind::TotpRecoveryNotFound));
     };
 
     let transaction = conn.transaction().await?;
@@ -111,6 +106,5 @@ pub async fn delete(
 
     transaction.commit().await?;
 
-    Ok(net::Json::empty()
-        .with_message("deleted totp hash"))
+    Ok(StatusCode::OK)
 }

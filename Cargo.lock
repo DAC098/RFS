@@ -1684,6 +1684,8 @@ dependencies = [
 name = "rfs-api"
 version = "0.1.0"
 dependencies = [
+ "axum-core",
+ "bytes",
  "chrono",
  "http 1.0.0",
  "mime",
@@ -1692,6 +1694,7 @@ dependencies = [
  "serde_json",
  "snowcloud-flake",
  "strum",
+ "tracing",
 ]
 
 [[package]]

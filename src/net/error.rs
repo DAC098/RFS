@@ -60,6 +60,7 @@ where
 pub struct Error {
     status: StatusCode,
     inner: ApiError,
+    context: Option<String>,
     src: Option<BoxDynError>,
 }
 
@@ -73,6 +74,7 @@ impl Error {
         Error {
             status,
             inner,
+            context: None,
             src: None,
         }
     }
@@ -87,6 +89,7 @@ impl Error {
         Error {
             status,
             inner: err,
+            context: None,
             src: None
         }
     }
@@ -118,6 +121,14 @@ impl Error {
         M: Into<String>
     {
         self.inner = self.inner.with_message(msg.into());
+        self
+    }
+
+    pub fn context<C>(mut self, ctx: C) -> Self
+    where
+        C: Into<String>
+    {
+        self.context = Some(ctx.into());
         self
     }
 
@@ -169,6 +180,7 @@ impl From<ApiError> for Error {
         Error {
             status,
             inner: api_err,
+            context: None,
             src: None,
         }
     }
@@ -243,7 +255,7 @@ macro_rules! simple_from {
         impl From<$e> for Error {
             fn from(err: $e) -> Self {
                 Error::new()
-                    //.kind($k)
+                    .kind($k)
                     .source(err)
             }
         }
@@ -252,7 +264,7 @@ macro_rules! simple_from {
         impl From<$e> for Error {
             fn from(err: $e) -> Self {
                 Error::new()
-                    //.kind($k)
+                    .kind($k)
                     .message($m)
                     .source(err)
             }
@@ -263,7 +275,7 @@ macro_rules! simple_from {
             fn from(err: $e) -> Self {
                 Error::new()
                     .status($s)
-                    //.kind($k)
+                    .kind($k)
                     .message($m)
                     .source(err)
             }
@@ -278,6 +290,10 @@ simple_from!(axum::Error);
 simple_from!(axum::http::Error);
 simple_from!(
     axum::http::header::ToStrError,
+    GeneralKind::InvalidHeaderValue
+);
+simple_from!(
+    axum::http::header::InvalidHeaderValue,
     GeneralKind::InvalidHeaderValue
 );
 

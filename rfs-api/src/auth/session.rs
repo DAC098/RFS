@@ -17,7 +17,7 @@ pub enum SubmittedAuth {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum RequestedVerify {
-    Topt {
+    Totp {
         digits: u32
     }
 }

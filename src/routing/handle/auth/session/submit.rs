@@ -1,10 +1,8 @@
-use rfs_lib::schema;
-use rfs_lib::actions;
-use axum::http::{HeaderMap};
+use axum::http::{StatusCode, HeaderMap};
 use axum::extract::State;
 use axum::response::IntoResponse;
 
-use crate::net::{self, error};
+use crate::net::error;
 use crate::state::ArcShared;
 use crate::sec::authn::{totp, password};
 use crate::sec::authn::session::{VerifyMethod, AuthMethod};
@@ -13,7 +11,7 @@ use crate::sec::authn::initiator::{self, LookupError};
 pub async fn post(
     State(state): State<ArcShared>,
     headers: HeaderMap,
-    axum::Json(json): axum::Json<actions::auth::SubmitAuth>,
+    axum::Json(json): axum::Json<rfs_api::auth::session::SubmittedAuth>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
     let peppers = state.sec().peppers().inner();
@@ -33,23 +31,17 @@ pub async fn post(
         }
     };
 
+    let transaction = conn.transaction().await?;
+
     match json {
-        actions::auth::SubmitAuth::None => match session.auth_method {
-            AuthMethod::None => {
-                session.authenticated = true;
-            },
-            _ => {
-                return Err(error::Error::api(error::AuthKind::InvalidAuthMethod));
-            }
-        },
-        actions::auth::SubmitAuth::Password(given) => match session.auth_method {
+        rfs_api::auth::session::SubmittedAuth::Password(given) => match session.auth_method {
             AuthMethod::Password => {
                 if !rfs_lib::sec::authn::password_valid(&given) {
                     return Err(error::Error::api(error::AuthKind::InvalidPassword));
                 };
 
                 let Some(user_password) = password::Password::retrieve(
-                    &conn,
+                    &transaction,
                     &session.user_id
                 ).await? else {
                     return Err(error::Error::new()
@@ -79,13 +71,21 @@ pub async fn post(
         }
     }
 
-    let verify = match session.verify_method {
+    match session.verify_method {
         VerifyMethod::None => {
             session.verified = true;
 
-            schema::auth::VerifyMethod::None
+            session.update(&transaction).await?;
+
+            transaction.commit().await?;
+
+            Ok(StatusCode::NO_CONTENT.into_response())
         },
         VerifyMethod::Totp => {
+            session.update(&transaction).await?;
+
+            transaction.commit().await?;
+
             let Some(totp) = totp::Totp::retrieve(
                 &conn,
                 &session.user_id
@@ -94,21 +94,14 @@ pub async fn post(
                     .source("session required user totp but user totp was not found"));
             };
 
-            schema::auth::VerifyMethod::Totp {
+            let verify = rfs_api::auth::session::RequestedVerify::Totp {
                 digits: *totp.digits()
-            }
+            };
+
+            Ok((
+                StatusCode::OK,
+                rfs_api::Payload::new(verify)
+            ).into_response())
         }
-    };
-
-    {
-        let transaction = conn.transaction().await?;
-
-        session.update(&transaction).await?;
-
-        transaction.commit().await?;
     }
-
-    let json_root = rfs_lib::json::Wrapper::new(verify);
-
-    Ok(net::Json::new(json_root).into_response())
 }

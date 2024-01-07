@@ -25,7 +25,10 @@ pub enum AuthKind {
     SessionUnverified,
     SessionUnauthenticated,
 
-    MechanismNotFound
+    MechanismNotFound,
+    TotpNotFound,
+    TotpRecoveryNotFound,
+    PasswordNotFound,
 }
 
 impl std::fmt::Display for AuthKind {
@@ -52,6 +55,9 @@ impl From<&AuthKind> for StatusCode {
             AuthKind::MechanismNotFound => StatusCode::UNAUTHORIZED,
             AuthKind::AlreadyAuthenticated |
             AuthKind::InvalidAuthMethod => StatusCode::BAD_REQUEST,
+            AuthKind::TotpNotFound |
+            AuthKind::TotpRecoveryNotFound |
+            AuthKind::PasswordNotFound => StatusCode::NOT_FOUND,
         }
     }
 }

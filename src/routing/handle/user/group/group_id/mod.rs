@@ -1,12 +1,11 @@
-use rfs_lib::{ids, schema, actions};
+use rfs_lib::ids;
 
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
-
 use tokio_postgres::error::SqlState;
 use serde::{Deserialize};
 
-use crate::net::{self, error};
+use crate::net::error;
 use crate::state::ArcShared;
 use crate::sec::authn::initiator;
 use crate::sec::authz::permission;
@@ -29,7 +28,7 @@ pub async fn get(
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         permission::Scope::UserGroup,
         permission::Ability::Read,
     ).await? {
@@ -42,27 +41,25 @@ pub async fn get(
         return Err(error::Error::api(error::UserKind::GroupNotFound));
     };
 
-    let wrapper = rfs_lib::json::Wrapper::new(schema::user::group::Group {
+    Ok(rfs_api::Payload::new(rfs_api::users::groups::Group {
         id: group.id,
         name: group.name,
         created: group.created,
         updated: group.updated,
-    });
-
-    Ok(net::Json::new(wrapper))
+    }))
 }
 
 pub async fn patch(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
     Path(Params { group_id }): Path<Params>,
-    axum::Json(json): axum::Json<actions::user::group::UpdateGroup>,
+    axum::Json(json): axum::Json<rfs_api::users::groups::UpdateGroup>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         permission::Scope::UserGroup,
         permission::Ability::Write,
     ).await? {
@@ -110,14 +107,12 @@ pub async fn patch(
 
     transaction.commit().await?;
 
-    let rtn = rfs_lib::json::Wrapper::new(schema::user::group::Group {
+    Ok(rfs_api::Payload::new(rfs_api::users::groups::Group {
         id: group_id,
         name,
         created: original.created,
         updated: Some(updated),
-    });
-
-    Ok(net::Json::new(rtn))
+    }))
 }
 
 pub async fn delete(
@@ -129,7 +124,7 @@ pub async fn delete(
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         permission::Scope::UserGroup,
         permission::Ability::Write,
     ).await? {
@@ -154,12 +149,10 @@ pub async fn delete(
 
     transaction.commit().await?;
 
-    let rtn = rfs_lib::json::Wrapper::new(schema::user::group::Group {
+    Ok(rfs_api::Payload::new(rfs_api::users::groups::Group {
         id: original.id,
         name: original.name,
         created: original.created,
         updated: original.updated
-    });
-
-    Ok(net::Json::new(rtn))
+    }))
 }

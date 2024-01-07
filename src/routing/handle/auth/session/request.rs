@@ -1,11 +1,9 @@
-use rfs_lib::schema;
-use rfs_lib::actions;
 use axum::debug_handler;
-use axum::http::{HeaderMap};
+use axum::http::{StatusCode, HeaderMap};
 use axum::extract::State;
 use axum::response::IntoResponse;
 
-use crate::net::{self, error};
+use crate::net::error;
 use crate::state::ArcShared;
 use crate::user;
 use crate::sec::authn::{session, Authenticate, Verify};
@@ -15,7 +13,7 @@ use crate::sec::authn::initiator::{self, LookupError};
 pub async fn post(
     State(state): State<ArcShared>,
     headers: HeaderMap,
-    axum::Json(json): axum::Json<actions::auth::RequestUser>,
+    axum::Json(json): axum::Json<rfs_api::auth::session::RequestUser>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
@@ -48,44 +46,48 @@ pub async fn post(
     };
 
     let mut builder = session::Session::builder(user.id().clone());
-    let mut json = rfs_lib::json::Wrapper::new(schema::auth::AuthMethod::None)
-        .with_kind("Authenticated")
-        .with_message("session authenticated");
+    let transaction = conn.transaction().await?;
 
-    if let Some(auth_method) = Authenticate::retrieve_primary(&conn, user.id()).await? {
-        match auth_method {
+    if let Some(auth_method) = Authenticate::retrieve_primary(&transaction, user.id()).await? {
+        let payload = match auth_method {
             Authenticate::Password(_) => {
                 builder.auth_method(session::AuthMethod::Password);
 
-                json = json.with_payload(schema::auth::AuthMethod::Password)
-                    .with_kind("AuthRequired")
-                    .with_message("proceed with requested auth method");
+                rfs_api::Payload::new(rfs_api::auth::session::RequestedAuth::Password)
             }
-        }
+        };
 
-        if let Some(verify_method) = Verify::retrieve_primary(&conn, user.id()).await? {
+        if let Some(verify_method) = Verify::retrieve_primary(&transaction, user.id()).await? {
             match verify_method {
                 Verify::Totp(_) => {
                     builder.verify_method(session::VerifyMethod::Totp);
                 }
             }
         }
-    }
 
-    let session = {
-        let transaction = conn.transaction().await?;
-
-        let s = builder.build(&transaction).await?;
+        let session = builder.build(&transaction).await?;
 
         transaction.commit().await?;
 
-        s
-    };
+        let session_cookie = session::create_session_cookie(state.auth(), &session)
+            .ok_or(error::Error::new().source("session keys rwlock poisoned"))?;
 
-    let session_cookie = session::create_session_cookie(state.auth(), &session)
-        .ok_or(error::Error::new().source("session keys rwlock poisoned"))?;
+        Ok((
+            StatusCode::OK,
+            session_cookie,
+            payload,
+        ).into_response())
+    } else {
+        let session = builder.build(&transaction).await?;
 
-    Ok(net::Json::new(json)
-        .with_header("set-cookie", session_cookie)
-        .into_response())
+        transaction.commit().await?;
+
+        let session_cookie = session::create_session_cookie(state.auth(), &session)
+            .ok_or(error::Error::new().source("session keys rwlock poisoned"))?;
+
+        Ok((
+            StatusCode::NO_CONTENT,
+            session_cookie
+        ).into_response())
+    }
 }

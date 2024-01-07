@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use rfs_lib::ids;
 use tokio::io::{AsyncWriteExt, BufWriter};
 use axum::debug_handler;
-use axum::http::{HeaderMap};
+use axum::http::{StatusCode, HeaderMap};
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
@@ -13,7 +13,6 @@ use futures::{Stream, StreamExt};
 use deadpool_postgres::GenericClient;
 use serde::Deserialize;
 
-use crate::net;
 use crate::net::error;
 use crate::state::ArcShared;
 use crate::sec::authn::initiator;
@@ -73,42 +72,36 @@ pub async fn get(
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         permission::Scope::Fs,
         permission::Ability::Read
     ).await? {
         return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
-    let Some(item) = fs::Item::retrieve(
-        &conn,
-        &fs_id
-    ).await? else {
+    let Some(item) = fs::Item::retrieve(&conn,&fs_id).await? else {
         return Err(error::Error::api(error::FsKind::NotFound));
     };
 
-    if item.user_id() != initiator.user().id() {
+    if *item.user_id() != initiator.user.id {
         return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
-    let wrapper = rfs_lib::json::Wrapper::new(item.into_schema());
-
-    Ok(net::Json::new(wrapper))
+    Ok(rfs_api::Payload::new(item.into_schema()))
 }
 
 #[debug_handler]
 pub async fn post(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    _headers: HeaderMap,
     Path(PathParams { fs_id }): Path<PathParams>,
-    axum::Json(json): axum::Json<rfs_lib::actions::fs::CreateDir>,
+    axum::Json(json): axum::Json<rfs_api::fs::CreateDir>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         permission::Scope::Fs,
         permission::Ability::Write,
     ).await? {
@@ -119,10 +112,7 @@ pub async fn post(
         return Err(error::Error::api(error::FsKind::NotFound));
     };
 
-    let Some(medium) = storage::Medium::retrieve(
-        &conn,
-        item.storage_id()
-    ).await? else {
+    let Some(medium) = storage::Medium::retrieve(&conn, item.storage_id()).await? else {
         return Err(error::Error::api(error::StorageKind::NotFound));
     };
 
@@ -236,6 +226,8 @@ pub async fn post(
         Default::default()
     };
 
+    transaction.commit().await?;
+
     let rtn = fs::Item::Directory(fs::Directory {
         id,
         user_id,
@@ -250,11 +242,7 @@ pub async fn post(
         deleted: None
     });
 
-    transaction.commit().await?;
-
-    let wrapper = rfs_lib::json::Wrapper::new(rtn.into_schema());
-
-    Ok(net::Json::new(wrapper))
+    Ok((StatusCode::CREATED, rfs_api::Payload::new(rtn.into_schema())))
 }
 
 #[derive(Deserialize)]
@@ -286,15 +274,11 @@ pub async fn put(
     }
 
     let Some(item) = fs::Item::retrieve(&conn, &fs_id).await? else {
-        return Err(error::Error::api(
-            error::FsKind::NotFound
-        ));
+        return Err(error::Error::api(error::FsKind::NotFound));
     };
 
     if item.user_id() != initiator.user().id() {
-        return Err(error::Error::api(
-            error::AuthKind::PermissionDenied
-        ));
+        return Err(error::Error::api(error::AuthKind::PermissionDenied));
     }
 
     tracing::debug!(
@@ -306,9 +290,7 @@ pub async fn put(
         &conn,
         item.storage_id()
     ).await? else {
-        return Err(error::Error::api(
-            error::StorageKind::NotFound
-        ));
+        return Err(error::Error::api(error::StorageKind::NotFound));
     };
 
     let transaction = conn.transaction().await?;
@@ -404,7 +386,7 @@ pub async fn put(
             let pg_hash = hash.as_bytes().as_slice();
             let Ok(pg_size): Result<i64, _> = TryFrom::try_from(size) else {
                 return Err(error::Error::api(error::FsKind::MaxSize)
-                    .source("total bytes written exceeds i64"));
+                    .context("total bytes written exceeds i64"));
             };
 
             let _ = transaction.execute(
@@ -495,7 +477,7 @@ pub async fn put(
             let pg_hash = hash.as_bytes().as_slice();
             let Ok(pg_size): Result<i64, _> = TryFrom::try_from(size) else {
                 return Err(error::Error::api(error::FsKind::MaxSize)
-                    .source("total bytes written exceeds i64"));
+                    .context("total bytes written exceeds i64"));
             };
 
             let _ = transaction.execute(
@@ -518,9 +500,7 @@ pub async fn put(
 
     transaction.commit().await?;
 
-    let wrapper = rfs_lib::json::Wrapper::new(rtn.into_schema());
-
-    Ok(net::Json::new(wrapper))
+    Ok(rfs_api::Payload::new(rtn.into_schema()))
 }
 
 pub async fn patch(
@@ -608,9 +588,7 @@ pub async fn patch(
 
     transaction.commit().await?;
 
-    let wrapper = rfs_lib::json::Wrapper::new(item.into_schema());
-
-    Ok(net::Json::new(wrapper))
+    Ok(rfs_api::Payload::new(item.into_schema()))
 }
 
 pub async fn delete(
@@ -618,5 +596,5 @@ pub async fn delete(
     _initiator: initiator::Initiator,
     Path(PathParams { fs_id: _ }): Path<PathParams>,
 ) -> error::Result<impl IntoResponse> {
-    Ok(net::Json::empty())
+    Ok(StatusCode::NO_CONTENT)
 }

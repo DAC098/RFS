@@ -1,11 +1,10 @@
-use rfs_lib::{schema};
-
+use axum::http::StatusCode;
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 
 use serde::Deserialize;
 
-use crate::net::{self, error};
+use crate::net::error;
 use crate::state::ArcShared;
 
 use crate::sec::authn::initiator;
@@ -26,7 +25,7 @@ pub async fn get(
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         permission::Scope::SecSecrets,
         permission::Ability::Read
     ).await? {
@@ -58,14 +57,12 @@ pub async fn get(
         return Err(error::Error::new().source("timetamp error for password key"));
     };
 
-    let rtn = rfs_lib::json::Wrapper::new(schema::sec::PasswordVersion {
+    Ok(rfs_api::Payload::new(rfs_api::sec::secrets::PasswordVersion {
         version,
         created,
         data: data.into(),
         in_use: count
-    });
-
-    Ok(net::Json::new(rtn))
+    }))
 }
 
 pub async fn delete(
@@ -77,7 +74,7 @@ pub async fn delete(
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         permission::Scope::SecSecrets,
         permission::Ability::Write,
     ).await? {
@@ -102,5 +99,5 @@ pub async fn delete(
         return Err(error::Error::new().source(err));
     }
 
-    Ok(net::Json::empty())
+    Ok(StatusCode::NO_CONTENT)
 }

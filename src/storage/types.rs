@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use rfs_lib::schema::storage::{StorageType, StorageLocal};
+use rfs_api::fs::storage::{StorageType, StorageLocal};
 use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Serialize, Deserialize)]

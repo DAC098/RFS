@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use rfs_lib::ids;
-use rfs_lib::schema;
 use deadpool_postgres::GenericClient;
 use tokio_postgres::Error as PgError;
 
@@ -180,11 +179,11 @@ impl Item {
         }
     }
 
-    pub fn into_schema(self) -> schema::fs::Item {
+    pub fn into_schema(self) -> rfs_api::fs::Item {
         match self {
-            Self::Root(root) => schema::fs::Item::Root(root.into_schema()),
-            Self::Directory(dir) => schema::fs::Item::Directory(dir.into_schema()),
-            Self::File(file) => schema::fs::Item::File(file.into_schema()),
+            Self::Root(root) => rfs_api::fs::Item::Root(root.into_schema()),
+            Self::Directory(dir) => rfs_api::fs::Item::Directory(dir.into_schema()),
+            Self::File(file) => rfs_api::fs::Item::File(file.into_schema()),
         }
     }
 

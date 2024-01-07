@@ -1,6 +1,5 @@
 use serde::{Serialize, Deserialize};
 use rfs_lib::ids;
-use rfs_lib::schema;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Local {
@@ -20,9 +19,9 @@ impl Storage {
         }
     }
 
-    pub fn into_schema(self) -> schema::fs::Storage {
+    pub fn into_schema(self) -> rfs_api::fs::Storage {
         match self {
-            Storage::Local(local) => schema::fs::Storage::Local {
+            Storage::Local(local) => rfs_api::fs::Storage::Local {
                 id: local.id
             }
         }

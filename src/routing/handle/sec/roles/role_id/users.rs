@@ -1,11 +1,12 @@
-use rfs_lib::{ids, schema, actions};
+use rfs_lib::ids;
 
+use axum::http::StatusCode;
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use futures::TryStreamExt;
 use serde::Deserialize;
 
-use crate::net::{self, error};
+use crate::net::error;
 use crate::state::ArcShared;
 use crate::sec::authn::initiator;
 use crate::sec::authz::permission::{self, Role};
@@ -25,7 +26,7 @@ pub async fn get(
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         permission::Scope::SecRoles,
         permission::Ability::Read
     ).await? {
@@ -47,27 +48,25 @@ pub async fn get(
     futures::pin_mut!(result);
 
     while let Some(row) = result.try_next().await? {
-        users.push(schema::sec::RoleUser {
+        users.push(rfs_api::sec::roles::RoleUser {
             id: row.get(0)
         });
     }
 
-    let wrapper = rfs_lib::json::ListWrapper::with_vec(users);
-
-    Ok(net::Json::new(wrapper))
+    Ok(rfs_api::ListPayload::with_vec(users))
 }
 
 pub async fn post(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
     Path(PathParams { role_id }): Path<PathParams>,
-    axum::Json(json): axum::Json<actions::sec::AddRoleUser>
+    axum::Json(json): axum::Json<rfs_api::sec::roles::AddRoleUser>
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         permission::Scope::SecRoles,
         permission::Ability::Write
     ).await? {
@@ -97,20 +96,20 @@ pub async fn post(
 
     transaction.commit().await?;
 
-    Ok(net::Json::empty())
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn delete(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
     Path(PathParams { role_id }): Path<PathParams>,
-    axum::Json(json): axum::Json<actions::sec::DropRoleUser>,
+    axum::Json(json): axum::Json<rfs_api::sec::roles::DropRoleUser>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         permission::Scope::SecRoles,
         permission::Ability::Write
     ).await? {
@@ -137,5 +136,5 @@ pub async fn delete(
 
     transaction.commit().await?;
 
-    Ok(net::Json::empty())
+    Ok(StatusCode::NO_CONTENT)
 }

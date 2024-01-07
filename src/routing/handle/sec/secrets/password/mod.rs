@@ -1,11 +1,8 @@
-use rfs_lib::schema;
-
-
+use axum::http::StatusCode;
 use axum::extract::State;
 use axum::response::IntoResponse;
 
-
-use crate::net::{self, error};
+use crate::net::error;
 use crate::state::ArcShared;
 use crate::sec::secrets::Key;
 use crate::sec::authn::initiator;
@@ -22,7 +19,7 @@ pub async fn get(
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         permission::Scope::SecSecrets,
         permission::Ability::Read
     ).await? {
@@ -44,14 +41,14 @@ pub async fn get(
                 return Err(error::Error::new().source("timestamp error for password key"));
             };
 
-            known_versions.push(schema::sec::PasswordListItem {
+            known_versions.push(rfs_api::sec::secrets::PasswordListItem {
                 version: *version,
                 created
             });
         }
     }
 
-    Ok(net::Json::new(rfs_lib::json::ListWrapper::with_vec(known_versions)))
+    Ok(rfs_api::ListPayload::with_vec(known_versions))
 }
 
 pub async fn post(
@@ -62,7 +59,7 @@ pub async fn post(
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         permission::Scope::SecSecrets,
         permission::Ability::Write
     ).await? {
@@ -89,5 +86,5 @@ pub async fn post(
         return Err(error::Error::new().source(err));
     }
 
-    Ok(net::Json::empty())
+    Ok(StatusCode::NO_CONTENT)
 }

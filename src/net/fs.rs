@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use tokio::fs::{File, OpenOptions};
+use tokio::fs::OpenOptions;
 use tokio_util::io::ReaderStream;
 use axum::http::StatusCode;
 use axum::body::Body;

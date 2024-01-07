@@ -9,6 +9,8 @@ use snowcloud_flake::serde_ext::string_id;
 
 use crate::Tags;
 
+pub mod storage;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Type {
     Root,
@@ -78,11 +80,7 @@ impl UpdateMetadata {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum CreateItem {
-    Dir {
-        basename: String,
-        tags: Option<Tags>,
-        comment: Option<String>,
-    }
+    Dir(CreateDir)
 }
 
 #[derive(Debug, Serialize, Deserialize)]

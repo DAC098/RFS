@@ -1,14 +1,13 @@
 use std::collections::HashSet;
 use std::fmt::Write;
 
-use rfs_lib::{schema, actions};
-
+use axum::http::StatusCode;
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use futures::TryStreamExt;
 use serde::Deserialize;
 
-use crate::net::{self, error};
+use crate::net::error;
 use crate::state::ArcShared;
 use crate::sec::authn::initiator;
 use crate::sec::authz::permission::{has_ability, Role, Permission, Ability, Scope};
@@ -31,7 +30,7 @@ pub async fn get(
 
     if !has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         Scope::SecRoles,
         Ability::Read,
     ).await? {
@@ -64,32 +63,32 @@ pub async fn get(
     futures::pin_mut!(permissions_result);
 
     while let Some(row) = permissions_result.try_next().await? {
-        permissions.push(schema::sec::Permission {
+        permissions.push(rfs_api::sec::roles::Permission {
             scope: row.get(1),
             ability: row.get(2),
         });
     }
 
-    let rtn = schema::sec::Role {
+    let rtn = rfs_api::sec::roles::Role {
         id: role_result.get(0),
         name: role_result.get(1),
         permissions,
     };
 
-    Ok(net::Json::new(rfs_lib::json::Wrapper::new(rtn)))
+    Ok(rfs_api::Payload::new(rtn))
 }
 
 pub async fn patch(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
     Path(PathParams { role_id }): Path<PathParams>,
-    axum::Json(json): axum::Json<actions::sec::UpdateRole>,
+    axum::Json(json): axum::Json<rfs_api::sec::roles::UpdateRole>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
     if !has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         Scope::SecRoles,
         Ability::Write
     ).await? {
@@ -190,7 +189,7 @@ pub async fn patch(
 
     let permissions = if let Some(changed) = changed_permissions {
         changed.into_iter()
-            .map(|(scope, ability)| schema::sec::Permission {
+            .map(|(scope, ability)| rfs_api::sec::roles::Permission {
                 scope,
                 ability
             })
@@ -199,20 +198,18 @@ pub async fn patch(
         Permission::retrieve_by_role_id(&conn, &role_id)
             .await?
             .into_iter()
-            .map(|perm| schema::sec::Permission {
+            .map(|perm| rfs_api::sec::roles::Permission {
                 scope: perm.scope,
                 ability: perm.ability
             })
             .collect()
     };
 
-    let wrapper = rfs_lib::json::Wrapper::new(schema::sec::Role {
+    Ok(rfs_api::Payload::new(rfs_api::sec::roles::Role {
         id: role_id,
         name,
         permissions,
-    });
-
-    Ok(net::Json::new(wrapper))
+    }))
 }
 
 pub async fn delete(
@@ -265,5 +262,5 @@ pub async fn delete(
 
     transaction.commit().await?;
 
-    Ok(net::Json::empty())
+    Ok(StatusCode::OK)
 }

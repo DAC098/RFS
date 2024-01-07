@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use rfs_lib::ids;
-use rfs_lib::schema;
 use tokio_postgres::Error as PgError;
 use deadpool_postgres::GenericClient;
 use chrono::{DateTime, Utc};
@@ -261,8 +260,8 @@ impl File {
         }
     }
 
-    pub fn into_schema(self) -> schema::fs::File {
-        schema::fs::File {
+    pub fn into_schema(self) -> rfs_api::fs::File {
+        rfs_api::fs::File {
             id: self.id,
             user_id: self.user_id,
             parent: self.parent,

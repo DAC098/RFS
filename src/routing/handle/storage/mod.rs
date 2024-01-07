@@ -1,14 +1,12 @@
 use std::collections::HashMap;
 
-use axum::http::{HeaderMap};
+use rfs_lib::ids;
+use rfs_api::fs::storage::{StorageListItem, CreateStorage, CreateStorageType};
+use axum::http::{StatusCode, HeaderMap};
 use axum::extract::State;
 use axum::response::IntoResponse;
 use futures::TryStreamExt;
-use rfs_lib::ids;
-use rfs_lib::schema::storage::StorageListItem;
-use rfs_lib::actions::storage::{CreateStorage, CreateStorageType};
 
-use crate::net;
 use crate::net::error;
 use crate::state::ArcShared;
 use crate::sec::authn::initiator;
@@ -29,7 +27,7 @@ pub async fn get(
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         permission::Scope::Storage,
         permission::Ability::Read,
     ).await? {
@@ -114,9 +112,7 @@ pub async fn get(
         list.push(item);
     }
 
-    let wrapper = rfs_lib::json::ListWrapper::with_vec(list);
-
-    Ok(net::Json::new(wrapper))
+    Ok(rfs_api::ListPayload::with_vec(list))
 }
 
 pub async fn post(
@@ -133,7 +129,7 @@ pub async fn post(
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         permission::Scope::Storage,
         permission::Ability::Write,
     ).await? {
@@ -236,7 +232,8 @@ pub async fn post(
 
     transaction.commit().await?;
 
-    let rtn = rfs_lib::json::Wrapper::new(medium.into_schema());
-
-    Ok(net::Json::new(rtn))
+    Ok((
+        StatusCode::CREATED,
+        rfs_api::Payload::new(medium.into_schema())
+    ))
 }

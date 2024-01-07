@@ -1,10 +1,9 @@
-use rfs_lib::actions;
 use axum::http::StatusCode;
 use axum::extract::State;
 use axum::response::IntoResponse;
 use futures::TryStreamExt;
 
-use crate::net::{self, error};
+use crate::net::error;
 use crate::state::ArcShared;
 use crate::sec::authn::initiator::Initiator;
 use crate::sec::authn::totp;
@@ -25,19 +24,15 @@ pub async fn get(
                auth_totp_hash.used \
         from auth_totp_hash \
         where auth_totp_hash.user_id = $1",
-        &[initiator.user().id()]
+        &[&initiator.user.id]
     ).await?;
 
     futures::pin_mut!(result);
 
-    let mut rtn = Vec::with_capacity(3);
+    let mut rtn = Vec::new();
 
     while let Some(row) = result.try_next().await? {
-        if rtn.len() == rtn.capacity() {
-            rtn.reserve(3);
-        }
-
-        rtn.push(rfs_lib::schema::auth::TotpRecovery {
+        rtn.push(rfs_api::auth::totp::TotpRecovery {
             user_id: row.get(0),
             key: row.get(1),
             hash: row.get(2),
@@ -45,15 +40,13 @@ pub async fn get(
         });
     }
 
-    let wrapper = rfs_lib::json::ListWrapper::with_vec(rtn);
-
-    Ok(net::Json::new(wrapper))
+    Ok(rfs_api::ListPayload::with_vec(rtn))
 }
 
 pub async fn post(
     State(state): State<ArcShared>,
     initiator: Initiator,
-    axum::Json(json): axum::Json<actions::auth::CreateTotpHash>,
+    axum::Json(json): axum::Json<rfs_api::auth::totp::CreateTotpHash>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
@@ -62,7 +55,7 @@ pub async fn post(
             error::GeneralKind::InvalidData,
             error::Detail::with_key("key")
         )));
-    };
+    }
 
     if totp::recovery::key_exists(&conn, initiator.user().id(), &json.key).await? {
         return Err(error::Error::api(error::GeneralKind::AlreadyExists));
@@ -76,19 +69,19 @@ pub async fn post(
         "\
         insert into auth_totp_hash (user_id, key, hash, used) values \
         ($1, $2, $3, false)",
-        &[initiator.user().id(), &json.key, &hash]
+        &[&initiator.user.id, &json.key, &hash]
     ).await?;
 
     transaction.commit().await?;
 
-    let rtn = rfs_lib::json::Wrapper::new(rfs_lib::schema::auth::TotpRecovery {
-        user_id: initiator.user().id().clone(),
-        key: json.key,
-        hash,
-        used: false
-    });
-
-    Ok(net::Json::new(rtn)
-        .with_status(StatusCode::CREATED))
+    Ok((
+        StatusCode::CREATED,
+        rfs_api::Payload::new(rfs_api::auth::totp::TotpRecovery {
+            user_id: initiator.user.id.clone(),
+            key: json.key,
+            hash,
+            used: false
+        })
+    ))
 }
 

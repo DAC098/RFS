@@ -1,5 +1,5 @@
 use rfs_lib::ids;
-use rfs_lib::schema::storage::StorageItem;
+use rfs_api::fs::storage::StorageItem;
 use chrono::{DateTime, Utc};
 use tokio_postgres::Error as PgError;
 use deadpool_postgres::GenericClient;
