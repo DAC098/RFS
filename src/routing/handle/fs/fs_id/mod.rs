@@ -507,13 +507,13 @@ pub async fn patch(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
     Path(PathParams { fs_id }): Path<PathParams>,
-    axum::Json(json): axum::Json<rfs_lib::actions::fs::UpdateMetadata>,
+    axum::Json(json): axum::Json<rfs_api::fs::UpdateMetadata>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         permission::Scope::Fs,
         permission::Ability::Write,
     ).await? {
