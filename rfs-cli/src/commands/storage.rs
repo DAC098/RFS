@@ -93,14 +93,14 @@ pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
                 .cloned()
                 .unwrap();
 
-            rfs_lib::actions::storage::CreateStorageType::Local {
+            rfs_api::fs::storage::CreateStorageType::Local {
                 path
             }
         },
         _ => unreachable!()
     };
 
-    let action = rfs_lib::actions::storage::CreateStorage {
+    let action = rfs_api::fs::storage::CreateStorage {
         name, type_, tags
     };
 
@@ -117,7 +117,7 @@ pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedCreatingStorage")
@@ -125,7 +125,7 @@ pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
             .source(format!("{:?}", json)));
     }
 
-    let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::storage::StorageItem>>()?;
+    let result = res.json::<rfs_api::Payload<rfs_api::fs::storage::StorageItem>>()?;
 
     println!("{:?}", result.into_payload());
 
@@ -151,7 +151,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
         let status = res.status();
 
         if status != reqwest::StatusCode::OK {
-            let json = res.json::<rfs_lib::json::Error>()?;
+            let json = res.json::<rfs_api::error::ApiError>()?;
 
             return Err(error::Error::new()
                 .kind("FailedStorageLookup")
@@ -159,7 +159,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
                 .source(format!("{:?}", json)));
         }
 
-        let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::storage::StorageItem>>()?;
+        let result = res.json::<rfs_api::Payload<rfs_api::fs::storage::StorageItem>>()?;
 
         tracing::event!(
             tracing::Level::INFO,
@@ -171,7 +171,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
     };
 
     let type_action = match &current.type_ {
-        rfs_lib::schema::storage::StorageType::Local(_) => {
+        rfs_api::fs::storage::StorageType::Local(_) => {
             None
         }
     };
@@ -194,7 +194,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
         }
     };
 
-    let action = rfs_lib::actions::storage::UpdateStorage {
+    let action = rfs_api::fs::storage::UpdateStorage {
         name: args.get_one::<String>("rename").cloned(),
         type_: type_action,
         tags: new_tags
@@ -212,7 +212,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedUpdateStorage")
@@ -220,7 +220,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
             .source(format!("{:?}", json)));
     }
 
-    let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::storage::StorageItem>>()?;
+    let result = res.json::<rfs_api::Payload<rfs_api::fs::storage::StorageItem>>()?;
 
     tracing::event!(
         tracing::Level::INFO,

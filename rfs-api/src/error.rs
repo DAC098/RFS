@@ -278,6 +278,8 @@ impl ApiError {
     }
 }
 
+impl std::error::Error for ApiError {}
+
 impl std::default::Default for ApiError {
     fn default() -> Self {
         ApiError::new()

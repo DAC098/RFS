@@ -9,23 +9,6 @@ mod auth;
 mod util;
 mod commands;
 
-fn print_error(err: error::Error) {
-    match err.into_parts() {
-        (kind, Some(msg), Some(err)) => {
-            println!("{}: {}\n{}", kind, msg, err);
-        },
-        (kind, Some(msg), None) => {
-            println!("{}: {}", kind, msg);
-        },
-        (kind, None, Some(err)) => {
-            println!("{}: {}", kind, err);
-        },
-        (kind, None, None) => {
-            println!("{}", kind);
-        }
-    }
-}
-
 fn main() {
     use tracing_subscriber::{FmtSubscriber, EnvFilter};
 
@@ -37,7 +20,7 @@ fn main() {
     let end_result = run();
 
     if let Err(err) = end_result {
-        print_error(err);
+        println!("{}", err);
     }
 }
 
@@ -103,7 +86,7 @@ fn run() -> error::Result {
                 };
 
                 if let Err(err) = result {
-                    print_error(err);
+                    println!("{}", err);
                 }
             }
         },

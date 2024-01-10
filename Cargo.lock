@@ -1713,6 +1713,7 @@ dependencies = [
  "ratatui",
  "reqwest",
  "reqwest_cookie_store",
+ "rfs-api",
  "rfs-lib",
  "rpassword",
  "serde",

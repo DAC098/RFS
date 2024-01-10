@@ -32,7 +32,7 @@ pub fn get(state: &mut AppState, _args: &ArgMatches) -> error::Result {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedSessionSecretsLookup")
@@ -40,7 +40,7 @@ pub fn get(state: &mut AppState, _args: &ArgMatches) -> error::Result {
             .source(json));
     }
 
-    let result: rfs_lib::json::ListWrapper<Vec<rfs_lib::schema::sec::SessionListItem>> = res.json()?;
+    let result: rfs_api::Payload<Vec<rfs_api::sec::secrets::SessionListItem>> = res.json()?;
 
     println!("{:?}", result);
 
@@ -56,7 +56,7 @@ pub fn update(state: &mut AppState, _args: &ArgMatches) -> error::Result {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedSessionSecretsUpdate")
@@ -79,7 +79,7 @@ pub fn remove(state: &mut AppState, _args: &ArgMatches) -> error::Result {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedSessionSecretsRemove")

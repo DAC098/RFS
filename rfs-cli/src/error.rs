@@ -2,8 +2,7 @@ type BoxDynError = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Debug)]
 pub struct Error {
-    kind: String,
-    msg: Option<String>,
+    context: Option<String>,
     src: Option<BoxDynError>,
 }
 
@@ -12,17 +11,23 @@ pub type Result<T = ()> = std::result::Result<T, Error>;
 impl Error {
     pub fn new() -> Error {
         Error {
-            kind: String::from("Error"),
-            msg: None,
+            context: None,
             src: None,
         }
     }
 
-    pub fn kind<K>(mut self, kind: K) -> Self
+    pub fn kind<K>(self, _kind: K) -> Self
     where
         K: Into<String>
     {
-        self.kind = kind.into();
+        self
+    }
+
+    pub fn context<C>(mut self, cxt: C) -> Error
+    where
+        C: Into<String>
+    {
+        self.context = Some(cxt.into());
         self
     }
 
@@ -30,7 +35,7 @@ impl Error {
     where
         M: Into<String>
     {
-        self.msg = Some(msg.into());
+        self.context = Some(msg.into());
         self
     }
 
@@ -41,19 +46,16 @@ impl Error {
         self.src = Some(src.into());
         self
     }
-
-    pub fn into_parts(self) -> (String, Option<String>, Option<BoxDynError>) {
-        (self.kind, self.msg, self.src)
-    }
 }
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(msg) = self.msg.as_ref() {
-            write!(f, "{}", msg)?;
+        match (&self.context, &self.src) {
+            (Some(cxt), Some(src)) => write!(f, "{}: {:?}", cxt, src),
+            (Some(cxt), None) => write!(f, "{}", cxt),
+            (None, Some(src)) => write!(f, "{:?}", src),
+            (None, None) => write!(f, "UNKNOWN ERROR"),
         }
-
-        Ok(())
     }
 }
 
@@ -77,7 +79,30 @@ impl From<&str> for Error {
     }
 }
 
-macro_rules! generic_catch {
+pub trait Context<T> {
+    fn context<C>(self, cxt: C) -> std::result::Result<T, Error>
+    where
+        C: Into<String>;
+}
+
+impl<T, E> Context<T> for std::result::Result<T, E>
+where
+    E: Into<BoxDynError>
+{
+    fn context<C>(self, cxt: C) -> std::result::Result<T, Error>
+    where
+        C: Into<String>
+    {
+        match self {
+            Ok(v) => Ok(v),
+            Err(err) => Err(Error::new()
+                .context(cxt)
+                .source(err))
+        }
+    }
+}
+
+macro_rules! simple_catch {
     ($k:expr, $e:path) => {
         impl From<$e> for Error {
             fn from(err: $e) -> Self {
@@ -87,19 +112,8 @@ macro_rules! generic_catch {
             }
         }
     };
-    ($k:expr, $e:path, $m:expr) => {
-        impl From<$e> for Error {
-            fn from(err: $e) -> Self {
-                Error::new()
-                    .kind($k)
-                    .message($m)
-                    .source(err)
-            }
-        }
-    }
 }
 
-generic_catch!("std::io::Error", std::io::Error);
-generic_catch!("url::ParseError", url::ParseError);
-generic_catch!("reqwest::Error", reqwest::Error);
-
+simple_catch!("std::io::Error", std::io::Error);
+simple_catch!("url::ParseError", url::ParseError);
+simple_catch!("reqwest::Error", reqwest::Error);

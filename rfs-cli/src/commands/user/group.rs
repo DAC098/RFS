@@ -120,7 +120,7 @@ pub fn get(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedGroupLookup")
@@ -129,11 +129,11 @@ pub fn get(state: &mut AppState, args: &ArgMatches) -> error::Result {
     }
 
     if given_id {
-        let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::user::group::Group>>()?;
+        let result = res.json::<rfs_api::Payload<rfs_api::users::groups::Group>>()?;
 
         println!("{:#?}", result);
     } else {
-        let result = res.json::<rfs_lib::json::ListWrapper<Vec<rfs_lib::schema::user::group::ListItem>>>()?;
+        let result = res.json::<rfs_api::Payload<Vec<rfs_api::users::groups::ListItem>>>()?;
 
         println!("{:#?}", result);
     }
@@ -142,7 +142,7 @@ pub fn get(state: &mut AppState, args: &ArgMatches) -> error::Result {
 }
 
 pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result {
-    let action = rfs_lib::actions::user::group::CreateGroup {
+    let action = rfs_api::users::groups::CreateGroup {
         name: args.get_one("name").cloned().unwrap()
     };
 
@@ -154,7 +154,7 @@ pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedCreatingGroup")
@@ -162,7 +162,7 @@ pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result {
             .source(json));
     }
 
-    let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::user::group::Group>>()?;
+    let result = res.json::<rfs_api::Payload<rfs_api::users::groups::Group>>()?;
 
     println!("{:#?}", result);
 
@@ -171,7 +171,7 @@ pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result {
 
 pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let id = args.get_one::<i64>("id").unwrap();
-    let action = rfs_lib::actions::user::group::UpdateGroup {
+    let action = rfs_api::users::groups::UpdateGroup {
         name: args.get_one("name").cloned().unwrap()
     };
 
@@ -184,7 +184,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedUpdatingGroup")
@@ -192,7 +192,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result {
             .source(json));
     }
 
-    let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::user::group::Group>>()?;
+    let result = res.json::<rfs_api::Payload<rfs_api::users::groups::Group>>()?;
 
     println!("{:#?}", result);
 
@@ -210,7 +210,7 @@ pub fn delete(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedDeletingGroup")
@@ -218,7 +218,7 @@ pub fn delete(state: &mut AppState, args: &ArgMatches) -> error::Result {
             .source(json));
     }
 
-    let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::user::group::Group>>()?;
+    let result = res.json::<rfs_api::Payload<rfs_api::users::groups::Group>>()?;
 
     println!("{:#?}", result);
 
@@ -245,7 +245,7 @@ fn get_users(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedGroupUsersLookup")
@@ -253,7 +253,7 @@ fn get_users(state: &mut AppState, args: &ArgMatches) -> error::Result {
             .source(json));
     }
 
-    let result = res.json::<rfs_lib::json::ListWrapper<Vec<rfs_lib::schema::user::group::GroupUser>>>()?;
+    let result = res.json::<rfs_api::Payload<Vec<rfs_api::users::groups::GroupUser>>>()?;
 
     println!("{:#?}", result);
 
@@ -282,7 +282,7 @@ fn get_user_ids(args: &ArgMatches) -> error::Result<Vec<rfs_lib::ids::UserId>> {
 
 fn add_users(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let id = args.get_one::<i64>("id").unwrap();
-    let action = rfs_lib::actions::user::group::AddUsers { 
+    let action = rfs_api::users::groups::AddUsers { 
         ids: get_user_ids(args)?
     };
 
@@ -295,7 +295,7 @@ fn add_users(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedAddingGroupUsers")
@@ -308,7 +308,7 @@ fn add_users(state: &mut AppState, args: &ArgMatches) -> error::Result {
 
 fn drop_users(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let id = args.get_one::<i64>("id").unwrap();
-    let action = rfs_lib::actions::user::group::DropUsers {
+    let action = rfs_api::users::groups::DropUsers {
         ids: get_user_ids(args)?
     };
 
@@ -321,7 +321,7 @@ fn drop_users(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedDroppingGroupUsers")

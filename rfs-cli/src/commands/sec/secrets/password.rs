@@ -44,7 +44,7 @@ pub fn get(state: &mut AppState, args: &ArgMatches) -> error::Result {
         let status = res.status();
 
         if status != reqwest::StatusCode::OK {
-            let json = res.json::<rfs_lib::json::Error>()?;
+            let json = res.json::<rfs_api::error::ApiError>()?;
 
             return Err(error::Error::new()
                 .kind("FailedPasswordSecretsLookup")
@@ -52,7 +52,7 @@ pub fn get(state: &mut AppState, args: &ArgMatches) -> error::Result {
                 .source(json));
         }
 
-        let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::sec::PasswordVersion>>()?;
+        let result = res.json::<rfs_api::Payload<rfs_api::sec::secrets::PasswordVersion>>()?;
 
         println!("{:?}", result);
     } else {
@@ -64,7 +64,7 @@ pub fn get(state: &mut AppState, args: &ArgMatches) -> error::Result {
         let status = res.status();
 
         if status != reqwest::StatusCode::OK {
-            let json = res.json::<rfs_lib::json::Error>()?;
+            let json = res.json::<rfs_api::error::ApiError>()?;
 
             return Err(error::Error::new()
                 .kind("FailedPasswordSecretsLookup")
@@ -72,7 +72,7 @@ pub fn get(state: &mut AppState, args: &ArgMatches) -> error::Result {
                 .source(json));
         }
 
-        let result: rfs_lib::json::ListWrapper<Vec<rfs_lib::schema::sec::PasswordListItem>> = res.json()?;
+        let result: rfs_api::Payload<Vec<rfs_api::sec::secrets::PasswordListItem>> = res.json()?;
 
         println!("{:?}", result);
     }
@@ -89,7 +89,7 @@ pub fn update(state: &mut AppState, _args: &ArgMatches) -> error::Result {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedPasswordSecretsUpdate")
@@ -112,7 +112,7 @@ pub fn remove(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedPasswordSecretsRemove")

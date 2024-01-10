@@ -96,7 +96,7 @@ pub fn get(state: &mut AppState, _args: &ArgMatches) -> error::Result {
                 println!("totp is not enabled for this user");
             },
             _ => {
-                let json = res.json::<rfs_lib::json::Error>()?;
+                let json = res.json::<rfs_api::error::ApiError>()?;
 
                 return Err(error::Error::new()
                     .kind("FailedTotpLookup")
@@ -105,7 +105,7 @@ pub fn get(state: &mut AppState, _args: &ArgMatches) -> error::Result {
             }
         }
     } else {
-        let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::auth::Totp>>()?;
+        let result = res.json::<rfs_api::Payload<rfs_api::auth::totp::Totp>>()?;
 
         println!("{:?}", result);
     }
@@ -114,7 +114,7 @@ pub fn get(state: &mut AppState, _args: &ArgMatches) -> error::Result {
 }
 
 pub fn enable(state: &mut AppState, args: &ArgMatches) -> error::Result {
-    let action = rfs_lib::actions::auth::CreateTotp {
+    let action = rfs_api::auth::totp::CreateTotp {
         algo: args.get_one("algo").map(|v: &ValidAlgo| v.as_string()),
         digits: args.get_one("digits").cloned(),
         step: args.get_one("step").cloned(),
@@ -129,7 +129,7 @@ pub fn enable(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let status = res.status();
 
     if status != reqwest::StatusCode::CREATED {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedEnablingTotp")
@@ -137,7 +137,7 @@ pub fn enable(state: &mut AppState, args: &ArgMatches) -> error::Result {
             .source(json));
     }
 
-    let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::auth::Totp>>()?;
+    let result = res.json::<rfs_api::Payload<rfs_api::auth::totp::Totp>>()?;
 
     println!("{:?}", result);
 
@@ -153,7 +153,7 @@ pub fn disable(state: &mut AppState, _args: &ArgMatches) -> error::Result {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedDisablingTotp")
@@ -161,7 +161,7 @@ pub fn disable(state: &mut AppState, _args: &ArgMatches) -> error::Result {
             .source(json));
     }
 
-    let result = res.json::<rfs_lib::json::Wrapper<()>>()?;
+    let result = res.json::<rfs_api::Payload<()>>()?;
 
     println!("{:?}", result);
 
@@ -169,7 +169,7 @@ pub fn disable(state: &mut AppState, _args: &ArgMatches) -> error::Result {
 }
 
 pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result {
-    let action = rfs_lib::actions::auth::UpdateTotp {
+    let action = rfs_api::auth::totp::UpdateTotp {
         algo: args.get_one("algo").map(|v: &ValidAlgo| v.as_string()),
         digits: args.get_one("digits").cloned(),
         step: args.get_one("step").cloned(),
@@ -185,7 +185,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedUpdatingTotp")
@@ -193,7 +193,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result {
             .source(json));
     }
 
-    let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::auth::Totp>>()?;
+    let result = res.json::<rfs_api::Payload<rfs_api::auth::totp::Totp>>()?;
 
     println!("{:?}", result);
 

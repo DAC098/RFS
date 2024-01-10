@@ -67,7 +67,7 @@ pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
     let username: String = args.get_one("username").cloned().unwrap();
     let email: Option<String> = args.get_one("email").cloned();
 
-    let action = rfs_lib::actions::user::CreateUser {
+    let action = rfs_api::users::CreateUser {
         username,
         email
     };
@@ -80,7 +80,7 @@ pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedCreatingUser")
@@ -88,7 +88,7 @@ pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
             .source(format!("{:?}", json)));
     }
 
-    let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::user::User>>()?;
+    let result = res.json::<rfs_api::Payload<rfs_api::users::User>>()?;
 
     println!("{:?}", result.into_payload());
 
@@ -110,7 +110,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
                 .kind("UserNotFound")
                 .message("the requested user was not found"));
         } else if status != reqwest::StatusCode::OK {
-            let json = res.json::<rfs_lib::json::Error>()?;
+            let json = res.json::<rfs_api::error::ApiError>()?;
 
             return Err(error::Error::new()
                 .kind("FailedUserLookup")
@@ -118,7 +118,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
                 .source(format!("{:?}", json)));
         }
 
-        let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::user::User>>()?;
+        let result = res.json::<rfs_api::Payload<rfs_api::users::User>>()?;
 
         result.into_payload()
     };
@@ -131,7 +131,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
         None
     };
 
-    let action = rfs_lib::actions::user::UpdateUser {
+    let action = rfs_api::users::UpdateUser {
         username: args.get_one("username").cloned(),
         email
     };
@@ -150,7 +150,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         if status == reqwest::StatusCode::NOT_FOUND {
             return Err(error::Error::new()
@@ -164,7 +164,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
         }
     }
 
-    let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::user::User>>()?;
+    let result = res.json::<rfs_api::Payload<rfs_api::users::User>>()?;
 
     println!("{:?}", result.into_payload());
 

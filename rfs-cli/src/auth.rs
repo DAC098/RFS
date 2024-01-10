@@ -1,90 +1,106 @@
-use crate::error;
+use crate::error::{self, Context};
 use crate::input;
 use crate::state::AppState;
 
 fn submit_user(
     state: &mut AppState
-) -> error::Result<Option<rfs_lib::schema::auth::AuthMethod>> {
+) -> error::Result<Option<rfs_api::auth::session::RequestedAuth>> {
     loop {
         let username = input::read_stdin_trimmed("username: ")?;
-        let body = rfs_lib::actions::auth::RequestUser {
+        let body = rfs_api::auth::session::RequestUser {
             username: username.clone()
         };
 
         let url = state.server.url.join("/auth/session/request")?;
         let res = state.client.post(url)
             .json(&body)
-            .send()?;
-
-        let status = res.status();
-
-        if status != reqwest::StatusCode::OK {
-            let json = res.json::<rfs_lib::json::Error>()?;
-
-            if json.kind() == "UserNotFound" {
-                println!("requested username was not found");
-                continue;
-            }
-
-            if json.kind() == "AlreadyAuthenticated" {
-                return Ok(None);
-            }
-
-            return Err(error::Error::new()
-                .kind("FailedUserRequest")
-                .message("failed to submit requested username")
-                .source(format!("{:?}", json)));
-        }
+            .send()
+            .context("failed to request session")?;
 
         state.save()?;
 
-        let json = res.json::<rfs_lib::json::Wrapper<Option<rfs_lib::schema::auth::AuthMethod>>>()?;
+        match res.status() {
+            reqwest::StatusCode::NO_CONTENT => {
+                return Ok(None);
+            },
+            reqwest::StatusCode::OK => {
+                let json: rfs_api::Payload<rfs_api::auth::session::RequestedAuth> = res.json()?;
 
-        return Ok(json.into_payload());
+                return Ok(Some(json.into_payload()));
+            },
+            reqwest::StatusCode::BAD_REQUEST => {
+                let error: rfs_api::ApiError = res.json()?;
+
+                if *error.kind() == rfs_api::ApiErrorKind::AlreadyAuthenticated {
+                    return Ok(None);
+                }
+
+                return Err(error::Error::new().source(error));
+            },
+            reqwest::StatusCode::NOT_FOUND => {
+                let _error: rfs_api::ApiError = res.json()?;
+
+                println!("requested username was not found");
+                continue;
+            },
+            _ => {
+                let error: rfs_api::ApiError = res.json()?;
+
+                return Err(error::Error::new().source(error));
+            }
+        }
     }
 }
 
 fn submit_auth(
     state: &mut AppState,
-    auth_method: rfs_lib::schema::auth::AuthMethod
-) -> error::Result<Option<rfs_lib::schema::auth::VerifyMethod>> {
+    auth_method: rfs_api::auth::session::RequestedAuth
+) -> error::Result<Option<rfs_api::auth::session::RequestedVerify>> {
     match auth_method {
-        rfs_lib::schema::auth::AuthMethod::None => Ok(None),
-        rfs_lib::schema::auth::AuthMethod::Password => {
+        rfs_api::auth::session::RequestedAuth::Password => {
             let prompt = "password: ";
 
             loop {
                 let password = rpassword::prompt_password(&prompt)?;
-                let auth_method = rfs_lib::actions::auth::SubmitAuth::Password(password);
+                let auth_method = rfs_api::auth::session::SubmittedAuth::Password(password);
 
                 let url = state.server.url.join("/auth/session/submit")?;
                 let res = state.client.post(url)
                     .json(&auth_method)
                     .send()?;
 
-                let status = res.status();
-
-                if status != reqwest::StatusCode::OK {
-                    let json = res.json::<rfs_lib::json::Error>()?;
-
-                    if json.kind() == "InvalidPassword" {
-                        println!("invalid password provided");
-                        continue;
-                    }
-
-                    if json.kind() == "AlreadyAuthenticated" {
+                match res.status() {
+                    reqwest::StatusCode::NO_CONTENT => {
                         return Ok(None);
+                    },
+                    reqwest::StatusCode::OK => {
+                        return Ok(Some(res.json()?));
+                    },
+                    reqwest::StatusCode::BAD_REQUEST => {
+                        let err: rfs_api::ApiError = res.json()?;
+
+                        if *err.kind() == rfs_api::ApiErrorKind::AlreadyAuthenticated {
+                            return Ok(None);
+                        }
+
+                        return Err(error::Error::new().source(err));
+                    },
+                    reqwest::StatusCode::FORBIDDEN => {
+                        let err: rfs_api::ApiError = res.json()?;
+
+                        if *err.kind() == rfs_api::ApiErrorKind::InvalidPassword {
+                            println!("invalid password provided");
+                            continue;
+                        }
+
+                        return Err(error::Error::new().source(err));
+                    },
+                    _ => {
+                        let err: rfs_api::ApiError = res.json()?;
+
+                        return Err(error::Error::new().source(err));
                     }
-
-                    return Err(error::Error::new()
-                        .kind("FailedAuthentication")
-                        .message("failed to submit requested auth method")
-                        .source(format!("{:?}", json)));
                 }
-
-                let json = res.json::<rfs_lib::json::Wrapper<Option<rfs_lib::schema::auth::VerifyMethod>>>()?;
-
-                return Ok(json.into_payload());
             }
         }
     }
@@ -92,11 +108,10 @@ fn submit_auth(
 
 fn submit_verify(
     state: &mut AppState,
-    verify_method: rfs_lib::schema::auth::VerifyMethod
+    verify_method: rfs_api::auth::session::RequestedVerify
 ) -> error::Result<()> {
     match verify_method {
-        rfs_lib::schema::auth::VerifyMethod::None => {},
-        rfs_lib::schema::auth::VerifyMethod::Totp{ digits } => {
+        rfs_api::auth::session::RequestedVerify::Totp { digits } => {
             let prompt = format!("totp({}) code: ", digits);
 
             'input_loop: loop {
@@ -109,7 +124,7 @@ fn submit_verify(
 
                 for ch in otp.chars() {
                     if !ch.is_ascii_digit() {
-                        println!("invalid totp characters providied");
+                        println!("invalid totp characters provided");
                         continue 'input_loop;
                     }
                 }
@@ -119,27 +134,45 @@ fn submit_verify(
                     .json(&verify_method)
                     .send()?;
 
-                let status = res.status();
+                match res.status() {
+                    reqwest::StatusCode::NO_CONTENT => {
+                        return Ok(());
+                    },
+                    reqwest::StatusCode::BAD_REQUEST => {
+                        let err: rfs_api::ApiError = res.json()?;
 
-                if status != reqwest::StatusCode::OK {
-                    let json = res.json::<rfs_lib::json::Error>()?;
+                        if *err.kind() == rfs_api::ApiErrorKind::AlreadyAuthenticated {
+                            return Ok(());
+                        }
 
-                    if json.kind() == "AlreadyAuthenticated" {
-                        break;
+                        return Err(error::Error::new().source(err));
+                    },
+                    reqwest::StatusCode::FORBIDDEN => {
+                        let err: rfs_api::ApiError = res.json()?;
+
+                        match err.kind() {
+                            rfs_api::ApiErrorKind::InvalidTotp => {
+                                println!("invalid totp provided");
+                                continue 'input_loop;
+                            },
+                            rfs_api::ApiErrorKind::InvalidTotpHash => {
+                                println!("invalid totp hash provided");
+                                continue 'input_loop;
+                            },
+                            _ => {
+                                return Err(error::Error::new().source(err));
+                            }
+                        }
+                    },
+                    _ => {
+                        let err: rfs_api::ApiError = res.json()?;
+
+                        return Err(error::Error::new().source(err));
                     }
-
-                    return Err(error::Error::new()
-                        .kind("FailedVerification")
-                        .message("failed to submit requested verification method")
-                        .source(format!("{:?}", json)));
                 }
-
-                break;
             }
         }
     }
-
-    Ok(())
 }
 
 pub fn connect(state: &mut AppState) -> error::Result<()> {
@@ -163,13 +196,10 @@ pub fn disconnect(state: &mut AppState) -> error::Result<()> {
 
     let status = res.status();
 
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+    if status != reqwest::StatusCode::NO_CONTENT {
+        let err: rfs_api::ApiError = res.json()?;
 
-        return Err(error::Error::new()
-            .kind("FailedSessionDrop")
-            .message("failed to drop the current client session")
-            .source(json));
+        return Err(error::Error::new().source(err));
     }
 
     Ok(())

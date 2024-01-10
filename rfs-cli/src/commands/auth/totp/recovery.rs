@@ -51,7 +51,7 @@ pub fn command() -> Command {
         )
 }
 
-fn print_recovery(recovery: &rfs_lib::schema::auth::TotpRecovery) {
+fn print_recovery(recovery: &rfs_api::auth::totp::TotpRecovery) {
     print!("{} ", recovery.key);
 
     if recovery.used {
@@ -71,7 +71,7 @@ pub fn get(state: &mut AppState, _args: &ArgMatches) -> error::Result {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedTotpRecoveryLookup")
@@ -79,7 +79,7 @@ pub fn get(state: &mut AppState, _args: &ArgMatches) -> error::Result {
             .source(json));
     }
 
-    let result = res.json::<rfs_lib::json::ListWrapper<Vec<rfs_lib::schema::auth::TotpRecovery>>>()?;
+    let result = res.json::<rfs_api::Payload<Vec<rfs_api::auth::totp::TotpRecovery>>>()?;
 
     for recovery in result.payload() {
         print_recovery(recovery);
@@ -89,7 +89,7 @@ pub fn get(state: &mut AppState, _args: &ArgMatches) -> error::Result {
 }
 
 pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result {
-    let action = rfs_lib::actions::auth::CreateTotpHash {
+    let action = rfs_api::auth::totp::CreateTotpHash {
         key: args.get_one("key").cloned().unwrap()
     };
 
@@ -102,7 +102,7 @@ pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let status = res.status();
 
     if status != reqwest::StatusCode::CREATED {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedCreateTotpRecovery")
@@ -110,7 +110,7 @@ pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result {
             .source(json));
     }
 
-    let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::auth::TotpRecovery>>()?;
+    let result = res.json::<rfs_api::Payload<rfs_api::auth::totp::TotpRecovery>>()?;
 
     print_recovery(result.payload());
 
@@ -121,7 +121,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let key = args.get_one::<String>("key").cloned().unwrap();
     let path = format!("/auth/totp/recovery/{}", key);
 
-    let action = rfs_lib::actions::auth::UpdateTotpHash {
+    let action = rfs_api::auth::totp::UpdateTotpHash {
         key: args.get_one("rename").cloned(),
         regen: args.get_flag("regen")
     };
@@ -134,7 +134,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedUpdateTotpRecovery")
@@ -142,7 +142,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result {
             .source(json));
     }
 
-    let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::auth::TotpRecovery>>()?;
+    let result = res.json::<rfs_api::Payload<rfs_api::auth::totp::TotpRecovery>>()?;
 
     print_recovery(result.payload());
 
@@ -159,7 +159,7 @@ pub fn delete(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedDeleteTotpRecovery")
@@ -167,7 +167,7 @@ pub fn delete(state: &mut AppState, args: &ArgMatches) -> error::Result {
             .source(json));
     }
 
-    let _result = res.json::<rfs_lib::json::Wrapper<()>>()?;
+    let _result = res.json::<rfs_api::Payload<()>>()?;
 
     Ok(())
 }

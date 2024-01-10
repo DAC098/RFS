@@ -247,7 +247,7 @@ pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
                 None
             };
 
-            let action = rfs_lib::actions::fs::CreateDir {
+            let action = rfs_api::fs::CreateDir {
                 basename,
                 tags,
                 comment: args.get_one::<String>("comment").cloned()
@@ -261,7 +261,7 @@ pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
             let status = res.status();
 
             if status != reqwest::StatusCode::OK {
-                let json = res.json::<rfs_lib::json::Error>()?;
+                let json = res.json::<rfs_api::error::ApiError>()?;
 
                 return Err(error::Error::new()
                     .kind("FailedCreatingDirectory")
@@ -269,7 +269,7 @@ pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
                     .source(format!("{:?}", json)));
             }
 
-            let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::fs::Item>>()?;
+            let result = res.json::<rfs_api::Payload<rfs_api::fs::Item>>()?;
 
             println!("{:?}", result.into_payload());
         },
@@ -298,7 +298,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
         let status = res.status();
 
         if status != reqwest::StatusCode::OK {
-            let json = res.json::<rfs_lib::json::Error>()?;
+            let json = res.json::<rfs_api::error::ApiError>()?;
 
             return Err(error::Error::new()
                 .kind("FailedFsLookup")
@@ -306,7 +306,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
                 .source(format!("{:?}", json)));
         }
 
-        let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::fs::Item>>()?;
+        let result = res.json::<rfs_api::Payload<rfs_api::fs::Item>>()?;
 
         tracing::debug!(
             "currnet fs item: {:?}",
@@ -321,9 +321,9 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
             Some(tags)
         } else if drop_tags.len() > 0 || add_tags.len() > 0 {
             let mut current_tags = match current {
-                rfs_lib::schema::fs::Item::Root(root) => root.tags,
-                rfs_lib::schema::fs::Item::Directory(dir) => dir.tags,
-                rfs_lib::schema::fs::Item::File(file) => file.tags,
+                rfs_api::fs::Item::Root(root) => root.tags,
+                rfs_api::fs::Item::Directory(dir) => dir.tags,
+                rfs_api::fs::Item::File(file) => file.tags,
             };
 
             for tag in drop_tags {
@@ -348,7 +348,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
         None
     };
 
-    let action = rfs_lib::actions::fs::UpdateMetadata {
+    let action = rfs_api::fs::UpdateMetadata {
         tags: new_tags,
         comment: new_comment
     };
@@ -370,7 +370,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedUpdateFs")
@@ -378,7 +378,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
             .source(format!("{:?}", json)));
     }
 
-    let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::fs::Item>>()?;
+    let result = res.json::<rfs_api::Payload<rfs_api::fs::Item>>()?;
 
     println!("{:#?}", result);
 
@@ -483,7 +483,7 @@ pub fn upload(state: &mut AppState, upload_args: &ArgMatches) -> error::Result<(
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedFileUpload")
@@ -491,7 +491,7 @@ pub fn upload(state: &mut AppState, upload_args: &ArgMatches) -> error::Result<(
             .source(format!("{:?}", json)));
     }
 
-    let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::fs::Item>>()?;
+    let result = res.json::<rfs_api::Payload<rfs_api::fs::Item>>()?;
 
     println!("{:#?}", result.into_payload());
 

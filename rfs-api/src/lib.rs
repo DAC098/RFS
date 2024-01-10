@@ -3,6 +3,7 @@ use std::collections::HashMap;
 mod response;
 
 pub mod error;
+pub use error::{ApiError, ApiErrorKind, Detail};
 
 pub mod users;
 pub mod auth;

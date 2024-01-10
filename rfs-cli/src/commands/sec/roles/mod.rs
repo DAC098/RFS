@@ -185,7 +185,7 @@ pub fn get(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedRoleLookup")
@@ -194,11 +194,11 @@ pub fn get(state: &mut AppState, args: &ArgMatches) -> error::Result {
     }
 
     if given_id {
-        let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::sec::Role>>()?;
+        let result = res.json::<rfs_api::Payload<rfs_api::sec::roles::Role>>()?;
 
         println!("{:#?}", result);
     } else {
-        let result = res.json::<rfs_lib::json::ListWrapper<Vec<rfs_lib::schema::sec::RoleListItem>>>()?;
+        let result = res.json::<rfs_api::Payload<Vec<rfs_api::sec::roles::RoleListItem>>>()?;
 
         println!("{:#?}", result);
     }
@@ -207,12 +207,12 @@ pub fn get(state: &mut AppState, args: &ArgMatches) -> error::Result {
 }
 
 #[inline]
-fn perm_tuple_to_role_permission<T>(iter: T) -> Vec<rfs_lib::actions::sec::RolePermission>
+fn perm_tuple_to_role_permission<T>(iter: T) -> Vec<rfs_api::sec::roles::Permission>
 where
     T: IntoIterator<Item = (Scope, Ability)>
 {
     iter.into_iter()
-        .map(|(scope, ability)| rfs_lib::actions::sec::RolePermission {
+        .map(|(scope, ability)| rfs_api::sec::roles::Permission {
             scope,
             ability
         })
@@ -273,7 +273,7 @@ fn parse_permissions(name: &str, args: &ArgMatches) -> error::Result<HashSet<(Sc
 
 pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let permissions = perm_tuple_to_role_permission(parse_permissions("permission", args)?);
-    let action = rfs_lib::actions::sec::CreateRole {
+    let action = rfs_api::sec::roles::CreateRole {
         name: args.get_one("name").cloned().unwrap(),
         permissions
     };
@@ -286,7 +286,7 @@ pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedCreatingRole")
@@ -294,7 +294,7 @@ pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result {
             .source(json));
     }
 
-    let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::sec::Role>>()?;
+    let result = res.json::<rfs_api::Payload<rfs_api::sec::roles::Role>>()?;
 
     println!("{:#?}", result);
 
@@ -316,7 +316,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result {
         let status = res.status();
 
         if status != reqwest::StatusCode::OK {
-            let json = res.json::<rfs_lib::json::Error>()?;
+            let json = res.json::<rfs_api::error::ApiError>()?;
 
             return Err(error::Error::new()
                 .kind("FailedRoleLookup")
@@ -324,7 +324,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result {
                 .source(json));
         }
 
-        let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::sec::Role>>()?;
+        let result = res.json::<rfs_api::Payload<rfs_api::sec::roles::Role>>()?;
 
         result.into_payload()
     };
@@ -350,7 +350,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result {
         None
     };
 
-    let action = rfs_lib::actions::sec::UpdateRole {
+    let action = rfs_api::sec::roles::UpdateRole {
         name: args.get_one("name").cloned(),
         permissions: new_permissions,
     };
@@ -363,7 +363,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedRoleUpdate")
@@ -371,7 +371,7 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result {
             .source(json));
     }
 
-    let result = res.json::<rfs_lib::json::Wrapper<rfs_lib::schema::sec::Role>>()?;
+    let result = res.json::<rfs_api::Payload<rfs_api::sec::roles::Role>>()?;
 
     println!("{:#?}", result);
 
@@ -389,7 +389,7 @@ pub fn delete(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedRoleDelete")
@@ -429,7 +429,7 @@ pub fn get_users(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedRoleUsersLookup")
@@ -437,7 +437,7 @@ pub fn get_users(state: &mut AppState, args: &ArgMatches) -> error::Result {
             .source(json));
     }
 
-    let result = res.json::<rfs_lib::json::ListWrapper<Vec<rfs_lib::schema::sec::RoleUser>>>()?;
+    let result = res.json::<rfs_api::Payload<Vec<rfs_api::sec::roles::RoleUser>>>()?;
 
     println!("{:#?}", result);
 
@@ -486,7 +486,7 @@ fn get_group_ids(args: &ArgMatches) -> error::Result<Vec<rfs_lib::ids::GroupId>>
 
 pub fn add_users(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let id = args.get_one::<rfs_lib::ids::RoleId>("id").unwrap();
-    let action = rfs_lib::actions::sec::AddRoleUser {
+    let action = rfs_api::sec::roles::AddRoleUser {
         ids: get_user_ids(args)?
     };
 
@@ -499,7 +499,7 @@ pub fn add_users(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedAddingRoleUsers")
@@ -512,7 +512,7 @@ pub fn add_users(state: &mut AppState, args: &ArgMatches) -> error::Result {
 
 pub fn drop_users(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let id = args.get_one::<rfs_lib::ids::RoleId>("id").unwrap();
-    let action = rfs_lib::actions::sec::DropRoleUser {
+    let action = rfs_api::sec::roles::DropRoleUser {
         ids: get_user_ids(args)?
     };
 
@@ -525,7 +525,7 @@ pub fn drop_users(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedDroppingRoleUsers")
@@ -547,7 +547,7 @@ pub fn get_groups(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedRoleGroupsLookup")
@@ -555,7 +555,7 @@ pub fn get_groups(state: &mut AppState, args: &ArgMatches) -> error::Result {
             .source(json));
     }
 
-    let result = res.json::<rfs_lib::json::ListWrapper<Vec<rfs_lib::schema::sec::RoleGroup>>>()?;
+    let result = res.json::<rfs_api::Payload<Vec<rfs_api::sec::roles::RoleGroup>>>()?;
 
     println!("{:#?}", result);
 
@@ -564,7 +564,7 @@ pub fn get_groups(state: &mut AppState, args: &ArgMatches) -> error::Result {
 
 pub fn add_groups(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let id = args.get_one::<rfs_lib::ids::RoleId>("id").unwrap();
-    let action = rfs_lib::actions::sec::AddRoleGroup {
+    let action = rfs_api::sec::roles::AddRoleGroup {
         ids: get_group_ids(args)?
     };
 
@@ -577,7 +577,7 @@ pub fn add_groups(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedAddingRoleGroups")
@@ -590,7 +590,7 @@ pub fn add_groups(state: &mut AppState, args: &ArgMatches) -> error::Result {
 
 pub fn drop_groups(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let id = args.get_one::<rfs_lib::ids::RoleId>("id").unwrap();
-    let action = rfs_lib::actions::sec::DropRoleGroup {
+    let action = rfs_api::sec::roles::DropRoleGroup {
         ids: get_group_ids(args)?
     };
 
@@ -603,7 +603,7 @@ pub fn drop_groups(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let status = res.status();
 
     if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_lib::json::Error>()?;
+        let json = res.json::<rfs_api::error::ApiError>()?;
 
         return Err(error::Error::new()
             .kind("FailedDroppingRoleGroups")
