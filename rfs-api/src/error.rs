@@ -1,19 +1,25 @@
 use http::StatusCode;
+use axum_core::response::{Response, IntoResponse};
 use serde::{Serialize, Deserialize};
 use strum::{AsRefStr as StrumAsRefStr};
+
+use crate::response::{serialize_json, error_json};
 
 #[derive(
     Debug, Clone, PartialEq, Eq,
     StrumAsRefStr,
     Serialize, Deserialize
 )]
-pub enum AuthKind {
+pub enum ApiErrorKind {
+    // auth
+
     PermissionDenied,
     Unauthenticated,
     AlreadyAuthenticated,
 
     AuthRequired,
     VerifyRequired,
+
     InvalidPassword,
     InvalidAuthMethod,
     InvalidTotp,
@@ -28,180 +34,38 @@ pub enum AuthKind {
     MechanismNotFound,
     TotpNotFound,
     TotpRecoveryNotFound,
-    PasswordNotFound,
-}
 
-impl std::fmt::Display for AuthKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Display::fmt(self.as_ref(), f)
-    }
-}
+    // sec
 
-impl From<&AuthKind> for StatusCode {
-    fn from(kind: &AuthKind) -> Self {
-        match kind {
-            AuthKind::PermissionDenied |
-            AuthKind::AuthRequired |
-            AuthKind::VerifyRequired |
-            AuthKind::InvalidPassword |
-            AuthKind::InvalidTotp |
-            AuthKind::InvalidTotpHash => StatusCode::FORBIDDEN,
-            AuthKind::Unauthenticated |
-            AuthKind::InvalidSession |
-            AuthKind::SessionExpired |
-            AuthKind::SessionNotFound |
-            AuthKind::SessionUnverified |
-            AuthKind::SessionUnauthenticated |
-            AuthKind::MechanismNotFound => StatusCode::UNAUTHORIZED,
-            AuthKind::AlreadyAuthenticated |
-            AuthKind::InvalidAuthMethod => StatusCode::BAD_REQUEST,
-            AuthKind::TotpNotFound |
-            AuthKind::TotpRecoveryNotFound |
-            AuthKind::PasswordNotFound => StatusCode::NOT_FOUND,
-        }
-    }
-}
-
-#[derive(
-    Debug, Clone, PartialEq, Eq,
-    StrumAsRefStr,
-    Serialize, Deserialize
-)]
-pub enum SecKind {
     RoleNotFound,
     SecretNotFound,
-}
 
-impl std::fmt::Display for SecKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Display::fmt(self.as_ref(), f)
-    }
-}
+    // storage
 
-impl From<&SecKind> for StatusCode {
-    fn from(kind: &SecKind) -> Self {
-        match kind {
-            SecKind::RoleNotFound |
-            SecKind::SecretNotFound => StatusCode::NOT_FOUND
-        }
-    }
-}
-
-#[derive(
-    Debug, Clone, PartialEq, Eq,
-    StrumAsRefStr,
-    Serialize, Deserialize
-)]
-pub enum StorageKind {
-    NotFound,
+    StorageNotFound,
     DirNotFound,
-
     NotAbsolutePath,
     NotDirectory,
-}
 
-impl std::fmt::Display for StorageKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Display::fmt(self.as_ref(), f)
-    }
-}
+    // fs
 
-impl From<&StorageKind> for StatusCode {
-    fn from(kind: &StorageKind) -> Self {
-        match kind {
-            StorageKind::NotFound |
-            StorageKind::DirNotFound => StatusCode::NOT_FOUND,
-            StorageKind::NotAbsolutePath |
-            StorageKind::NotDirectory => StatusCode::BAD_REQUEST,
-        }
-    }
-}
-
-#[derive(
-    Debug, Clone, PartialEq, Eq,
-    StrumAsRefStr,
-    Serialize, Deserialize
-)]
-pub enum FsKind {
     MaxSize,
-    NotFound,
+    FileNotFound,
     InvalidType,
     NoContentType,
     MimeMismatch,
-}
 
-impl std::fmt::Display for FsKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Display::fmt(self.as_ref(), f)
-    }
-}
+    // users
 
-impl From<&FsKind> for StatusCode {
-    fn from(kind: &FsKind) -> Self {
-        match kind {
-            FsKind::MaxSize |
-            FsKind::InvalidType |
-            FsKind::NoContentType |
-            FsKind::MimeMismatch => StatusCode::BAD_REQUEST,
-            FsKind::NotFound => StatusCode::NOT_FOUND,
-        }
-    }
-}
-
-#[derive(
-    Debug, Clone, PartialEq, Eq,
-    StrumAsRefStr,
-    Serialize, Deserialize
-)]
-pub enum UserKind {
-    NotFound,
+    UserNotFound,
     GroupNotFound,
-}
 
-impl std::fmt::Display for UserKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Display::fmt(self.as_ref(), f)
-    }
-}
+    // tags
 
-impl From<&UserKind> for StatusCode {
-    fn from(kind: &UserKind) -> Self {
-        match kind {
-            UserKind::NotFound |
-            UserKind::GroupNotFound => StatusCode::NOT_FOUND,
-        }
-    }
-}
+    InvalidTags,
 
-#[derive(
-    Debug, Clone, PartialEq, Eq,
-    StrumAsRefStr,
-    Serialize, Deserialize
-)]
-pub enum TagKind {
-    InvalidTags
-}
+    // general
 
-impl std::fmt::Display for TagKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Display::fmt(self.as_ref(), f)
-    }
-}
-
-impl From<&TagKind> for StatusCode {
-    fn from(kind: &TagKind) -> Self {
-        match kind {
-            TagKind::InvalidTags => StatusCode::BAD_REQUEST
-        }
-    }
-}
-
-#[derive(
-    Debug, Clone, PartialEq, Eq,
-    StrumAsRefStr,
-    Serialize, Deserialize
-)]
-pub enum GeneralKind {
     InternalFailure,
     Timeout,
 
@@ -209,7 +73,7 @@ pub enum GeneralKind {
     NotFound,
 
     NoWork,
-    Noop,
+    NoOp,
 
     ValidationFailed,
     InvalidData,
@@ -223,114 +87,76 @@ pub enum GeneralKind {
     InvalidRequest,
 }
 
-impl std::fmt::Display for GeneralKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Display::fmt(self.as_ref(), f)
-    }
-}
-
-impl From<&GeneralKind> for StatusCode {
-    fn from(kind: &GeneralKind) -> StatusCode {
-        match kind {
-            GeneralKind::InternalFailure => StatusCode::INTERNAL_SERVER_ERROR,
-            GeneralKind::Timeout => StatusCode::REQUEST_TIMEOUT,
-            GeneralKind::AlreadyExists => StatusCode::CONFLICT,
-            GeneralKind::NotFound => StatusCode::NOT_FOUND,
-            GeneralKind::NoWork |
-            GeneralKind::Noop |
-            GeneralKind::ValidationFailed |
-            GeneralKind::InvalidData |
-            GeneralKind::MissingData |
-            GeneralKind::InvalidProperty |
-            GeneralKind::InvalidUri |
-            GeneralKind::InvalidHeaderValue |
-            GeneralKind::InvalidMimeType |
-            GeneralKind::InvalidRequest => StatusCode::BAD_REQUEST,
-            GeneralKind::InvalidMethod => StatusCode::METHOD_NOT_ALLOWED,
-        }
-    }
-}
-
-#[derive(
-    Debug, Clone, PartialEq, Eq,
-    Serialize, Deserialize
-)]
-pub enum ApiErrorKind {
-    General(GeneralKind),
-    Auth(AuthKind),
-    Sec(SecKind),
-    Storage(StorageKind),
-    Fs(FsKind),
-    Tag(TagKind),
-    User(UserKind),
-}
-
 impl std::fmt::Display for ApiErrorKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ApiErrorKind::General(v) => std::fmt::Display::fmt(v, f),
-            ApiErrorKind::Auth(v) => std::fmt::Display::fmt(v, f),
-            ApiErrorKind::Sec(v) => std::fmt::Display::fmt(v, f),
-            ApiErrorKind::Storage(v) => std::fmt::Display::fmt(v, f),
-            ApiErrorKind::Fs(v) => std::fmt::Display::fmt(v, f),
-            ApiErrorKind::Tag(v) => std::fmt::Display::fmt(v, f),
-            ApiErrorKind::User(v) => std::fmt::Display::fmt(v, f),
-        }
-    }
-}
-
-impl From<GeneralKind> for ApiErrorKind {
-    fn from(v: GeneralKind) -> Self {
-        ApiErrorKind::General(v)
-    }
-}
-
-impl From<AuthKind> for ApiErrorKind {
-    fn from(v: AuthKind) -> Self {
-        ApiErrorKind::Auth(v)
-    }
-}
-
-impl From<SecKind> for ApiErrorKind {
-    fn from(v: SecKind) -> Self {
-        ApiErrorKind::Sec(v)
-    }
-}
-
-impl From<StorageKind> for ApiErrorKind {
-    fn from(v: StorageKind) -> Self {
-        ApiErrorKind::Storage(v)
-    }
-}
-
-impl From<FsKind> for ApiErrorKind {
-    fn from(v: FsKind) -> Self {
-        ApiErrorKind::Fs(v)
-    }
-}
-
-impl From<TagKind> for ApiErrorKind {
-    fn from(v: TagKind) -> Self {
-        ApiErrorKind::Tag(v)
-    }
-}
-
-impl From<UserKind> for ApiErrorKind {
-    fn from(v: UserKind) -> Self {
-        ApiErrorKind::User(v)
+        std::fmt::Display::fmt(self.as_ref(), f)
     }
 }
 
 impl From<&ApiErrorKind> for StatusCode {
     fn from(kind: &ApiErrorKind) -> Self {
         match kind {
-            ApiErrorKind::General(v) => v.into(),
-            ApiErrorKind::Auth(v) => v.into(),
-            ApiErrorKind::Sec(v) => v.into(),
-            ApiErrorKind::Storage(v) => v.into(),
-            ApiErrorKind::Fs(v) => v.into(),
-            ApiErrorKind::Tag(v) => v.into(),
-            ApiErrorKind::User(v) => v.into(),
+            ApiErrorKind::AlreadyAuthenticated |
+            ApiErrorKind::InvalidAuthMethod |
+            ApiErrorKind::NotAbsolutePath |
+            ApiErrorKind::NotDirectory |
+            ApiErrorKind::MaxSize |
+            ApiErrorKind::InvalidType |
+            ApiErrorKind::NoContentType |
+            ApiErrorKind::MimeMismatch |
+            ApiErrorKind::InvalidTags |
+            ApiErrorKind::NoWork |
+            ApiErrorKind::NoOp |
+            ApiErrorKind::ValidationFailed |
+            ApiErrorKind::InvalidData |
+            ApiErrorKind::MissingData |
+            ApiErrorKind::InvalidProperty |
+            ApiErrorKind::InvalidUri |
+            ApiErrorKind::InvalidHeaderValue |
+            ApiErrorKind::InvalidMimeType |
+            ApiErrorKind::InvalidRequest
+                => StatusCode::BAD_REQUEST,
+
+            ApiErrorKind::Unauthenticated |
+            ApiErrorKind::InvalidSession |
+            ApiErrorKind::SessionExpired |
+            ApiErrorKind::SessionNotFound |
+            ApiErrorKind::SessionUnverified |
+            ApiErrorKind::SessionUnauthenticated |
+            ApiErrorKind::MechanismNotFound
+                => StatusCode::UNAUTHORIZED,
+
+            ApiErrorKind::PermissionDenied |
+            ApiErrorKind::AuthRequired |
+            ApiErrorKind::VerifyRequired |
+            ApiErrorKind::InvalidPassword |
+            ApiErrorKind::InvalidTotp |
+            ApiErrorKind::InvalidTotpHash
+                => StatusCode::FORBIDDEN,
+
+            ApiErrorKind::TotpNotFound |
+            ApiErrorKind::TotpRecoveryNotFound |
+            ApiErrorKind::RoleNotFound |
+            ApiErrorKind::SecretNotFound |
+            ApiErrorKind::StorageNotFound |
+            ApiErrorKind::DirNotFound |
+            ApiErrorKind::FileNotFound |
+            ApiErrorKind::UserNotFound |
+            ApiErrorKind::GroupNotFound |
+            ApiErrorKind::NotFound
+                => StatusCode::NOT_FOUND,
+
+            ApiErrorKind::InvalidMethod
+                => StatusCode::METHOD_NOT_ALLOWED,
+
+            ApiErrorKind::Timeout
+                => StatusCode::REQUEST_TIMEOUT,
+
+            ApiErrorKind::AlreadyExists
+                => StatusCode::CONFLICT,
+
+            ApiErrorKind::InternalFailure
+                => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -346,11 +172,43 @@ impl Detail {
     }
 }
 
+impl From<&str> for Detail {
+    fn from(key: &str) -> Detail {
+        Detail::Keys(vec![key.to_owned()])
+    }
+}
+
+impl From<String> for Detail {
+    fn from(key: String) -> Detail {
+        Detail::Keys(vec![key])
+    }
+}
+
+impl From<Vec<String>> for Detail {
+    fn from(keys: Vec<String>) -> Detail {
+        Detail::Keys(keys)
+    }
+}
+
+impl From<&[&str]> for Detail {
+    fn from(keys: &[&str]) -> Detail {
+        Detail::Keys(keys.iter().map(|v| (*v).into()).collect())
+    }
+}
+
+impl<const N: usize> From<[&str; N]> for Detail {
+    fn from(keys: [&str; N]) -> Detail {
+        Detail::Keys(keys.iter().map(|v| (*v).into()).collect())
+    }
+}
+
 impl std::fmt::Display for Detail {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Detail::Keys(list) => {
                 let mut iter = list.iter();
+
+                write!(f, "Detail::Keys(")?;
 
                 if let Some(first) = iter.next() {
                     write!(f, "{}", first)?;
@@ -359,6 +217,8 @@ impl std::fmt::Display for Detail {
                         write!(f, ",{}", key)?;
                     }
                 }
+
+                write!(f, ")")?;
             },
         }
 
@@ -376,7 +236,7 @@ pub struct ApiError {
 impl ApiError {
     pub fn new() -> Self {
         ApiError {
-            kind: ApiErrorKind::General(GeneralKind::InternalFailure),
+            kind: ApiErrorKind::InternalFailure,
             detail: None,
             msg: None
         }
@@ -438,56 +298,54 @@ impl std::fmt::Display for ApiError {
     }
 }
 
-impl<K> From<K> for ApiError
-where
-    K: Into<ApiErrorKind>
+impl From<ApiErrorKind> for ApiError
 {
-    fn from(kind: K) -> Self {
+    fn from(kind: ApiErrorKind) -> Self {
         ApiError {
-            kind: kind.into(),
+            kind,
             detail: None,
             msg: None
         }
     }
 }
 
-impl<K,M> From<(K, M)> for ApiError
+impl<D> From<(ApiErrorKind, D)> for ApiError
 where
-    K: Into<ApiErrorKind>,
-    M: Into<String>,
+    D: Into<Detail>
 {
-    fn from((kind, msg): (K, M)) -> Self {
+    fn from((kind, detail): (ApiErrorKind, D)) -> Self {
         ApiError {
-            kind: kind.into(),
-            detail: None,
-            msg: Some(msg.into())
-        }
-    }
-}
-
-impl<K> From<(K, Detail)> for ApiError
-where
-    K: Into<ApiErrorKind>
-{
-    fn from((kind, detail): (K, Detail)) -> Self {
-        ApiError {
-            kind: kind.into(),
-            detail: Some(detail),
+            kind,
+            detail: Some(detail.into()),
             msg: None
         }
     }
 }
 
-impl<K,M> From<(K, Detail, M)> for ApiError
+impl<D, M> From<(ApiErrorKind, D, M)> for ApiError
 where
-    K: Into<ApiErrorKind>,
+    D: Into<Detail>,
     M: Into<String>
 {
-    fn from((kind, detail, msg): (K, Detail, M)) -> Self {
+    fn from((kind, detail, msg): (ApiErrorKind, D, M)) -> Self {
         ApiError {
-            kind: kind.into(),
-            detail: Some(detail),
+            kind,
+            detail: Some(detail.into()),
             msg: Some(msg.into())
+        }
+    }
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        let status = (&self.kind).into();
+
+        match serialize_json(status, &self) {
+            Ok(res) => res,
+            Err(err) => {
+                tracing::error!("ApiError serialization error {:?}", err);
+                error_json()
+            }
         }
     }
 }
