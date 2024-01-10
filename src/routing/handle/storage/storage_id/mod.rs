@@ -34,22 +34,22 @@ pub async fn get(
         permission::Scope::Storage,
         permission::Ability::Read,
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let Some(medium) = storage::Medium::retrieve(
         &conn,
         &storage_id
     ).await? else {
-        return Err(error::Error::api(error::StorageKind::NotFound));
+        return Err(error::Error::api(error::ApiErrorKind::StorageNotFound));
     };
 
     if medium.deleted.is_some() {
-        return Err(error::Error::api(error::StorageKind::NotFound));
+        return Err(error::Error::api(error::ApiErrorKind::StorageNotFound));
     }
 
     if medium.user_id != *initiator.user().id() {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     Ok(rfs_api::Payload::new(medium.into_schema()))
@@ -69,26 +69,26 @@ pub async fn put(
         permission::Scope::Storage,
         permission::Ability::Write,
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let Some(mut medium) = storage::Medium::retrieve(
         &conn,
         &storage_id
     ).await? else {
-        return Err(error::Error::api(error::StorageKind::NotFound));
+        return Err(error::Error::api(error::ApiErrorKind::StorageNotFound));
     };
 
     if medium.deleted.is_some() {
-        return Err(error::Error::api(error::StorageKind::NotFound));
+        return Err(error::Error::api(error::ApiErrorKind::StorageNotFound));
     }
 
     if medium.user_id != *initiator.user().id() {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     if !json.has_work() {
-        return Err(error::Error::api(error::GeneralKind::NoWork));
+        return Err(error::Error::api(error::ApiErrorKind::NoWork));
     }
 
     let transaction = conn.transaction().await?;
@@ -103,7 +103,7 @@ pub async fn put(
         if let Some(name) = json.name {
             if !rfs_lib::storage::name_valid(&name) {
                 return Err(error::Error::api((
-                    error::GeneralKind::ValidationFailed,
+                    error::ApiErrorKind::ValidationFailed,
                     error::Detail::with_key("name")
                 )));
             };
@@ -111,7 +111,7 @@ pub async fn put(
             if let Some(found_id) = storage::name_check(&transaction, &initiator.user.id, &name).await? {
                 if found_id != storage_id {
                     return Err(error::Error::api((
-                        error::GeneralKind::AlreadyExists,
+                        error::ApiErrorKind::AlreadyExists,
                         error::Detail::with_key("name")
                     )));
                 }
@@ -167,18 +167,18 @@ pub async fn delete(
         permission::Scope::Storage,
         permission::Ability::Write,
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let Some(medium) = storage::Medium::retrieve(
         &conn,
         &storage_id
     ).await? else {
-        return Err(error::Error::api(error::StorageKind::NotFound));
+        return Err(error::Error::api(error::ApiErrorKind::StorageNotFound));
     };
 
     if medium.user_id != initiator.user.id {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let deleted = chrono::Utc::now();

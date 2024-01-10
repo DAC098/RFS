@@ -18,12 +18,12 @@ pub async fn post(
 
     let mut session = match initiator::lookup_header_map(state.auth(), &conn, &headers).await {
         Ok(_initiator) => {
-            return Err(error::Error::api(error::AuthKind::AlreadyAuthenticated));
+            return Err(error::Error::api(error::ApiErrorKind::AlreadyAuthenticated));
         },
         Err(err) => match err {
             LookupError::SessionUnverified(session) => session,
             LookupError::SessionUnauthenticated(_) => {
-                return Err(error::Error::api(error::AuthKind::AuthRequired));
+                return Err(error::Error::api(error::ApiErrorKind::AuthRequired));
             },
             _ => {
                 return Err(err.into());
@@ -48,12 +48,12 @@ pub async fn post(
                 match result {
                     VerifyResult::Valid => {},
                     _ => {
-                        return Err(error::Error::api(error::AuthKind::InvalidTotp));
+                        return Err(error::Error::api(error::ApiErrorKind::InvalidTotp));
                     }
                 }
             },
             _ => {
-                return Err(error::Error::api(error::AuthKind::InvalidAuthMethod));
+                return Err(error::Error::api(error::ApiErrorKind::InvalidAuthMethod));
             }
         },
         SubmittedVerify::TotpHash(hash) => match session.verify_method {
@@ -63,11 +63,11 @@ pub async fn post(
                     &session.user_id,
                     &hash
                 ).await? else {
-                    return Err(error::Error::api(error::AuthKind::InvalidTotpHash));
+                    return Err(error::Error::api(error::ApiErrorKind::InvalidTotpHash));
                 };
 
                 if *totp_hash.used() || !totp_hash.verify(hash) {
-                    return Err(error::Error::api(error::AuthKind::InvalidTotpHash));
+                    return Err(error::Error::api(error::ApiErrorKind::InvalidTotpHash));
                 }
 
                 totp_hash.set_used();
@@ -75,7 +75,7 @@ pub async fn post(
                 totp_hash.update(&transaction).await?;
             },
             _ => {
-                return Err(error::Error::api(error::AuthKind::InvalidAuthMethod));
+                return Err(error::Error::api(error::ApiErrorKind::InvalidAuthMethod));
             }
         }
     }

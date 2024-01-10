@@ -32,11 +32,11 @@ pub async fn get(
         permission::Scope::User,
         permission::Ability::Read,
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let Some(user) = user::User::retrieve(&conn, &user_id).await? else {
-        return Err(error::Error::api(error::UserKind::NotFound));
+        return Err(error::Error::api(error::ApiErrorKind::UserNotFound));
     };
 
     let email = user.email.map(|e| rfs_api::users::Email {
@@ -65,15 +65,15 @@ pub async fn patch(
         permission::Scope::User,
         permission::Ability::Write,
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let Some(mut user) = user::User::retrieve(&conn, &user_id).await? else {
-        return Err(error::Error::api(error::UserKind::NotFound));
+        return Err(error::Error::api(error::ApiErrorKind::UserNotFound));
     };
 
     if !json.has_work() {
-        return Err(error::Error::api(error::GeneralKind::NoWork));
+        return Err(error::Error::api(error::ApiErrorKind::NoWork));
     }
 
     let transaction = conn.transaction().await?;
@@ -89,7 +89,7 @@ pub async fn patch(
 
             if !rfs_lib::user::username_valid(&username) {
                 return Err(error::Error::api((
-                    error::GeneralKind::ValidationFailed,
+                    error::ApiErrorKind::ValidationFailed,
                     error::Detail::with_key("username")
                 )));
             };
@@ -97,7 +97,7 @@ pub async fn patch(
             if let Some(found_id) = user::check_username(&transaction, &username).await? {
                 if found_id != user_id {
                     return Err(error::Error::api((
-                        error::GeneralKind::AlreadyExists,
+                        error::ApiErrorKind::AlreadyExists,
                         error::Detail::with_key("username")
                     )));
                 }
@@ -122,7 +122,7 @@ pub async fn patch(
             if let Some(email) = opt_email {
                 if !rfs_lib::user::email_valid(&email) {
                     return Err(error::Error::api((
-                        error::GeneralKind::ValidationFailed,
+                        error::ApiErrorKind::ValidationFailed,
                         error::Detail::with_key("email")
                     )));
                 };
@@ -130,7 +130,7 @@ pub async fn patch(
                 if let Some(found_id) = user::check_email(&transaction, &email).await? {
                     if found_id != user_id {
                         return Err(error::Error::api((
-                            error::GeneralKind::AlreadyExists,
+                            error::ApiErrorKind::AlreadyExists,
                             error::Detail::with_key("email")
                         )));
                     }
@@ -186,15 +186,15 @@ pub async fn delete(
         permission::Scope::User,
         permission::Ability::Write
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let Some(user) = user::User::retrieve(&conn, &user_id).await? else {
-        return Err(error::Error::api(error::UserKind::NotFound));
+        return Err(error::Error::api(error::ApiErrorKind::UserNotFound));
     };
 
     if user.id == user_id {
-        return Err(error::Error::api(error::GeneralKind::Noop));
+        return Err(error::Error::api(error::ApiErrorKind::NoOp));
     }
 
     // this will need to be decided along with the fs and storage delete update

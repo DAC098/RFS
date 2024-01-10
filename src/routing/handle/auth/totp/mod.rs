@@ -18,7 +18,7 @@ pub async fn get(
     let conn = state.pool().get().await?;
 
     let Some(totp) = totp::Totp::retrieve(&conn, &initiator.user.id).await? else {
-        return Err(error::Error::api(error::AuthKind::TotpNotFound));
+        return Err(error::Error::api(error::ApiErrorKind::TotpNotFound));
     };
 
     Ok(rfs_api::Payload::new(rfs_api::auth::totp::Totp {
@@ -37,13 +37,13 @@ pub async fn post(
     let mut conn = state.pool().get().await?;
 
     if let Some(_existing) = totp::Totp::retrieve(&conn, &initiator.user.id).await? {
-        return Err(error::Error::api(error::GeneralKind::AlreadyExists));
+        return Err(error::Error::api(error::ApiErrorKind::AlreadyExists));
     }
 
     let algo = if let Some(given) = json.algo {
         let Ok(algo) = totp::Algo::try_from(given) else {
             return Err(error::Error::api((
-                error::GeneralKind::InvalidData,
+                error::ApiErrorKind::InvalidData,
                 error::Detail::with_key("algo")
             )));
         };
@@ -56,7 +56,7 @@ pub async fn post(
     let digits: u32 = if let Some(given) = json.digits {
         if !rfs_lib::sec::authn::totp::digits_valid(&given) {
             return Err(error::Error::api((
-                error::GeneralKind::InvalidData,
+                error::ApiErrorKind::InvalidData,
                 error::Detail::with_key("digits")
             )));
         }
@@ -69,7 +69,7 @@ pub async fn post(
     let step: u64 = if let Some(given) = json.step {
         if !rfs_lib::sec::authn::totp::step_valid(&given) {
             return Err(error::Error::api((
-                error::GeneralKind::InvalidData,
+                error::ApiErrorKind::InvalidData,
                 error::Detail::with_key("step")
             )));
         }
@@ -122,13 +122,13 @@ pub async fn patch(
     let mut regen = false;
 
     let Some(mut totp) = totp::Totp::retrieve(&conn, initiator.user().id()).await? else {
-        return Err(error::Error::api(error::AuthKind::TotpNotFound));
+        return Err(error::Error::api(error::ApiErrorKind::TotpNotFound));
     };
 
     if let Some(given) = json.algo {
         let Ok(algo) = totp::Algo::try_from(given) else {
             return Err(error::Error::api((
-                error::GeneralKind::InvalidData,
+                error::ApiErrorKind::InvalidData,
                 error::Detail::with_key("algo")
             )));
         };
@@ -140,7 +140,7 @@ pub async fn patch(
     if let Some(given) = json.digits {
         if !rfs_lib::sec::authn::totp::digits_valid(&given) {
             return Err(error::Error::api((
-                error::GeneralKind::InvalidData,
+                error::ApiErrorKind::InvalidData,
                 error::Detail::with_key("digits")
             )));
         }
@@ -152,7 +152,7 @@ pub async fn patch(
     if let Some(given) = json.step {
         if !rfs_lib::sec::authn::totp::step_valid(&given) {
             return Err(error::Error::api((
-                error::GeneralKind::InvalidData,
+                error::ApiErrorKind::InvalidData,
                 error::Detail::with_key("step")
             )));
         }
@@ -186,7 +186,7 @@ pub async fn delete(
     let mut conn = state.pool().get().await?;
 
     let Some(record) = totp::Totp::retrieve(&conn, initiator.user().id()).await? else {
-        return Err(error::Error::api(error::AuthKind::TotpNotFound));
+        return Err(error::Error::api(error::ApiErrorKind::TotpNotFound));
     };
 
     let transaction = conn.transaction().await?;

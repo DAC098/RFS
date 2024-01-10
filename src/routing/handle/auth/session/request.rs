@@ -20,7 +20,7 @@ pub async fn post(
     match initiator::lookup_header_map(state.auth(), &conn, &headers).await {
         Ok(_) => {
             return Err(error::Error::api(
-                error::AuthKind::AlreadyAuthenticated
+                error::ApiErrorKind::AlreadyAuthenticated
             ));
         },
         Err(err) => match err {
@@ -33,14 +33,14 @@ pub async fn post(
 
     if !rfs_lib::user::username_valid(&json.username) {
         return Err(error::Error::api((
-            error::GeneralKind::ValidationFailed,
+            error::ApiErrorKind::ValidationFailed,
             error::Detail::Keys(vec![String::from("username")])
         )));
     };
 
     let Some(user) = user::User::query_with_username(&mut conn, &json.username).await? else {
         return Err(error::Error::api((
-            error::GeneralKind::NotFound,
+            error::ApiErrorKind::NotFound,
             error::Detail::Keys(vec![String::from("username")])
         )));
     };

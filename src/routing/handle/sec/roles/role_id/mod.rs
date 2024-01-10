@@ -34,7 +34,7 @@ pub async fn get(
         Scope::SecRoles,
         Ability::Read,
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let role_params: sql::ParamsArray<1> = [&role_id];
@@ -51,7 +51,7 @@ pub async fn get(
     ) {
         Ok((Some(role), permissions)) => (role, permissions),
         Ok((None, _)) => {
-            return Err(error::Error::api(error::SecKind::RoleNotFound));
+            return Err(error::Error::api(error::ApiErrorKind::RoleNotFound));
         },
         Err(err) => {
             return Err(err.into());
@@ -92,17 +92,17 @@ pub async fn patch(
         Scope::SecRoles,
         Ability::Write
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied))
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied))
     }
 
     let transaction = conn.transaction().await?;
 
     let Some(original) = Role::retrieve(&transaction, &role_id).await? else {
-        return Err(error::Error::api(error::SecKind::RoleNotFound));
+        return Err(error::Error::api(error::ApiErrorKind::RoleNotFound));
     };
 
     if json.name.is_none() && json.permissions.is_none() {
-        return Err(error::Error::api(error::GeneralKind::NoWork));
+        return Err(error::Error::api(error::ApiErrorKind::NoWork));
     }
 
     let name = if let Some(name) = json.name {
@@ -118,7 +118,7 @@ pub async fn patch(
                 if let Some(constraint) = sql::unique_constraint_error(&err) {
                     if constraint == "authz_roles_name_key" {
                         return Err(error::Error::api((
-                            error::GeneralKind::AlreadyExists,
+                            error::ApiErrorKind::AlreadyExists,
                             error::Detail::with_key("name")
                         )));
                     }
@@ -225,13 +225,13 @@ pub async fn delete(
         Scope::SecRoles,
         Ability::Write
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let transaction = conn.transaction().await?;
 
     let Some(_original) = Role::retrieve(&transaction, &role_id).await? else {
-        return Err(error::Error::api(error::SecKind::RoleNotFound));
+        return Err(error::Error::api(error::ApiErrorKind::RoleNotFound));
     };
 
     let query_params: sql::ParamsArray<1> = [&role_id];

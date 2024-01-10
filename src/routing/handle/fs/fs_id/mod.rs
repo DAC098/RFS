@@ -45,14 +45,14 @@ where
         if let Some(checked) = written.checked_add(wrote) {
             written = checked;
         } else {
-            return Err(error::Error::api(error::FsKind::MaxSize));
+            return Err(error::Error::api(error::ApiErrorKind::MaxSize));
         }
     }
 
     writer.flush().await?;
 
     let Ok(size) = TryFrom::try_from(written) else {
-        return Err(error::Error::api(error::FsKind::MaxSize));
+        return Err(error::Error::api(error::ApiErrorKind::MaxSize));
     };
 
     Ok(size)
@@ -76,15 +76,15 @@ pub async fn get(
         permission::Scope::Fs,
         permission::Ability::Read
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let Some(item) = fs::Item::retrieve(&conn,&fs_id).await? else {
-        return Err(error::Error::api(error::FsKind::NotFound));
+        return Err(error::Error::api(error::ApiErrorKind::FileNotFound));
     };
 
     if *item.user_id() != initiator.user.id {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     Ok(rfs_api::Payload::new(item.into_schema()))
@@ -105,15 +105,15 @@ pub async fn post(
         permission::Scope::Fs,
         permission::Ability::Write,
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let Some(item) = fs::Item::retrieve(&conn, &fs_id).await? else {
-        return Err(error::Error::api(error::FsKind::NotFound));
+        return Err(error::Error::api(error::ApiErrorKind::FileNotFound));
     };
 
     let Some(medium) = storage::Medium::retrieve(&conn, item.storage_id()).await? else {
-        return Err(error::Error::api(error::StorageKind::NotFound));
+        return Err(error::Error::api(error::ApiErrorKind::StorageNotFound));
     };
 
     let transaction = conn.transaction().await?;
@@ -125,7 +125,7 @@ pub async fn post(
     let comment = if let Some(given) = json.comment {
         if !rfs_lib::fs::comment_valid(&given) {
             return Err(error::Error::api((
-                error::GeneralKind::ValidationFailed,
+                error::ApiErrorKind::ValidationFailed,
                 error::Detail::with_key("comment")
             )));
         }
@@ -140,7 +140,7 @@ pub async fn post(
 
     if !rfs_lib::fs::basename_valid(&basename) {
         return Err(error::Error::api((
-            error::GeneralKind::ValidationFailed,
+            error::ApiErrorKind::ValidationFailed,
             error::Detail::with_key("basename")
         )));
     }
@@ -156,7 +156,7 @@ pub async fn post(
         },
         fs::Item::File(_) => {
             return Err(error::Error::api(
-                error::FsKind::InvalidType
+                error::ApiErrorKind::InvalidType
             ));
         }
     }
@@ -214,7 +214,7 @@ pub async fn post(
     let tags = if let Some(tags) = json.tags {
         if !tags::validate_map(&tags) {
             return Err(error::Error::api((
-                error::GeneralKind::ValidationFailed,
+                error::ApiErrorKind::ValidationFailed,
                 error::Detail::with_key("tags")
             )));
         }
@@ -269,16 +269,16 @@ pub async fn put(
         permission::Ability::Write,
     ).await? {
         return Err(error::Error::api(
-            error::AuthKind::PermissionDenied
+            error::ApiErrorKind::PermissionDenied
         ));
     }
 
     let Some(item) = fs::Item::retrieve(&conn, &fs_id).await? else {
-        return Err(error::Error::api(error::FsKind::NotFound));
+        return Err(error::Error::api(error::ApiErrorKind::FileNotFound));
     };
 
     if item.user_id() != initiator.user().id() {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     tracing::debug!(
@@ -290,7 +290,7 @@ pub async fn put(
         &conn,
         item.storage_id()
     ).await? else {
-        return Err(error::Error::api(error::StorageKind::NotFound));
+        return Err(error::Error::api(error::ApiErrorKind::StorageNotFound));
     };
 
     let transaction = conn.transaction().await?;
@@ -299,7 +299,7 @@ pub async fn put(
     let mime = if let Some(value) = headers.get("content-type") {
         mime::Mime::from_str(value.to_str()?)?
     } else {
-        return Err(error::Error::api(error::FsKind::NoContentType));
+        return Err(error::Error::api(error::ApiErrorKind::NoContentType));
     };
 
     let rtn = if !item.is_file() {
@@ -316,20 +316,20 @@ pub async fn put(
             value.to_str()?.to_owned()
         } else {
             return Err(error::Error::api((
-                error::GeneralKind::MissingData,
+                error::ApiErrorKind::MissingData,
                 error::Detail::with_key("basename")
             )));
         };
 
         if !rfs_lib::fs::basename_valid(&basename) {
             return Err(error::Error::api((
-                error::GeneralKind::ValidationFailed,
+                error::ApiErrorKind::ValidationFailed,
                 error::Detail::with_key("basename")
             )));
         }
 
         if let Some(_id) = fs::name_check(&transaction, item.id(), &basename).await? {
-            return Err(error::Error::api(error::GeneralKind::AlreadyExists));
+            return Err(error::Error::api(error::ApiErrorKind::AlreadyExists));
         }
 
         match item {
@@ -356,7 +356,7 @@ pub async fn put(
 
                 if full.try_exists()? {
                     return Err(error::Error::api((
-                        error::GeneralKind::AlreadyExists,
+                        error::ApiErrorKind::AlreadyExists,
                         "an unknown file already exists in this location"
                     )));
                 }
@@ -385,7 +385,7 @@ pub async fn put(
             let pg_mime_subtype = mime.subtype().as_str();
             let pg_hash = hash.as_bytes().as_slice();
             let Ok(pg_size): Result<i64, _> = TryFrom::try_from(size) else {
-                return Err(error::Error::api(error::FsKind::MaxSize)
+                return Err(error::Error::api(error::ApiErrorKind::MaxSize)
                     .context("total bytes written exceeds i64"));
             };
 
@@ -445,7 +445,7 @@ pub async fn put(
         let hash: blake3::Hash;
 
         if mime != file.mime {
-            return Err(error::Error::api(error::FsKind::MimeMismatch));
+            return Err(error::Error::api(error::ApiErrorKind::MimeMismatch));
         }
 
         match &medium.type_ {
@@ -454,7 +454,7 @@ pub async fn put(
                 full.push(&file.basename);
 
                 if !full.try_exists()? {
-                    return Err(error::Error::api(error::FsKind::NotFound));
+                    return Err(error::Error::api(error::ApiErrorKind::FileNotFound));
                 }
 
                 let mut hasher = blake3::Hasher::new();
@@ -476,7 +476,7 @@ pub async fn put(
         {
             let pg_hash = hash.as_bytes().as_slice();
             let Ok(pg_size): Result<i64, _> = TryFrom::try_from(size) else {
-                return Err(error::Error::api(error::FsKind::MaxSize)
+                return Err(error::Error::api(error::ApiErrorKind::MaxSize)
                     .context("total bytes written exceeds i64"));
             };
 
@@ -517,22 +517,22 @@ pub async fn patch(
         permission::Scope::Fs,
         permission::Ability::Write,
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let Some(mut item) = fs::Item::retrieve(
         &conn,
         &fs_id
     ).await? else {
-        return Err(error::Error::api(error::FsKind::NotFound));
+        return Err(error::Error::api(error::ApiErrorKind::FileNotFound));
     };
 
     if item.user_id() != initiator.user().id() {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     if !json.has_work() {
-        return Err(error::Error::api(error::GeneralKind::NoWork));
+        return Err(error::Error::api(error::ApiErrorKind::NoWork));
     }
 
     tracing::debug!("action {:?}", json);
@@ -572,7 +572,7 @@ pub async fn patch(
 
     if let Some(tags) = json.tags {
         if !tags::validate_map(&tags) {
-            return Err(error::Error::api(error::TagKind::InvalidTags));
+            return Err(error::Error::api(error::ApiErrorKind::InvalidTags));
         }
 
         tags::update_tags(

@@ -1,40 +1,14 @@
-use rfs_api::error::ApiErrorKind;
-use bytes::{BufMut, BytesMut};
-use axum::http::StatusCode;
 use axum::http::header::{HeaderMap};
 use axum::response::{Response, IntoResponse};
 use tracing::Level;
 
 pub use rfs_api::error::{
-    ApiError,
     Detail,
-    GeneralKind,
-    StorageKind,
-    FsKind,
-    TagKind,
-    UserKind,
-    AuthKind,
-    SecKind
+    ApiErrorKind,
+    ApiError
 };
 
 type BoxDynError = Box<dyn std::error::Error + Send + Sync>;
-
-pub fn error_json_response(status: StatusCode, error: ApiError) -> Response {
-    let buf = {
-        let mut buf = BytesMut::with_capacity(128).writer();
-        serde_json::to_writer(&mut buf, &error).unwrap();
-
-        buf.into_inner().freeze()
-    };
-
-    Response::builder()
-        .status(status)
-        .header("content-type", "application/json")
-        .header("content-length", buf.len())
-        .body(axum::body::Body::from(buf))
-        .unwrap()
-        .into_response()
-}
 
 pub async fn handle_error<E>(
     _headers: HeaderMap,
@@ -53,12 +27,11 @@ where
         );
     }
 
-    error_json_response(error.status, error.inner)
+    error.inner.into_response()
 }
 
 #[derive(Debug)]
 pub struct Error {
-    status: StatusCode,
     inner: ApiError,
     context: Option<String>,
     src: Option<BoxDynError>,
@@ -68,12 +41,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 impl Error {
     pub fn new() -> Self {
-        let inner = ApiError::from(GeneralKind::InternalFailure);
-        let status = inner.kind().into();
-
         Error {
-            status,
-            inner,
+            inner: Default::default(),
             context: None,
             src: None,
         }
@@ -83,44 +52,15 @@ impl Error {
     where
         T: Into<ApiError>
     {
-        let err = value.into();
-        let status = err.kind().into();
-
         Error {
-            status,
-            inner: err,
+            inner: value.into(),
             context: None,
             src: None
         }
     }
 
-    #[allow(dead_code)]
-    pub fn status(mut self, status: StatusCode) -> Self {
-        self.status = status;
-        self
-    }
-
-    #[allow(dead_code)]
-    pub fn kind<K>(mut self, kind: K) -> Self
-    where
-        K: Into<ApiErrorKind>
-    {
+    pub fn kind(mut self, kind: ApiErrorKind) -> Self {
         self.inner = self.inner.with_kind(kind);
-        self
-    }
-
-    #[allow(dead_code)]
-    pub fn detail(mut self, detail: Detail) -> Self {
-        self.inner = self.inner.with_detail(detail);
-        self
-    }
-
-    #[allow(dead_code)]
-    pub fn message<M>(mut self, msg: M) -> Self
-    where
-        M: Into<String>
-    {
-        self.inner = self.inner.with_message(msg.into());
         self
     }
 
@@ -143,13 +83,20 @@ impl Error {
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.inner.kind())?;
-
-        if let Some(msg) = self.inner.message() {
-            write!(f, ": {}", msg)?;
+        match (&self.inner, &self.context, &self.src) {
+            (inner, Some(cxt), Some(err)) => if f.alternate() {
+                write!(f, "inner: {}\ncxt: {}\nerr: {:#?}", inner, cxt, err)
+            } else {
+                write!(f, "inner: {}\ncxt: {}\nerr: {:?}", inner, cxt, err)
+            },
+            (inner, Some(cxt), None) => write!(f, "inner: {}\ncxt: {}", inner, cxt),
+            (inner, None, Some(err)) => if f.alternate() {
+                write!(f, "inner: {}\nerr: {:#?}", inner, err)
+            } else {
+                write!(f, "inner: {}\nerr: {:?}", inner, err)
+            },
+            (inner, None, None) => write!(f, "inner: {}", inner)
         }
-
-        Ok(())
     }
 }
 
@@ -169,16 +116,13 @@ impl axum::response::IntoResponse for Error {
             );
         }
 
-        error_json_response(self.status, self.inner)
+        self.inner.into_response()
     }
 }
 
 impl From<ApiError> for Error {
     fn from(api_err: ApiError) -> Self {
-        let status = api_err.kind().into();
-
         Error {
-            status,
             inner: api_err,
             context: None,
             src: None,
@@ -265,7 +209,7 @@ macro_rules! simple_from {
             fn from(err: $e) -> Self {
                 Error::new()
                     .kind($k)
-                    .message($m)
+                    .context($m)
                     .source(err)
             }
         }
@@ -276,7 +220,7 @@ macro_rules! simple_from {
                 Error::new()
                     .status($s)
                     .kind($k)
-                    .message($m)
+                    .context($m)
                     .source(err)
             }
         }
@@ -290,16 +234,16 @@ simple_from!(axum::Error);
 simple_from!(axum::http::Error);
 simple_from!(
     axum::http::header::ToStrError,
-    GeneralKind::InvalidHeaderValue
+    ApiErrorKind::InvalidHeaderValue
 );
 simple_from!(
     axum::http::header::InvalidHeaderValue,
-    GeneralKind::InvalidHeaderValue
+    ApiErrorKind::InvalidHeaderValue
 );
 
 simple_from!(
     mime::FromStrError,
-    GeneralKind::InvalidMimeType
+    ApiErrorKind::InvalidMimeType
 );
 
 simple_from!(handlebars::RenderError);

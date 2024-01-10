@@ -40,7 +40,7 @@ where
 
     if !path_ref.try_exists()? {
         Err(error::Error::api((
-            error::GeneralKind::NotFound,
+            error::ApiErrorKind::NotFound,
             format!("{} was not found", name.as_ref())
         )))
     } else {

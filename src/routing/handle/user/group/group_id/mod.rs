@@ -32,13 +32,13 @@ pub async fn get(
         permission::Scope::UserGroup,
         permission::Ability::Read,
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let _params: sql::ParamsVec = vec![&group_id];
 
     let Some(group) = user::group::Group::retrieve(&conn, &group_id).await? else {
-        return Err(error::Error::api(error::UserKind::GroupNotFound));
+        return Err(error::Error::api(error::ApiErrorKind::GroupNotFound));
     };
 
     Ok(rfs_api::Payload::new(rfs_api::users::groups::Group {
@@ -63,11 +63,11 @@ pub async fn patch(
         permission::Scope::UserGroup,
         permission::Ability::Write,
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let Some(original) = user::group::Group::retrieve(&conn, &group_id).await? else {
-        return Err(error::Error::api(error::UserKind::GroupNotFound));
+        return Err(error::Error::api(error::ApiErrorKind::GroupNotFound));
     };
 
     let name = json.name;
@@ -95,7 +95,7 @@ pub async fn patch(
 
                 if constraint == "groups_name_key" {
                     return Err(error::Error::api((
-                        error::GeneralKind::AlreadyExists,
+                        error::ApiErrorKind::AlreadyExists,
                         error::Detail::with_key("name")
                     )));
                 }
@@ -128,11 +128,11 @@ pub async fn delete(
         permission::Scope::UserGroup,
         permission::Ability::Write,
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let Some(original) = user::group::Group::retrieve(&conn, &group_id).await? else {
-        return Err(error::Error::api(error::UserKind::GroupNotFound));
+        return Err(error::Error::api(error::ApiErrorKind::GroupNotFound));
     };
 
     let transaction = conn.transaction().await?;

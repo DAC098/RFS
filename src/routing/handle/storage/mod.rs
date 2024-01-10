@@ -31,7 +31,7 @@ pub async fn get(
         permission::Scope::Storage,
         permission::Ability::Read,
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let params = [initiator.user().id()];
@@ -112,7 +112,7 @@ pub async fn get(
         list.push(item);
     }
 
-    Ok(rfs_api::ListPayload::with_vec(list))
+    Ok(rfs_api::Payload::new(list))
 }
 
 pub async fn post(
@@ -133,13 +133,13 @@ pub async fn post(
         permission::Scope::Storage,
         permission::Ability::Write,
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let type_: storage::types::Type = match json.type_ {
         CreateStorageType::Local { path } => {
             if !path.is_absolute() {
-                return Err(error::Error::api(error::StorageKind::NotAbsolutePath));
+                return Err(error::Error::api(error::ApiErrorKind::NotAbsolutePath));
             }
 
             let metadata = match path.metadata() {
@@ -147,7 +147,7 @@ pub async fn post(
                 Err(err) => {
                     match err.kind() {
                         std::io::ErrorKind::NotFound => {
-                            return Err(error::Error::api(error::StorageKind::DirNotFound));
+                            return Err(error::Error::api(error::ApiErrorKind::DirNotFound));
                         },
                         _ => {
                             return Err(err.into())
@@ -157,7 +157,7 @@ pub async fn post(
             };
 
             if !metadata.is_dir() {
-                return Err(error::Error::api(error::StorageKind::NotDirectory));
+                return Err(error::Error::api(error::ApiErrorKind::NotDirectory));
             }
 
             tokio::fs::create_dir_all(&path).await?;
@@ -173,14 +173,14 @@ pub async fn post(
 
     if !rfs_lib::storage::name_valid(&json.name) {
         return Err(error::Error::api((
-            error::GeneralKind::ValidationFailed,
+            error::ApiErrorKind::ValidationFailed,
             error::Detail::with_key("name")
         )));
     };
 
     if storage::name_check(&transaction, &initiator.user().id(), &json.name).await?.is_some() {
         return Err(error::Error::api((
-            error::GeneralKind::AlreadyExists,
+            error::ApiErrorKind::AlreadyExists,
             error::Detail::with_key("name")
         )));
     }
@@ -196,7 +196,7 @@ pub async fn post(
         ).await?;
 
         if !tags::validate_map(&json.tags) {
-            return Err(error::Error::api(error::TagKind::InvalidTags));
+            return Err(error::Error::api(error::ApiErrorKind::InvalidTags));
         }
 
         tags::create_tags(&transaction, "storage_tags", "storage_id", &id, &json.tags).await?;

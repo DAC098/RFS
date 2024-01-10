@@ -23,7 +23,7 @@ pub async fn get(
         permission::Scope::SecSecrets,
         permission::Ability::Read,
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let session_keys = state.sec().session_info().keys().inner();
@@ -45,7 +45,7 @@ pub async fn get(
         }
     }
 
-    Ok(rfs_api::ListPayload::with_vec(known_keys))
+    Ok(rfs_api::Payload::new(known_keys))
 }
 
 pub async fn post(
@@ -60,7 +60,7 @@ pub async fn post(
         permission::Scope::SecSecrets,
         permission::Ability::Write,
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let wrapper = state.sec().session_info().keys();
@@ -104,7 +104,7 @@ pub async fn delete(
         permission::Scope::SecSecrets,
         permission::Ability::Write
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let wrapper = state.sec().session_info().keys();

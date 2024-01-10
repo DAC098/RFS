@@ -14,7 +14,7 @@ pub async fn handle(
     uri: Uri
 ) -> error::Result<impl IntoResponse> {
     if method != Method::GET {
-        return Err(error::Error::api(error::GeneralKind::InvalidMethod));
+        return Err(error::Error::api(error::ApiErrorKind::InvalidMethod));
     }
 
     let parts = uri.path().split('/');
@@ -22,18 +22,18 @@ pub async fn handle(
 
     for part in parts {
         if part == ".." || part == "." {
-            return Err(error::Error::api(error::GeneralKind::InvalidUri));
+            return Err(error::Error::api(error::ApiErrorKind::InvalidUri));
         } else {
             working.push(part);
         }
     }
 
     if !working.try_exists()? {
-        return Err(error::Error::api(error::GeneralKind::NotFound));
+        return Err(error::Error::api(error::ApiErrorKind::NotFound));
     }
 
     if !working.is_file() {
-        return Err(error::Error::api(error::GeneralKind::InvalidRequest));
+        return Err(error::Error::api(error::ApiErrorKind::InvalidRequest));
     }
 
     net::fs::stream_file(working).await

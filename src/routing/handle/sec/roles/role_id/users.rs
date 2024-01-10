@@ -30,11 +30,11 @@ pub async fn get(
         permission::Scope::SecRoles,
         permission::Ability::Read
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let Some(_role) = Role::retrieve(&conn, &role_id).await? else {
-        return Err(error::Error::api(error::SecKind::RoleNotFound));
+        return Err(error::Error::api(error::ApiErrorKind::RoleNotFound));
     };
 
     let _query_params: sql::ParamsArray<1> = [&role_id];
@@ -53,7 +53,7 @@ pub async fn get(
         });
     }
 
-    Ok(rfs_api::ListPayload::with_vec(users))
+    Ok(rfs_api::Payload::new(users))
 }
 
 pub async fn post(
@@ -70,17 +70,17 @@ pub async fn post(
         permission::Scope::SecRoles,
         permission::Ability::Write
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let transaction = conn.transaction().await?;
 
     let Some(_role) = Role::retrieve(&transaction, &role_id).await? else {
-        return Err(error::Error::api(error::SecKind::RoleNotFound));
+        return Err(error::Error::api(error::ApiErrorKind::RoleNotFound));
     };
 
     if json.ids.len() == 0 {
-        return Err(error::Error::api(error::GeneralKind::NoWork));
+        return Err(error::Error::api(error::ApiErrorKind::NoWork));
     }
 
     let query = "\
@@ -113,17 +113,17 @@ pub async fn delete(
         permission::Scope::SecRoles,
         permission::Ability::Write
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let transaction = conn.transaction().await?;
 
     let Some(_role) = Role::retrieve(&transaction, &role_id).await? else {
-        return Err(error::Error::api(error::SecKind::RoleNotFound));
+        return Err(error::Error::api(error::ApiErrorKind::RoleNotFound));
     };
 
     if json.ids.len() == 0 {
-        return Err(error::Error::api(error::GeneralKind::NoWork));
+        return Err(error::Error::api(error::ApiErrorKind::NoWork));
     }
 
     let _ = transaction.execute(

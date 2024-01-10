@@ -34,6 +34,7 @@ pub enum ApiErrorKind {
     MechanismNotFound,
     TotpNotFound,
     TotpRecoveryNotFound,
+    PasswordNotFound,
 
     // sec
 
@@ -136,6 +137,7 @@ impl From<&ApiErrorKind> for StatusCode {
 
             ApiErrorKind::TotpNotFound |
             ApiErrorKind::TotpRecoveryNotFound |
+            ApiErrorKind::PasswordNotFound |
             ApiErrorKind::RoleNotFound |
             ApiErrorKind::SecretNotFound |
             ApiErrorKind::StorageNotFound |
@@ -242,16 +244,16 @@ impl ApiError {
         }
     }
 
-    pub fn with_kind<K>(mut self, kind: K) -> Self
-    where
-        K: Into<ApiErrorKind>
-    {
-        self.kind = kind.into();
+    pub fn with_kind(mut self, kind: ApiErrorKind) -> Self {
+        self.kind = kind;
         self
     }
 
-    pub fn with_detail(mut self, detail: Detail) -> Self {
-        self.detail = Some(detail);
+    pub fn with_detail<D>(mut self, detail: D) -> Self
+    where
+        D: Into<Detail>
+    {
+        self.detail = Some(detail.into());
         self
     }
 
@@ -284,17 +286,12 @@ impl std::default::Default for ApiError {
 
 impl std::fmt::Display for ApiError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.kind)?;
-
-        if let Some(detail) = &self.detail {
-            write!(f, ": {}", detail)?;
+        match (&self.kind, &self.detail, &self.msg) {
+            (kind, Some(detail), Some(msg)) => write!(f, "{}: {}\n{}", kind, msg, detail),
+            (kind, Some(detail), None) => write!(f, "{}: {}", kind, detail),
+            (kind, None, Some(msg)) => write!(f, "{}: {}", kind, msg),
+            (kind, None, None) => write!(f, "{}", kind),
         }
-
-        if let Some(msg) = &self.msg {
-            write!(f, ": {}", msg)?;
-        }
-
-        Ok(())
     }
 }
 

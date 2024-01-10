@@ -29,7 +29,7 @@ pub async fn get(
         Scope::SecRoles,
         Ability::Read,
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let params: sql::ParamsVec = vec![];
@@ -52,7 +52,7 @@ pub async fn get(
         list.push(item);
     }
 
-    Ok(rfs_api::ListPayload::with_vec(list))
+    Ok(rfs_api::Payload::new(list))
 }
 
 pub async fn post(
@@ -68,7 +68,7 @@ pub async fn post(
         Scope::SecRoles,
         Ability::Write
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let transaction = conn.transaction().await?;
@@ -85,7 +85,7 @@ pub async fn post(
             if let Some(constraint) = sql::unique_constraint_error(&err) {
                 if constraint == "authz_roles_name_key" {
                     return Err(error::Error::api((
-                        error::GeneralKind::AlreadyExists,
+                        error::ApiErrorKind::AlreadyExists,
                         error::Detail::with_key("name")
                     )));
                 }

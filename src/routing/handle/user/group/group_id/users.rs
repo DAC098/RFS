@@ -33,13 +33,13 @@ pub async fn get(
         permission::Scope::UserGroup,
         permission::Ability::Read
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let _params: sql::ParamsVec = vec![&group_id];
 
     let Some(_group) = user::group::Group::retrieve(&conn, &group_id).await? else {
-        return Err(error::Error::api(error::UserKind::GroupNotFound));
+        return Err(error::Error::api(error::ApiErrorKind::GroupNotFound));
     };
 
     let result = conn.query_raw(
@@ -64,7 +64,7 @@ pub async fn get(
         list.push(item);
     }
 
-    Ok(rfs_api::ListPayload::with_vec(list))
+    Ok(rfs_api::Payload::new(list))
 }
 
 pub async fn post(
@@ -81,15 +81,15 @@ pub async fn post(
         permission::Scope::UserGroup,
         permission::Ability::Write,
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let Some(_group) = user::group::Group::retrieve(&conn, &group_id).await? else {
-        return Err(error::Error::api(error::UserKind::GroupNotFound));
+        return Err(error::Error::api(error::ApiErrorKind::GroupNotFound));
     };
 
     if json.ids.len() == 0 {
-        return Err(error::Error::api(error::GeneralKind::NoWork));
+        return Err(error::Error::api(error::ApiErrorKind::NoWork));
     }
 
     let mut id_iter = json.ids.iter();
@@ -134,15 +134,15 @@ pub async fn delete(
         permission::Scope::UserGroup,
         permission::Ability::Write,
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let Some(_group) = user::group::Group::retrieve(&conn, &group_id).await? else {
-        return Err(error::Error::api(error::UserKind::GroupNotFound));
+        return Err(error::Error::api(error::ApiErrorKind::GroupNotFound));
     };
 
     if json.ids.len() == 0 {
-        return Err(error::Error::api(error::GeneralKind::NoWork));
+        return Err(error::Error::api(error::ApiErrorKind::NoWork));
     }
 
     let transaction = conn.transaction().await?;

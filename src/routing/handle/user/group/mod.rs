@@ -24,7 +24,7 @@ pub async fn get(
         permission::Scope::UserGroup,
         permission::Ability::Read,
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let params: sql::ParamsVec = vec![];
@@ -47,7 +47,7 @@ pub async fn get(
         list.push(item);
     }
 
-    Ok(rfs_api::ListPayload::new(list))
+    Ok(rfs_api::Payload::new(list))
 }
 
 pub async fn post(
@@ -63,7 +63,7 @@ pub async fn post(
         permission::Scope::UserGroup,
         permission::Ability::Write
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let name = json.name;
@@ -90,7 +90,7 @@ pub async fn post(
 
                 if constraint == "groups_name_key" {
                     return Err(error::Error::api((
-                        error::GeneralKind::AlreadyExists,
+                        error::ApiErrorKind::AlreadyExists,
                         error::Detail::with_key("name")
                     )));
                 }

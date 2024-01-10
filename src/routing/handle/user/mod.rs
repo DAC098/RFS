@@ -25,7 +25,7 @@ pub async fn get(
         permission::Scope::User,
         permission::Ability::Read
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let params: sql::ParamsVec = vec![];
@@ -53,7 +53,7 @@ pub async fn get(
         list.push(item);
     }
 
-    Ok(rfs_api::ListPayload::with_vec(list))
+    Ok(rfs_api::Payload::new(list))
 }
 
 pub async fn post(
@@ -69,7 +69,7 @@ pub async fn post(
         permission::Scope::User,
         permission::Ability::Write,
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let id = state.ids().wait_user_id()?;
@@ -77,7 +77,7 @@ pub async fn post(
 
     if !rfs_lib::user::username_valid(&username) {
         return Err(error::Error::api((
-            error::GeneralKind::ValidationFailed,
+            error::ApiErrorKind::ValidationFailed,
             error::Detail::with_key("username")
         )));
     };
@@ -85,7 +85,7 @@ pub async fn post(
     let email = if let Some(email) = json.email {
         if !rfs_lib::user::email_valid(&email) {
             return Err(error::Error::api((
-                error::GeneralKind::ValidationFailed,
+                error::ApiErrorKind::ValidationFailed,
                 error::Detail::with_key("email")
             )));
         };
@@ -94,14 +94,14 @@ pub async fn post(
 
         if username_id.is_some() {
             return Err(error::Error::api((
-                error::GeneralKind::AlreadyExists,
+                error::ApiErrorKind::AlreadyExists,
                 error::Detail::with_key("username")
             )));
         }
 
         if email_id.is_some() {
             return Err(error::Error::api((
-                error::GeneralKind::AlreadyExists,
+                error::ApiErrorKind::AlreadyExists,
                 error::Detail::with_key("email")
             )));
         }
@@ -112,7 +112,7 @@ pub async fn post(
 
         if username_id.is_some() {
             return Err(error::Error::api((
-                error::GeneralKind::AlreadyExists,
+                error::ApiErrorKind::AlreadyExists,
                 error::Detail::with_key("username")
             )));
         }

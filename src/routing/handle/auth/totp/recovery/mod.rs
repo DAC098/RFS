@@ -40,7 +40,7 @@ pub async fn get(
         });
     }
 
-    Ok(rfs_api::ListPayload::with_vec(rtn))
+    Ok(rfs_api::Payload::new(rtn))
 }
 
 pub async fn post(
@@ -52,13 +52,13 @@ pub async fn post(
 
     if !rfs_lib::sec::authn::totp::recovery::key_valid(&json.key) {
         return Err(error::Error::api((
-            error::GeneralKind::InvalidData,
+            error::ApiErrorKind::InvalidData,
             error::Detail::with_key("key")
         )));
     }
 
     if totp::recovery::key_exists(&conn, initiator.user().id(), &json.key).await? {
-        return Err(error::Error::api(error::GeneralKind::AlreadyExists));
+        return Err(error::Error::api(error::ApiErrorKind::AlreadyExists));
     }
 
     let hash = totp::recovery::create_hash()?;

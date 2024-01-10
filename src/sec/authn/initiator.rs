@@ -67,15 +67,15 @@ impl From<LookupError> for error::Error {
         match e {
             LookupError::InvalidString |
             LookupError::InvalidLength |
-            LookupError::InvalidHash => error::Error::api(error::AuthKind::InvalidSession),
-            LookupError::SessionNotFound => error::Error::api(error::AuthKind::SessionNotFound),
-            LookupError::SessionExpired(_session) => error::Error::api(error::AuthKind::SessionExpired),
-            LookupError::SessionUnauthenticated(_session) => error::Error::api(error::AuthKind::SessionUnauthenticated),
-            LookupError::SessionUnverified(_session) => error::Error::api(error::AuthKind::SessionUnverified),
+            LookupError::InvalidHash => error::Error::api(error::ApiErrorKind::InvalidSession),
+            LookupError::SessionNotFound => error::Error::api(error::ApiErrorKind::SessionNotFound),
+            LookupError::SessionExpired(_session) => error::Error::api(error::ApiErrorKind::SessionExpired),
+            LookupError::SessionUnauthenticated(_session) => error::Error::api(error::ApiErrorKind::SessionUnauthenticated),
+            LookupError::SessionUnverified(_session) => error::Error::api(error::ApiErrorKind::SessionUnverified),
 
-            LookupError::UserNotFound(_authorization) => error::Error::api(error::UserKind::NotFound),
+            LookupError::UserNotFound(_authorization) => error::Error::api(error::ApiErrorKind::UserNotFound),
 
-            LookupError::MechanismNotFound => error::Error::api(error::AuthKind::MechanismNotFound),
+            LookupError::MechanismNotFound => error::Error::api(error::ApiErrorKind::MechanismNotFound),
 
             LookupError::KeysPoisoned => error::Error::new()
                 .source("session keys rwlock poisoned"),

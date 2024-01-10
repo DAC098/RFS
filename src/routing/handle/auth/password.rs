@@ -17,14 +17,14 @@ pub async fn post(
 
     if !rfs_lib::sec::authn::password_valid(&json.updated) {
         return Err(error::Error::api((
-            error::GeneralKind::ValidationFailed,
+            error::ApiErrorKind::ValidationFailed,
             error::Detail::Keys(vec![String::from("password")]),
         )));
     };
 
     if json.updated != json.confirm {
         return Err(error::Error::api((
-            error::GeneralKind::InvalidData,
+            error::ApiErrorKind::InvalidData,
             error::Detail::Keys(vec![String::from("confirm")])
         )));
     }
@@ -32,14 +32,14 @@ pub async fn post(
     if let Some(current) = Password::retrieve(&conn, &initiator.user.id).await? {
         let Some(given) = json.current else {
             return Err(error::Error::api((
-                error::GeneralKind::MissingData,
+                error::ApiErrorKind::MissingData,
                 error::Detail::Keys(vec![String::from("current")])
             )));
         };
 
         if !rfs_lib::sec::authn::password_valid(&given) {
             return Err(error::Error::api((
-                error::GeneralKind::ValidationFailed,
+                error::ApiErrorKind::ValidationFailed,
                 error::Detail::Keys(vec![String::from("password")])
             )));
         };
@@ -65,7 +65,7 @@ pub async fn post(
 
             if !current.verify(given, secret)? {
                 return Err(error::Error::api((
-                    error::GeneralKind::InvalidData,
+                    error::ApiErrorKind::InvalidData,
                     error::Detail::Keys(vec![String::from("password")])
                 )));
             }
@@ -129,12 +129,12 @@ pub async fn delete(
     let peppers = state.sec().peppers().inner();
 
     let Some(current) = Password::retrieve(&conn, &initiator.user.id).await? else {
-        return Err(error::Error::api(error::AuthKind::PasswordNotFound));
+        return Err(error::Error::api(error::ApiErrorKind::PasswordNotFound));
     };
 
     let Some(given) = json.current else {
         return Err(error::Error::api((
-            error::GeneralKind::MissingData,
+            error::ApiErrorKind::MissingData,
             error::Detail::Keys(vec![String::from("current")]),
         )));
     };
@@ -156,7 +156,7 @@ pub async fn delete(
 
         if !current.verify(given, secret)? {
             return Err(error::Error::api((
-                error::GeneralKind::InvalidData,
+                error::ApiErrorKind::InvalidData,
                 error::Detail::Keys(vec![String::from("current")])
             )));
         }

@@ -25,7 +25,7 @@ pub async fn get(
         &initiator.user.id,
         &key_id
     ).await? else {
-        return Err(error::Error::api(error::AuthKind::TotpRecoveryNotFound));
+        return Err(error::Error::api(error::ApiErrorKind::TotpRecoveryNotFound));
     };
 
     Ok(rfs_api::Payload::new(rfs_api::auth::totp::TotpRecovery {
@@ -49,19 +49,19 @@ pub async fn patch(
         &initiator.user.id,
         &key_id
     ).await? else {
-        return Err(error::Error::api(error::GeneralKind::NotFound));
+        return Err(error::Error::api(error::ApiErrorKind::NotFound));
     };
 
     if let Some(new_key) = json.key {
         if !rfs_lib::sec::authn::totp::recovery::key_valid(&new_key) {
             return Err(error::Error::api((
-                error::GeneralKind::InvalidData,
+                error::ApiErrorKind::InvalidData,
                 error::Detail::with_key("key")
             )));
         }
 
         if totp::recovery::key_exists(&conn, initiator.user().id(), &new_key).await? {
-            return Err(error::Error::api(error::GeneralKind::AlreadyExists));
+            return Err(error::Error::api(error::ApiErrorKind::AlreadyExists));
         }
 
         hash.set_key(new_key);
@@ -97,7 +97,7 @@ pub async fn delete(
         &initiator.user.id,
         &key_id
     ).await? else {
-        return Err(error::Error::api(error::AuthKind::TotpRecoveryNotFound));
+        return Err(error::Error::api(error::ApiErrorKind::TotpRecoveryNotFound));
     };
 
     let transaction = conn.transaction().await?;

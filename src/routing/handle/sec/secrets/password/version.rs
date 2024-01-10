@@ -29,7 +29,7 @@ pub async fn get(
         permission::Scope::SecSecrets,
         permission::Ability::Read
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let peppers = state.sec().peppers().inner();
@@ -40,7 +40,7 @@ pub async fn get(
         };
 
         let Some(found) = reader.get(&version) else {
-            return Err(error::Error::api(error::SecKind::SecretNotFound));
+            return Err(error::Error::api(error::ApiErrorKind::SecretNotFound));
         };
 
         found.clone().into_tuple()
@@ -78,7 +78,7 @@ pub async fn delete(
         permission::Scope::SecSecrets,
         permission::Ability::Write,
     ).await? {
-        return Err(error::Error::api(error::AuthKind::PermissionDenied));
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
     let wrapper = state.sec().peppers();
@@ -89,7 +89,7 @@ pub async fn delete(
         };
 
         let Some(found) = writer.remove(&version) else {
-            return Err(error::Error::api(error::SecKind::SecretNotFound));
+            return Err(error::Error::api(error::ApiErrorKind::SecretNotFound));
         };
 
         found

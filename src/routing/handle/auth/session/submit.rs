@@ -18,12 +18,12 @@ pub async fn post(
 
     let mut session = match initiator::lookup_header_map(state.auth(), &conn, &headers).await {
         Ok(_initiator) => {
-            return Err(error::Error::api(error::AuthKind::AlreadyAuthenticated));
+            return Err(error::Error::api(error::ApiErrorKind::AlreadyAuthenticated));
         },
         Err(err) => match err {
             LookupError::SessionUnauthenticated(session) => session,
             LookupError::SessionUnverified(_) => {
-                return Err(error::Error::api(error::AuthKind::VerifyRequired));
+                return Err(error::Error::api(error::ApiErrorKind::VerifyRequired));
             },
             _ => {
                 return Err(err.into());
@@ -37,7 +37,7 @@ pub async fn post(
         rfs_api::auth::session::SubmittedAuth::Password(given) => match session.auth_method {
             AuthMethod::Password => {
                 if !rfs_lib::sec::authn::password_valid(&given) {
-                    return Err(error::Error::api(error::AuthKind::InvalidPassword));
+                    return Err(error::Error::api(error::ApiErrorKind::InvalidPassword));
                 };
 
                 let Some(user_password) = password::Password::retrieve(
@@ -59,14 +59,14 @@ pub async fn post(
                     };
 
                     if !user_password.verify(&given, pepper.data())? {
-                        return Err(error::Error::api(error::AuthKind::InvalidPassword));
+                        return Err(error::Error::api(error::ApiErrorKind::InvalidPassword));
                     }
                 }
 
                 session.authenticated = true;
             },
             _ => {
-                return Err(error::Error::api(error::AuthKind::InvalidAuthMethod));
+                return Err(error::Error::api(error::ApiErrorKind::InvalidAuthMethod));
             }
         }
     }
