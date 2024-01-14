@@ -200,5 +200,5 @@ pub async fn delete(
 
     transaction.commit().await?;
 
-    Ok(StatusCode::OK)
+    Ok(StatusCode::NO_CONTENT)
 }

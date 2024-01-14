@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 rfs-lib = { workspace = true }
-rfs-api = { workspace = true }
+rfs-api = { workspace = true, features = ["client"] }
 
 clap = { workspace = true }
 futures = { workspace = true }

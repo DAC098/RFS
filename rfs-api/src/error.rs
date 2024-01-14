@@ -1,3 +1,5 @@
+use std::iter::IntoIterator;
+
 use http::StatusCode;
 use axum_core::response::{Response, IntoResponse};
 use serde::{Serialize, Deserialize};
@@ -169,8 +171,19 @@ pub enum Detail {
 }
 
 impl Detail {
-    pub fn with_key(key: impl Into<String>) -> Self {
+    pub fn with_key<K>(key: K) -> Self
+    where
+        K: Into<String>
+    {
         Detail::Keys(vec![key.into()])
+    }
+
+    pub fn mult_keys<I, K>(keys: I) -> Self
+    where
+        K: Into<String>,
+        I: IntoIterator<Item = K>,
+    {
+        Detail::Keys(keys.into_iter().map(|v| v.into()).collect())
     }
 }
 

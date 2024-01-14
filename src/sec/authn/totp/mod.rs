@@ -107,7 +107,7 @@ impl Totp {
     where
         C: AsRef<str>
     {
-        let algo = self.algo.get().clone().into();
+        let algo = algo::rust_otp_algo(self.algo.get());
         let secret = self.secret.get().clone();
 
         let settings = rust_otp::TotpSettings {

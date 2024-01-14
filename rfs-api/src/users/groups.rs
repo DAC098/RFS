@@ -3,6 +3,8 @@ use rfs_lib::ids;
 use serde::{Serialize, Deserialize};
 use chrono::{DateTime, Utc};
 
+use crate::{Validator, ApiError, ApiErrorKind, Detail};
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ListItem {
     pub id: ids::GroupId,
@@ -27,9 +29,35 @@ pub struct CreateGroup {
     pub name: String
 }
 
+impl Validator for CreateGroup {
+    fn validate(&self) -> Result<(), ApiError> {
+        if !rfs_lib::user::groups::name_valid(&self.name) {
+            Err(ApiError::from((
+                ApiErrorKind::ValidationFailed,
+                Detail::with_key("name")
+            )))
+        } else {
+            Ok(())
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UpdateGroup {
     pub name: String
+}
+
+impl Validator for UpdateGroup {
+    fn validate(&self) -> Result<(), ApiError> {
+        if !rfs_lib::user::groups::name_valid(&self.name) {
+            Err(ApiError::from((
+                ApiErrorKind::ValidationFailed,
+                Detail::with_key("name")
+            )))
+        } else {
+            Ok(())
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -37,8 +65,8 @@ pub struct AddUsers {
     pub ids: Vec<ids::UserId>,
 }
 
-impl AddUsers {
-    pub fn has_work(&self) -> bool {
+impl Validator for AddUsers {
+    fn has_work(&self) -> bool {
         !self.ids.is_empty()
     }
 }
@@ -48,8 +76,8 @@ pub struct DropUsers {
     pub ids: Vec<ids::UserId>,
 }
 
-impl DropUsers {
-    pub fn has_work(&self) -> bool {
+impl Validator for DropUsers {
+    fn has_work(&self) -> bool {
         !self.ids.is_empty()
     }
 }

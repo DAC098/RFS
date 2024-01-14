@@ -5,6 +5,8 @@ use rfs_lib::sec::authz::permission::{Ability, Scope};
 use snowcloud_flake::serde_ext::string_id;
 use serde::{Serialize, Deserialize};
 
+use crate::{Validator, ApiError, ApiErrorKind, Detail};
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RoleListItem {
     #[serde(with = "from_to_str")]
@@ -16,6 +18,12 @@ pub struct RoleListItem {
 pub struct Permission {
     pub scope: Scope,
     pub ability: Ability,
+}
+
+impl From<(Scope, Ability)> for Permission {
+    fn from((scope, ability): (Scope, Ability)) -> Self {
+        Permission { scope, ability }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -44,14 +52,40 @@ pub struct CreateRole {
     pub permissions: Vec<Permission>,
 }
 
+impl Validator for CreateRole {
+    fn validate(&self) -> Result<(), ApiError> {
+        if !rfs_lib::sec::authz::permission::role_name_valid(&self.name) {
+            Err(ApiError::from((
+                ApiErrorKind::ValidationFailed,
+                Detail::with_key("name")
+            )))
+        } else {
+            Ok(())
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UpdateRole {
     pub name: Option<String>,
     pub permissions: Option<Vec<Permission>>,
 }
 
-impl UpdateRole {
-    pub fn has_work(&self) -> bool {
+impl Validator for UpdateRole {
+    fn validate(&self) -> Result<(), ApiError> {
+        if let Some(name) = &self.name {
+            if !rfs_lib::sec::authz::permission::role_name_valid(name) {
+                return Err(ApiError::from((
+                    ApiErrorKind::ValidationFailed,
+                    Detail::with_key("name")
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn has_work(&self) -> bool {
         self.name.is_some() ||
             self.permissions.is_some()
     }
@@ -62,8 +96,8 @@ pub struct AddRoleUser {
     pub ids: Vec<ids::UserId>,
 }
 
-impl AddRoleUser {
-    pub fn has_work(&self) -> bool {
+impl Validator for AddRoleUser {
+    fn has_work(&self) -> bool {
         !self.ids.is_empty()
     }
 }
@@ -73,8 +107,8 @@ pub struct DropRoleUser {
     pub ids: Vec<ids::UserId>,
 }
 
-impl DropRoleUser {
-    pub fn has_work(&self) -> bool {
+impl Validator for DropRoleUser {
+    fn has_work(&self) -> bool {
         !self.ids.is_empty()
     }
 }
@@ -84,8 +118,8 @@ pub struct AddRoleGroup {
     pub ids: Vec<ids::GroupId>,
 }
 
-impl AddRoleGroup {
-    pub fn has_work(&self) -> bool {
+impl Validator for AddRoleGroup {
+    fn has_work(&self) -> bool {
         !self.ids.is_empty()
     }
 }
@@ -95,8 +129,8 @@ pub struct DropRoleGroup {
     pub ids: Vec<ids::GroupId>,
 }
 
-impl DropRoleGroup {
-    pub fn has_work(&self) -> bool {
+impl Validator for DropRoleGroup {
+    fn has_work(&self) -> bool {
         !self.ids.is_empty()
     }
 }

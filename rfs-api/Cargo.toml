@@ -5,6 +5,9 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+client = ["reqwest", "reqwest_cookie_store"]
+
 [dependencies]
 rfs-lib = { workspace = true }
 serde = { workspace = true }
@@ -19,3 +22,11 @@ strum = { version = "0.25", features = ["derive"] }
 http = { version = "1" }
 axum-core = { version = "0.4" }
 
+reqwest_cookie_store = { version = "0.5", optional = true }
+url = { workspace = true }
+
+[dependencies.reqwest]
+workspace = true
+optional = true
+default-features = false
+features = ["cookies", "blocking", "json", "stream"]
