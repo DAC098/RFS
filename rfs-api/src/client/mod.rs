@@ -10,6 +10,7 @@ pub mod error;
 pub mod auth;
 pub mod users;
 pub mod sec;
+pub mod fs;
 
 use error::ApiClientError;
 

@@ -7,6 +7,8 @@ use chrono::{DateTime, Utc};
 use serde::{Serialize, Deserialize};
 use snowcloud_flake::serde_ext::string_id;
 
+use crate::Tags;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StorageLocal {
     pub path: PathBuf
@@ -41,7 +43,7 @@ pub struct CreateStorage {
     pub name: String,
     #[serde(rename(serialize = "type", deserialize = "type"))]
     pub type_: CreateStorageType,
-    pub tags: HashMap<String, Option<String>>,
+    pub tags: Tags,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -53,7 +55,7 @@ pub struct StorageItem {
     pub user_id: ids::UserId,
     #[serde(rename(serialize = "type", deserialize = "type"))]
     pub type_: StorageType,
-    pub tags: HashMap<String, Option<String>>,
+    pub tags: Tags,
     pub created: DateTime<Utc>,
     pub updated: Option<DateTime<Utc>>,
     pub deleted: Option<DateTime<Utc>>,
@@ -69,7 +71,7 @@ pub struct UpdateStorage {
     pub name: Option<String>,
     #[serde(rename(serialize = "type", deserialize = "type"))]
     pub type_: Option<UpdateStorageType>,
-    pub tags: Option<HashMap<String, Option<String>>>,
+    pub tags: Option<Tags>,
 }
 
 impl UpdateStorage {
