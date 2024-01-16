@@ -1,8 +1,9 @@
 use std::path::PathBuf;
 
+use rfs_api::client::ApiClient;
 use clap::{Command, Arg, ArgAction, ArgMatches, value_parser};
 
-use crate::error;
+use crate::error::{self, Context};
 use crate::util;
 use crate::state::AppState;
 
@@ -37,6 +38,9 @@ fn append_subcommands(command: Command) -> Command {
                 .help("the desired file to hash")
                 .required(true)
             )
+        )
+        .subcommand(Command::new("ping")
+            .about("pings server for activity")
         )
 }
 
@@ -86,16 +90,16 @@ pub fn interactive() -> Command {
     append_subcommands(command)
 }
 
-pub fn connect(state: &mut AppState, _args: &ArgMatches) -> error::Result {
-    crate::auth::connect(state)?;
+pub fn connect(client: &mut ApiClient) -> error::Result {
+    crate::auth::connect(client)?;
 
     println!("session authenticated");
 
     Ok(())
 }
 
-pub fn disconnect(state: &mut AppState, _args: &ArgMatches) -> error::Result {
-    crate::auth::disconnect(state)?;
+pub fn disconnect(client: &mut ApiClient) -> error::Result {
+    crate::auth::disconnect(client)?;
 
     Ok(())
 }
@@ -208,3 +212,10 @@ pub fn hash(_state: &mut AppState, args: &ArgMatches) -> error::Result {
     Ok(())
 }
 
+pub fn ping(client: &mut ApiClient) -> error::Result {
+    client.ping().context("failed to ping server")?;
+
+    println!("pong");
+
+    Ok(())
+}

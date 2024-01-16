@@ -102,18 +102,41 @@ where
     }
 }
 
+impl<T> Context<T> for std::option::Option<T> {
+    fn context<C>(self, cxt: C) -> std::result::Result<T, Error>
+    where
+        C: Into<String>
+    {
+        match self {
+            Some(v) => Ok(v),
+            None => Err(Error::new()
+                .context(cxt))
+        }
+    }
+}
+
 macro_rules! simple_catch {
-    ($k:expr, $e:path) => {
+    ($e:path) => {
         impl From<$e> for Error {
             fn from(err: $e) -> Self {
                 Error::new()
-                    .kind($k)
                     .source(err)
             }
         }
     };
 }
 
-simple_catch!("std::io::Error", std::io::Error);
-simple_catch!("url::ParseError", url::ParseError);
-simple_catch!("reqwest::Error", reqwest::Error);
+simple_catch!(std::io::Error);
+simple_catch!(url::ParseError);
+simple_catch!(reqwest::Error);
+simple_catch!(rfs_api::ApiError);
+
+impl From<rfs_api::client::error::RequestError> for Error {
+    fn from(err: rfs_api::client::error::RequestError) -> Self {
+        match err {
+            rfs_api::client::error::RequestError::Reqwest(err) => Self::from(err)
+                .context("error server request"),
+            rfs_api::client::error::RequestError::Api(err) => Self::from(err)
+        }
+    }
+}

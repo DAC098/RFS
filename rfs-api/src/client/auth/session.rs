@@ -81,7 +81,7 @@ impl SubmitVerify {
         }
     }
 
-    pub fn toth_hash<T>(totp_hash: T) -> Self
+    pub fn totp_hash<T>(totp_hash: T) -> Self
     where
         T: Into<String>
     {

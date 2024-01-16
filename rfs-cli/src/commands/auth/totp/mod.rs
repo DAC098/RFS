@@ -1,3 +1,5 @@
+use rfs_api::auth::totp::Algo;
+
 use clap::{Command, Arg, ArgAction, ArgMatches, value_parser};
 
 use crate::error;
@@ -19,6 +21,26 @@ impl ValidAlgo {
             ValidAlgo::SHA1 => String::from("SHA1"),
             ValidAlgo::SHA256 => String::from("SHA256"),
             ValidAlgo::SHA512 => String::from("SHA512")
+        }
+    }
+}
+
+impl From<ValidAlgo> for Algo {
+    fn from(v: ValidAlgo) -> Algo {
+        match v {
+            ValidAlgo::SHA1 => Algo::SHA1,
+            ValidAlgo::SHA256 => Algo::SHA256,
+            ValidAlgo::SHA512 => Algo::SHA512,
+        }
+    }
+}
+
+impl From<&ValidAlgo> for Algo {
+    fn from(v: &ValidAlgo) -> Algo {
+        match v {
+            ValidAlgo::SHA1 => Algo::SHA1,
+            ValidAlgo::SHA256 => Algo::SHA256,
+            ValidAlgo::SHA512 => Algo::SHA512,
         }
     }
 }
@@ -115,7 +137,7 @@ pub fn get(state: &mut AppState, _args: &ArgMatches) -> error::Result {
 
 pub fn enable(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let action = rfs_api::auth::totp::CreateTotp {
-        algo: args.get_one("algo").map(|v: &ValidAlgo| v.as_string()),
+        algo: args.get_one("algo").map(|v: &ValidAlgo| v.into()),
         digits: args.get_one("digits").cloned(),
         step: args.get_one("step").cloned(),
     };
@@ -170,7 +192,7 @@ pub fn disable(state: &mut AppState, _args: &ArgMatches) -> error::Result {
 
 pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result {
     let action = rfs_api::auth::totp::UpdateTotp {
-        algo: args.get_one("algo").map(|v: &ValidAlgo| v.as_string()),
+        algo: args.get_one("algo").map(|v: &ValidAlgo| v.into()),
         digits: args.get_one("digits").cloned(),
         step: args.get_one("step").cloned(),
         regen: args.get_flag("regen"),

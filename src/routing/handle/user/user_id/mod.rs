@@ -1,6 +1,7 @@
 use std::fmt::Write;
 
 use rfs_lib::ids;
+use rfs_api::Validator;
 
 use axum::http::StatusCode;
 use axum::extract::{Path, State};

@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use rfs_api::client::ApiClient;
 use clap::{ArgMatches};
 
 mod error;
@@ -8,6 +9,8 @@ mod state;
 mod auth;
 mod util;
 mod commands;
+
+use error::Context;
 
 fn main() {
     use tracing_subscriber::{FmtSubscriber, EnvFilter};
@@ -35,6 +38,9 @@ fn run() -> error::Result {
         current_dir
     };
 
+    let mut client_builder = ApiClient::builder();
+    client_builder.cookie_file(session_file.clone());
+
     let mut state = state::AppState::load(session_file)?;
 
     let host = app_matches.get_one::<String>("host").unwrap();
@@ -43,9 +49,17 @@ fn run() -> error::Result {
         .unwrap();
 
     if app_matches.get_flag("secure") {
+        client_builder.secure(true);
         state.server.url.set_scheme("https").unwrap();
     } else {
         state.server.url.set_scheme("http").unwrap();
+    }
+
+    if !client_builder.host(host.clone()) {
+        return Err(error::Error::from(format!(
+            "cannot set host to the value provided. {}", 
+            host
+        )));
     }
 
     if state.server.url.set_host(Some(host)).is_err() {
@@ -53,10 +67,14 @@ fn run() -> error::Result {
         return Ok(());
     }
 
+    client_builder.port(Some(port));
+
     if state.server.url.set_port(Some(port)).is_err() {
         println!("cannot set port to the value provided. {}", port);
         return Ok(());
     }
+
+    let mut client = client_builder.build().context("failed to create api client")?;
 
     match app_matches.subcommand() {
         None => {
@@ -81,7 +99,7 @@ fn run() -> error::Result {
                     Some(("quit", _quit_matches)) => {
                         return Ok(());
                     },
-                    Some((cmd, cmd_matches)) => run_subcommand(&mut state, cmd, cmd_matches),
+                    Some((cmd, cmd_matches)) => run_subcommand(&mut client, &mut state, cmd, cmd_matches),
                     _ => unreachable!()
                 };
 
@@ -90,17 +108,18 @@ fn run() -> error::Result {
                 }
             }
         },
-        Some((cmd, cmd_matches)) => run_subcommand(&mut state, cmd, cmd_matches)?
+        Some((cmd, cmd_matches)) => run_subcommand(&mut client, &mut state, cmd, cmd_matches)?
     }
 
     Ok(())
 }
 
-fn run_subcommand(state: &mut state::AppState, command: &str, matches: &ArgMatches) -> error::Result {
+fn run_subcommand(client: &mut ApiClient, state: &mut state::AppState, command: &str, matches: &ArgMatches) -> error::Result {
     match command {
-        "connect" => commands::connect(state, matches),
-        "disconnect" => commands::disconnect(state, matches),
+        "connect" => commands::connect(client),
+        "disconnect" => commands::disconnect(client),
         "hash" => commands::hash(state, matches),
+        "ping" => commands::ping(client),
         "storage" => commands::storage(state, matches),
         "fs" => commands::fs(state, matches),
         "user" => commands::user(state, matches),

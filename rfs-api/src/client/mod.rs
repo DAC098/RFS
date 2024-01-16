@@ -12,10 +12,16 @@ pub mod users;
 pub mod sec;
 pub mod fs;
 
-use error::ApiClientError;
+use error::{ApiClientError, RequestError};
 
 pub struct Info {
-    pub url: Url
+    pub(crate) url: Url
+}
+
+impl Info {
+    pub fn url(&self) -> &Url {
+        &self.url
+    }
 }
 
 pub struct ApiClient {
@@ -99,6 +105,23 @@ impl ApiClient {
             .map_err(|e| ApiClientError::CookieStore(e))?;
 
         Ok(true)
+    }
+
+    pub fn info(&self) -> &Info {
+        &self.info
+    }
+
+    pub fn ping(&self) -> Result<bool, RequestError> {
+        let res = self.get("/ping").send()?;
+
+        match res.status() {
+            reqwest::StatusCode::OK => {
+                let body = res.text()?;
+
+                Ok(body.as_str() == "pong")
+            }
+            _ => Err(RequestError::Api(res.json()?))
+        }
     }
 }
 

@@ -1,3 +1,5 @@
+use rfs_api::Validator;
+
 use clap::{Command, Arg, ArgAction, ArgMatches, value_parser};
 
 use crate::error;
