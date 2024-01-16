@@ -1,8 +1,8 @@
+use rfs_api::client::ApiClient;
 use clap::{Command, ArgMatches};
 
 use crate::error;
 use crate::util;
-use crate::state::AppState;
 
 mod totp;
 
@@ -14,13 +14,13 @@ pub fn command() -> Command {
         .subcommand(totp::command())
 }
 
-pub fn totp(state: &mut AppState, args: &ArgMatches) -> error::Result {
+pub fn totp(client: &ApiClient, args: &ArgMatches) -> error::Result {
     match args.subcommand() {
-        Some(("get", get_matches)) => totp::get(state, get_matches),
-        Some(("enable", enable_matches)) => totp::enable(state, enable_matches),
-        Some(("disable", disable_matches)) => totp::disable(state, disable_matches),
-        Some(("update", update_matches)) => totp::update(state, update_matches),
-        Some(("recovery", recovery_matches)) => totp::recovery(state, recovery_matches),
+        Some(("get", _)) => totp::get(client),
+        Some(("enable", enable_matches)) => totp::enable(client, enable_matches),
+        Some(("disable", _)) => totp::disable(client),
+        Some(("update", update_matches)) => totp::update(client, update_matches),
+        Some(("recovery", recovery_matches)) => totp::recovery(client, recovery_matches),
         _ => unreachable!()
     }
 }

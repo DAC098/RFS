@@ -1,10 +1,16 @@
+use rfs_api::client::ApiClient;
+use rfs_api::client::auth::totp::{
+    RetrieveTotp,
+    CreateTotp,
+    DeleteTotp,
+    UpdateTotp,
+};
 use rfs_api::auth::totp::Algo;
 
 use clap::{Command, Arg, ArgAction, ArgMatches, value_parser};
 
-use crate::error;
+use crate::error::{self, Context};
 use crate::util;
-use crate::state::AppState;
 
 mod recovery;
 
@@ -104,130 +110,86 @@ pub fn command() -> Command {
         .subcommand(recovery::command())
 }
 
-pub fn get(state: &mut AppState, _args: &ArgMatches) -> error::Result {
-    let path = "/auth/totp";
-    let url = state.server.url.join(path)?;
-    let res = state.client.get(url)
-        .send()?;
+pub fn get(client: &ApiClient) -> error::Result {
+    let result = RetrieveTotp::new()
+        .send(client)
+        .context("failed to retrieve totp data")?;
 
-    let status = res.status();
-
-    if status != reqwest::StatusCode::OK {
-        match status {
-            reqwest::StatusCode::NOT_FOUND => {
-                println!("totp is not enabled for this user");
-            },
-            _ => {
-                let json = res.json::<rfs_api::error::ApiError>()?;
-
-                return Err(error::Error::new()
-                    .kind("FailedTotpLookup")
-                    .message("failed to retrieve totp data")
-                    .source(json));
-            }
-        }
+    if let Some(payload) = result {
+        println!("{:?}", payload.into_payload());
     } else {
-        let result = res.json::<rfs_api::Payload<rfs_api::auth::totp::Totp>>()?;
-
-        println!("{:?}", result);
+        println!("no totp 2FA enabled");
     }
 
     Ok(())
 }
 
-pub fn enable(state: &mut AppState, args: &ArgMatches) -> error::Result {
-    let action = rfs_api::auth::totp::CreateTotp {
-        algo: args.get_one("algo").map(|v: &ValidAlgo| v.into()),
-        digits: args.get_one("digits").cloned(),
-        step: args.get_one("step").cloned(),
-    };
+pub fn enable(client: &ApiClient, args: &ArgMatches) -> error::Result {
+    let mut builder = CreateTotp::new();
 
-    let path = "/auth/totp";
-    let url = state.server.url.join(path)?;
-    let res = state.client.post(url)
-        .json(&action)
-        .send()?;
-
-    let status = res.status();
-
-    if status != reqwest::StatusCode::CREATED {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedEnablingTotp")
-            .message("failed to enable totp 2FA")
-            .source(json));
+    if let Some(algo) = args.get_one::<ValidAlgo>("algo") {
+        builder.algo(algo.into());
     }
 
-    let result = res.json::<rfs_api::Payload<rfs_api::auth::totp::Totp>>()?;
+    if let Some(digits) = args.get_one::<u32>("digits") {
+        builder.digits(*digits);
+    }
+
+    if let Some(step) = args.get_one::<u64>("step") {
+        builder.step(*step);
+    }
+
+    let result = builder.send(client)
+        .context("failed to enable totp 2FA")?
+        .into_payload();
 
     println!("{:?}", result);
 
     Ok(())
 }
 
-pub fn disable(state: &mut AppState, _args: &ArgMatches) -> error::Result {
-    let path = "/auth/totp";
-    let url = state.server.url.join(path)?;
-    let res = state.client.delete(url)
-        .send()?;
+pub fn disable(client: &ApiClient) -> error::Result {
+    DeleteTotp::new()
+        .send(client)
+        .context("failed to disable totp 2FA")?;
 
-    let status = res.status();
+    Ok(())
+}
 
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
+pub fn update(client: &ApiClient, args: &ArgMatches) -> error::Result {
+    let mut builder = UpdateTotp::new();
 
-        return Err(error::Error::new()
-            .kind("FailedDisablingTotp")
-            .message("failed to disable totp 2FA")
-            .source(json));
+    if let Some(algo) = args.get_one::<ValidAlgo>("algo") {
+        builder.algo(algo.into());
     }
 
-    let result = res.json::<rfs_api::Payload<()>>()?;
+    if let Some(digits) = args.get_one::<u32>("digits") {
+        builder.digits(*digits);
+    }
+
+    if let Some(step) = args.get_one::<u64>("step") {
+        builder.step(*step);
+    }
+
+    if args.get_flag("regen") {
+        builder.regen(true);
+    }
+
+    let result = builder.send(client)
+        .context("failed to update totp")?
+        .into_payload();
 
     println!("{:?}", result);
 
     Ok(())
 }
 
-pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result {
-    let action = rfs_api::auth::totp::UpdateTotp {
-        algo: args.get_one("algo").map(|v: &ValidAlgo| v.into()),
-        digits: args.get_one("digits").cloned(),
-        step: args.get_one("step").cloned(),
-        regen: args.get_flag("regen"),
-    };
-
-    let path = "/auth/totp";
-    let url = state.server.url.join(path)?;
-    let res = state.client.patch(url)
-        .json(&action)
-        .send()?;
-
-    let status = res.status();
-
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedUpdatingTotp")
-            .message("failed to update totp")
-            .source(json));
-    }
-
-    let result = res.json::<rfs_api::Payload<rfs_api::auth::totp::Totp>>()?;
-
-    println!("{:?}", result);
-
-    Ok(())
-}
-
-pub fn recovery(state: &mut AppState, args: &ArgMatches) -> error::Result {
+pub fn recovery(client: &ApiClient, args: &ArgMatches) -> error::Result {
     match args.subcommand() {
-        Some(("get", get_args)) => recovery::get(state, get_args),
-        Some(("create", create_args)) => recovery::create(state, create_args),
-        Some(("update", update_args)) => recovery::update(state, update_args),
-        Some(("delete", delete_args)) => recovery::delete(state, delete_args),
+        Some(("get", _)) => recovery::get(client),
+        Some(("create", create_args)) => recovery::create(client, create_args),
+        Some(("update", update_args)) => recovery::update(client, update_args),
+        Some(("delete", delete_args)) => recovery::delete(client, delete_args),
         _ => unreachable!()
     }
 }

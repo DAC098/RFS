@@ -1,8 +1,15 @@
+use rfs_api::client::ApiClient;
+use rfs_api::client::auth::totp::{
+    RetrieveTotpRecovery,
+    CreateTotpRecovery,
+    UpdateTotpRecovery,
+    DeleteTotpRecovery,
+};
+
 use clap::{Command, Arg, ArgAction, ArgMatches};
 
-use crate::error;
+use crate::error::{self, Context};
 use crate::util;
-use crate::state::AppState;
 
 pub fn command() -> Command {
     Command::new("recovery")
@@ -62,112 +69,58 @@ fn print_recovery(recovery: &rfs_api::auth::totp::TotpRecovery) {
 }
 
 
-pub fn get(state: &mut AppState, _args: &ArgMatches) -> error::Result {
-    let path = "/auth/totp/recovery";
-    let url = state.server.url.join(path)?;
-    let res = state.client.get(url)
-        .send()?;
+pub fn get(client: &ApiClient) -> error::Result {
+    let result = RetrieveTotpRecovery::new()
+        .send(client)
+        .context("failed to retrieve totp recovery keys")?
+        .into_payload();
 
-    let status = res.status();
-
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedTotpRecoveryLookup")
-            .message("failed to retrieve totp recovery data")
-            .source(json));
-    }
-
-    let result = res.json::<rfs_api::Payload<Vec<rfs_api::auth::totp::TotpRecovery>>>()?;
-
-    for recovery in result.payload() {
-        print_recovery(recovery);
+    for recovery in result {
+        print_recovery(&recovery);
     }
 
     Ok(())
 }
 
-pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result {
-    let action = rfs_api::auth::totp::CreateTotpHash {
-        key: args.get_one("key").cloned().unwrap()
-    };
-
-    let path = "/auth/totp/recovery";
-    let url = state.server.url.join(path)?;
-    let res = state.client.post(url)
-        .json(&action)
-        .send()?;
-
-    let status = res.status();
-
-    if status != reqwest::StatusCode::CREATED {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedCreateTotpRecovery")
-            .message("failed to create the totp recovery key")
-            .source(json));
-    }
-
-    let result = res.json::<rfs_api::Payload<rfs_api::auth::totp::TotpRecovery>>()?;
-
-    print_recovery(result.payload());
-
-    Ok(())
-}
-
-pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result {
+pub fn create(client: &ApiClient, args: &ArgMatches) -> error::Result {
     let key = args.get_one::<String>("key").cloned().unwrap();
-    let path = format!("/auth/totp/recovery/{}", key);
+    let result = CreateTotpRecovery::key(key)
+        .send(client)
+        .context("failed to create totp recovery key")?
+        .into_payload();
 
-    let action = rfs_api::auth::totp::UpdateTotpHash {
-        key: args.get_one("rename").cloned(),
-        regen: args.get_flag("regen")
-    };
-
-    let url = state.server.url.join(&path)?;
-    let res = state.client.patch(url)
-        .json(&action)
-        .send()?;
-
-    let status = res.status();
-
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedUpdateTotpRecovery")
-            .message("failed to update the totp recovery key")
-            .source(json));
-    }
-
-    let result = res.json::<rfs_api::Payload<rfs_api::auth::totp::TotpRecovery>>()?;
-
-    print_recovery(result.payload());
+    print_recovery(&result);
 
     Ok(())
 }
 
-pub fn delete(state: &mut AppState, args: &ArgMatches) -> error::Result {
+pub fn update(client: &ApiClient, args: &ArgMatches) -> error::Result {
     let key = args.get_one::<String>("key").cloned().unwrap();
-    let path = format!("/auth/totp/recovery/{}", key);
-    let url = state.server.url.join(&path)?;
-    let res = state.client.delete(url)
-        .send()?;
+    let mut builder = UpdateTotpRecovery::key(key);
 
-    let status = res.status();
-
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedDeleteTotpRecovery")
-            .message("failed to delete the totp recovery key")
-            .source(json));
+    if let Some(rename) = args.get_one::<String>("rename") {
+        builder.rename(rename);
     }
 
-    let _result = res.json::<rfs_api::Payload<()>>()?;
+    if args.get_flag("regen") {
+        builder.regen(true);
+    }
+
+    let result = builder.send(client)
+        .context("failed to update totp recovery key")?
+        .into_payload();
+
+    print_recovery(&result);
+
+    Ok(())
+}
+
+pub fn delete(client: &ApiClient, args: &ArgMatches) -> error::Result {
+    let key = args.get_one::<String>("key").cloned().unwrap();
+
+    DeleteTotpRecovery::key(key)
+        .send(client)
+        .context("failed to delete totp recovery key")?;
 
     Ok(())
 }

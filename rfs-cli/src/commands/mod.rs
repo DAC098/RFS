@@ -130,9 +130,9 @@ pub fn user(state: &mut AppState, args: &ArgMatches) -> error::Result {
     }
 }
 
-pub fn auth(state: &mut AppState, args: &ArgMatches) -> error::Result {
+pub fn auth(client: &ApiClient, args: &ArgMatches) -> error::Result {
     match args.subcommand() {
-        Some(("totp", totp_args)) => auth::totp(state, totp_args),
+        Some(("totp", totp_args)) => auth::totp(client, totp_args),
         _ => unreachable!()
     }
 }

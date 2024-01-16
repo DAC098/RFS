@@ -185,7 +185,7 @@ impl CreateTotpRecovery {
             .send()?;
 
         match res.status() {
-            reqwest::StatusCode::OK => Ok(res.json()?),
+            reqwest::StatusCode::CREATED => Ok(res.json()?),
             _ => Err(RequestError::Api(res.json()?))
         }
     }
@@ -250,7 +250,7 @@ impl UpdateTotpRecovery {
         }
     }
 
-    pub fn new_key<K>(&mut self, key: K) -> &mut Self
+    pub fn rename<K>(&mut self, key: K) -> &mut Self
     where
         K: Into<String>
     {
