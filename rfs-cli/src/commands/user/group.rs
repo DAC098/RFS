@@ -1,8 +1,18 @@
+use rfs_api::client::ApiClient;
+use rfs_api::client::users::groups::{
+    QueryGroups,
+    RetrieveGroup,
+    CreateGroup,
+    UpdateGroup,
+    DeleteGroup,
+    QueryGroupUsers,
+    AddUsers,
+    DropUsers,
+};
 use clap::{Command, Arg, ArgAction, ArgMatches, value_parser};
 
-use crate::error;
+use crate::error::{self, Context};
 use crate::util;
-use crate::state::AppState;
 
 pub fn command() -> Command {
     Command::new("group")
@@ -103,159 +113,94 @@ pub fn command() -> Command {
         )
 }
 
-pub fn get(state: &mut AppState, args: &ArgMatches) -> error::Result {
-    let given_id: bool;
-    let path = if let Some(id) = args.get_one::<i64>("id") {
-        given_id = true;
-        format!("/user/group/{}", id)
+pub fn get(client: &ApiClient, args: &ArgMatches) -> error::Result {
+    if let Some(group_id) = args.get_one::<i64>("id") {
+        let result = RetrieveGroup::id(*group_id)
+            .send(client)
+            .context("failed to retrieve group")?;
+
+        if let Some(payload) = result {
+            println!("{:#?}", payload.into_payload());
+        } else {
+            println!("group not found");
+        }
     } else {
-        given_id = false;
-        format!("/user/group")
-    };
+        let result = QueryGroups::new()
+            .send(client)
+            .context("failed to retrieve groups")?
+            .into_payload();
 
-    let url = state.server.url.join(&path)?;
-    let res = state.client.get(url)
-        .send()?;
-
-    let status = res.status();
-
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedGroupLookup")
-            .message("failed to lookup desired group information")
-            .source(json));
-    }
-
-    if given_id {
-        let result = res.json::<rfs_api::Payload<rfs_api::users::groups::Group>>()?;
-
-        println!("{:#?}", result);
-    } else {
-        let result = res.json::<rfs_api::Payload<Vec<rfs_api::users::groups::ListItem>>>()?;
-
-        println!("{:#?}", result);
+        for group in result {
+            println!("{:#?}", group);
+        }
     }
 
     Ok(())
 }
 
-pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result {
-    let action = rfs_api::users::groups::CreateGroup {
-        name: args.get_one("name").cloned().unwrap()
-    };
+pub fn create(client: &ApiClient, args: &ArgMatches) -> error::Result {
+    let name: String = args.get_one("name").cloned().unwrap();
 
-    let url = state.server.url.join("/user/group")?;
-    let res = state.client.post(url)
-        .json(&action)
-        .send()?;
-
-    let status = res.status();
-
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedCreatingGroup")
-            .message("failed to create the desired group")
-            .source(json));
-    }
-
-    let result = res.json::<rfs_api::Payload<rfs_api::users::groups::Group>>()?;
+    let result = CreateGroup::name(name)
+        .send(client)
+        .context("failed to create new group")?
+        .into_payload();
 
     println!("{:#?}", result);
 
     Ok(())
 }
 
-pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result {
+pub fn update(client: &ApiClient, args: &ArgMatches) -> error::Result {
     let id = args.get_one::<i64>("id").unwrap();
-    let action = rfs_api::users::groups::UpdateGroup {
-        name: args.get_one("name").cloned().unwrap()
-    };
+    let name = args.get_one::<String>("name").cloned().unwrap();
 
-    let path = format!("/user/group/{}", id);
-    let url = state.server.url.join(&path)?;
-    let res = state.client.patch(url)
-        .json(&action)
-        .send()?;
-
-    let status = res.status();
-
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedUpdatingGroup")
-            .message("failed to update the desired group")
-            .source(json));
-    }
-
-    let result = res.json::<rfs_api::Payload<rfs_api::users::groups::Group>>()?;
+    let result = UpdateGroup::id(*id, name)
+        .send(client)
+        .context("failed to update group")?
+        .into_payload();
 
     println!("{:#?}", result);
 
     Ok(())
 }
 
-pub fn delete(state: &mut AppState, args: &ArgMatches) -> error::Result {
+pub fn delete(client: &ApiClient, args: &ArgMatches) -> error::Result {
     let id = args.get_one::<i64>("id").unwrap();
 
-    let path = format!("/user/group/{}", id);
-    let url = state.server.url.join(&path)?;
-    let res = state.client.delete(url)
-        .send()?;
-
-    let status = res.status();
-
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedDeletingGroup")
-            .message("failed to delete the desired group")
-            .source(json));
-    }
-
-    let result = res.json::<rfs_api::Payload<rfs_api::users::groups::Group>>()?;
+    let result = DeleteGroup::id(*id)
+        .send(client)
+        .context("failed to delete group")?
+        .into_payload();
 
     println!("{:#?}", result);
 
     Ok(())
 }
 
-pub fn users(state: &mut AppState, args: &ArgMatches) -> error::Result {
+pub fn users(client: &ApiClient, args: &ArgMatches) -> error::Result {
     match args.subcommand() {
-        Some(("get", get_matches)) => get_users(state, get_matches),
-        Some(("add", add_matches)) => add_users(state, add_matches),
-        Some(("drop", drop_matches)) => drop_users(state, drop_matches),
+        Some(("get", get_matches)) => get_users(client, get_matches),
+        Some(("add", add_matches)) => add_users(client, add_matches),
+        Some(("drop", drop_matches)) => drop_users(client, drop_matches),
         _ => unreachable!()
     }
 }
 
-fn get_users(state: &mut AppState, args: &ArgMatches) -> error::Result {
+fn get_users(client: &ApiClient, args: &ArgMatches) -> error::Result {
     let id = args.get_one::<i64>("id").unwrap();
 
-    let path = format!("/user/group/{}/users", id);
-    let url = state.server.url.join(&path)?;
-    let res = state.client.get(url)
-        .send()?;
+    let result = QueryGroupUsers::id(*id)
+        .send(client)
+        .context("failed to retrieve group users")?;
 
-    let status = res.status();
-
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedGroupUsersLookup")
-            .message("failed to retrieve a list of users in the desired group")
-            .source(json));
+    if let Some(payload) = result {
+        for user in payload.into_payload() {
+            println!("{:#?}", user);
+        }
+    } else {
+        println!("group not found");
     }
-
-    let result = res.json::<rfs_api::Payload<Vec<rfs_api::users::groups::GroupUser>>>()?;
-
-    println!("{:#?}", result);
 
     Ok(())
 }
@@ -268,11 +213,7 @@ fn get_user_ids(args: &ArgMatches) -> error::Result<Vec<rfs_lib::ids::UserId>> {
     };
 
     for id in list {
-        let flake = id.try_into()
-            .map_err(|e| error::Error::new()
-                .kind("InvalidUserId")
-                .message("a provided user id is not a valid format")
-                .source(e))?;
+        let flake = id.try_into().context("invalid user id format")?;
 
         rtn.push(flake);
     }
@@ -280,54 +221,24 @@ fn get_user_ids(args: &ArgMatches) -> error::Result<Vec<rfs_lib::ids::UserId>> {
     Ok(rtn)
 }
 
-fn add_users(state: &mut AppState, args: &ArgMatches) -> error::Result {
+fn add_users(client: &ApiClient, args: &ArgMatches) -> error::Result {
     let id = args.get_one::<i64>("id").unwrap();
-    let action = rfs_api::users::groups::AddUsers { 
-        ids: get_user_ids(args)?
-    };
 
-    let path = format!("/user/group/{}/users", id);
-    let url = state.server.url.join(&path)?;
-    let res = state.client.post(url)
-        .json(&action)
-        .send()?;
-
-    let status = res.status();
-
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedAddingGroupUsers")
-            .message("failed to add new users to the desired group")
-            .source(json));
-    }
+    let mut builder = AddUsers::id(*id);
+    builder.add_iter(get_user_ids(args)?);
+    builder.send(client)
+        .context("failed to add users to group")?;
 
     Ok(())
 }
 
-fn drop_users(state: &mut AppState, args: &ArgMatches) -> error::Result {
+fn drop_users(client: &ApiClient, args: &ArgMatches) -> error::Result {
     let id = args.get_one::<i64>("id").unwrap();
-    let action = rfs_api::users::groups::DropUsers {
-        ids: get_user_ids(args)?
-    };
 
-    let path = format!("/user/group/{}/users", id);
-    let url = state.server.url.join(&path)?;
-    let res = state.client.delete(url)
-        .json(&action)
-        .send()?;
-
-    let status = res.status();
-
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedDroppingGroupUsers")
-            .message("failed to drop users from the desired group")
-            .source(json));
-    }
+    let mut builder = DropUsers::id(*id);
+    builder.add_iter(get_user_ids(args)?);
+    builder.send(client)
+        .context("failed to drop users from group")?;
 
     Ok(())
 }

@@ -121,11 +121,11 @@ pub fn fs(state: &mut AppState, args: &ArgMatches) -> error::Result {
     }
 }
 
-pub fn user(state: &mut AppState, args: &ArgMatches) -> error::Result {
+pub fn user(client: &ApiClient, args: &ArgMatches) -> error::Result {
     match args.subcommand() {
-        Some(("group", group_args)) => user::group(state, group_args),
-        Some(("create", create_args)) => user::create(state, create_args),
-        Some(("update", update_args)) => user::update(state, update_args),
+        Some(("group", group_args)) => user::group(client, group_args),
+        Some(("create", create_args)) => user::create(client, create_args),
+        Some(("update", update_args)) => user::update(client, update_args),
         _ => unreachable!()
     }
 }

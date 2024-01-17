@@ -122,7 +122,7 @@ fn run_subcommand(client: &mut ApiClient, state: &mut state::AppState, command: 
         "ping" => commands::ping(client),
         "storage" => commands::storage(state, matches),
         "fs" => commands::fs(state, matches),
-        "user" => commands::user(state, matches),
+        "user" => commands::user(client, matches),
         "auth" => commands::auth(client, matches),
         "sec" => commands::sec(state, matches),
         _ => {

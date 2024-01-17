@@ -52,7 +52,6 @@ pub fn tags_from_args(name: &str, args: &ArgMatches) -> error::Result<HashMap<St
 
         if invalid.len() > 0 {
             return Err(error::Error::new()
-                .kind("InvalidTags")
                 .message("provided tags that are an invalid format")
                 .source(format!("{:?}", invalid)));
         }
