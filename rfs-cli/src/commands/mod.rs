@@ -5,7 +5,6 @@ use clap::{Command, Arg, ArgAction, ArgMatches, value_parser};
 
 use crate::error::{self, Context};
 use crate::util;
-use crate::state::AppState;
 
 mod storage;
 mod fs;
@@ -104,19 +103,19 @@ pub fn disconnect(client: &mut ApiClient) -> error::Result {
     Ok(())
 }
 
-pub fn storage(state: &mut AppState, args: &ArgMatches) -> error::Result {
+pub fn storage(client: &ApiClient, args: &ArgMatches) -> error::Result {
     match args.subcommand() {
-        Some(("create", create_args)) => storage::create(state, create_args),
-        Some(("update", update_args)) => storage::update(state, update_args),
+        Some(("create", create_args)) => storage::create(client, create_args),
+        Some(("update", update_args)) => storage::update(client, update_args),
         _ => unreachable!()
     }
 }
 
-pub fn fs(state: &mut AppState, args: &ArgMatches) -> error::Result {
+pub fn fs(client: &ApiClient, args: &ArgMatches) -> error::Result {
     match args.subcommand() {
-        Some(("create", create_args)) => fs::create(state, create_args),
-        Some(("update", update_args)) => fs::update(state, update_args),
-        Some(("upload", upload_args)) => fs::upload(state, upload_args),
+        Some(("create", create_args)) => fs::create(client, create_args),
+        Some(("update", update_args)) => fs::update(client, update_args),
+        Some(("upload", upload_args)) => fs::upload(client, upload_args),
         _ => unreachable!()
     }
 }
@@ -145,7 +144,7 @@ pub fn sec(client: &ApiClient, args: &ArgMatches) -> error::Result {
     }
 }
 
-pub fn hash(_state: &mut AppState, args: &ArgMatches) -> error::Result {
+pub fn hash(args: &ArgMatches) -> error::Result {
     use std::io::{BufReader, BufRead, ErrorKind};
     use std::fs::OpenOptions;
 
@@ -160,33 +159,29 @@ pub fn hash(_state: &mut AppState, args: &ArgMatches) -> error::Result {
 
     let metadata = match file_path.metadata() {
         Ok(m) => m,
-        Err(err) => {
-            match err.kind() {
-                ErrorKind::NotFound => {
-                    return Err(error::Error::new()
-                        .kind("FileNotFound")
-                        .message("requested file was not found"));
-                },
-                _ => {
-                    return Err(error::Error::new()
-                        .kind("StdIoError")
-                        .message("failed to read data about the desired file")
-                        .source(err));
-                }
+        Err(err) => match err.kind() {
+            ErrorKind::NotFound => {
+                return Err(error::Error::new()
+                    .context("requested file was not found"));
+            },
+            _ => {
+                return Err(error::Error::new()
+                    .context("failed to read data about the desired file")
+                    .source(err));
             }
         }
     };
 
     if !metadata.is_file() {
         return Err(error::Error::new()
-            .kind("NotAFile")
-            .message("requested file path is not a file"));
+            .context("requested file path is not a file"));
     }
 
     let mut hasher = blake3::Hasher::new();
     let file = OpenOptions::new()
         .read(true)
         .open(&file_path)?;
+
     let mut reader = BufReader::with_capacity(1024 * 4, file);
 
     loop {

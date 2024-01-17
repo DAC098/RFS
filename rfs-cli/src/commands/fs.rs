@@ -3,11 +3,17 @@ use std::str::FromStr;
 use std::io::ErrorKind;
 use std::ffi::OsStr;
 
+use rfs_api::client::ApiClient;
+use rfs_api::client::fs::{
+    CreateDir,
+    RetrieveItem,
+    SendReadable,
+    UpdateMetadata,
+};
 use clap::{Command, Arg, ArgAction, ArgMatches, value_parser};
 
-use crate::error;
+use crate::error::{self, Context};
 use crate::util;
-use crate::state::AppState;
 
 pub fn command() -> Command {
     Command::new("fs")
@@ -150,21 +156,15 @@ pub fn command() -> Command {
 }
 
 fn cwd() -> error::Result<PathBuf> {
-    std::env::current_dir().map_err(|e| error::Error::new()
-        .kind("StdIoError")
-        .message("failed to retrieve the current working directory")
-        .source(e)
-    )
+    std::env::current_dir()
+        .context("failed to retrieve the current working directory")
 }
 
 fn canonicalize_file_path(file_path: PathBuf, cwd: &PathBuf) -> error::Result<PathBuf> {
     let rtn = if !file_path.is_absolute() {
         cwd.join(&file_path)
             .canonicalize()
-            .map_err(|e| error::Error::new()
-                .kind("StdIoError")
-                .message("failed to canonicalize file path")
-                .source(e))?
+            .context("failed to canonicalize file path")?
     } else {
         file_path
     };
@@ -175,29 +175,23 @@ fn canonicalize_file_path(file_path: PathBuf, cwd: &PathBuf) -> error::Result<Pa
 fn path_metadata(file_path: &PathBuf) -> error::Result<std::fs::Metadata> {
     match file_path.metadata() {
         Ok(m) => Ok(m),
-        Err(err) => {
-            match err.kind() {
-                ErrorKind::NotFound => {
-                    Err(error::Error::new()
-                        .kind("PathNotFound")
-                        .message("requested file system item was not found"))
-                },
-                _ => {
-                    Err(error::Error::new()
-                        .kind("StdIoError")
-                        .message("failed to read data about desired file system item")
-                        .source(err))
-                }
+        Err(err) => match err.kind() {
+            ErrorKind::NotFound => {
+                Err(error::Error::new()
+                    .context("requested file system item was not found"))
+            },
+            _ => {
+                Err(error::Error::new()
+                    .context("failed to read data about desired file system item")
+                    .source(err))
             }
         }
     }
 }
 
-fn mime_value_parser(value: &str) -> Result<mime::Mime, String> {
-    match mime::Mime::from_str(value) {
-        Ok(mime) => Ok(mime),
-        Err(_err) => Err(format!("provided string is not a valid mime"))
-    }
+fn mime_value_parser(value: &str) -> error::Result<mime::Mime> {
+    mime::Mime::from_str(value)
+        .context("provided string is not a valid mime")
 }
 
 fn path_basename(fs_path: &PathBuf) -> error::Result<Option<String>> {
@@ -206,18 +200,15 @@ fn path_basename(fs_path: &PathBuf) -> error::Result<Option<String>> {
     };
 
     let rtn = file_name.to_str()
-        .ok_or(error::Error::new()
-            .kind("InvalidUTF8Characters")
-            .message("the provided file contains invalid utf-8 characters in the name"))?
+        .context("the provided file contains invalid utf-8 characters in the name")?
         .to_owned();
 
     Ok(Some(rtn))
 }
 
 fn ext_mime(ext: &OsStr, fallback: Option<mime::Mime>) -> error::Result<mime::Mime> {
-    let ext_str = ext.to_str().ok_or(error::Error::new()
-        .kind("InvalidUTF8Characters")
-        .message("the provided file extension contains invalid UTF-8 characters in the name"))?;
+    let ext_str = ext.to_str()
+        .context("the provided file extension contains invalid utf-8 characters in the name")?;
 
     let guess = mime_guess::MimeGuess::from_ext(ext_str);
 
@@ -228,50 +219,34 @@ fn ext_mime(ext: &OsStr, fallback: Option<mime::Mime>) -> error::Result<mime::Mi
     }
 }
 
-pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
-    let parent = args.get_one::<i64>("parent").cloned().unwrap();
-    let path = format!("/fs/{}", parent);
+pub fn create(client: &ApiClient, args: &ArgMatches) -> error::Result {
+    let parent = args.get_one::<i64>("parent")
+        .unwrap()
+        .try_into()
+        .context("invalid fs id format")?;
 
     let tags = util::tags_from_args("tag", args)?;
-    let _comment = args.get_one::<String>("comment").cloned();
 
     match args.subcommand() {
         Some(("dir", dir_args)) => {
             let basename = dir_args.get_one::<String>("basename")
-                .cloned()
                 .unwrap();
 
-            let tags = if tags.len() > 0 {
-                Some(tags)
-            } else {
-                None
-            };
+            let mut builder = CreateDir::basename(parent, basename);
 
-            let action = rfs_api::fs::CreateDir {
-                basename,
-                tags,
-                comment: args.get_one::<String>("comment").cloned()
-            };
-
-            let url = state.server.url.join(&path)?;
-            let res = state.client.post(url)
-                .json(&action)
-                .send()?;
-
-            let status = res.status();
-
-            if status != reqwest::StatusCode::OK {
-                let json = res.json::<rfs_api::error::ApiError>()?;
-
-                return Err(error::Error::new()
-                    .kind("FailedCreatingDirectory")
-                    .message("failed to create the new directory")
-                    .source(format!("{:?}", json)));
+            if !tags.is_empty() {
+                builder.add_iter_tags(tags);
             }
 
-            let result = res.json::<rfs_api::Payload<rfs_api::fs::Item>>()?;
+            if let Some(comment) = args.get_one::<String>("comment") {
+                builder.comment(comment);
+            }
 
-            println!("{:?}", result.into_payload());
+            let result = builder.send(client)
+                .context("failed to create directory")?
+                .into_payload();
+
+            println!("{:?}", result);
         },
         _ => unreachable!()
     }
@@ -279,10 +254,11 @@ pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
     Ok(())
 }
 
-pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
-    let id: i64 = args.get_one("id").cloned().unwrap();
-    let path = format!("/fs/{}", id);
-
+pub fn update(client: &ApiClient, args: &ArgMatches) -> error::Result {
+    let id: rfs_lib::ids::FSId = args.get_one::<i64>("id")
+        .unwrap()
+        .try_into()
+        .context("invalid fs id format")?;
     let tags = util::tags_from_args("tag", args)?;
     let add_tags = util::tags_from_args("add-tag", args)?;
     let drop_tags = if let Some(given) = args.get_many::<String>("drop-tag") {
@@ -292,100 +268,56 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
     };
 
     let current = {
-        let url = state.server.url.join(&path)?;
-        let res = state.client.get(url).send()?;
+        let result = RetrieveItem::id(id.clone())
+            .send(client)
+            .context("failed to retrieve fs item")?;
 
-        let status = res.status();
+        let Some(payload) = result else {
+            println!("fs item not found");
+            return Ok(());
+        };
 
-        if status != reqwest::StatusCode::OK {
-            let json = res.json::<rfs_api::error::ApiError>()?;
-
-            return Err(error::Error::new()
-                .kind("FailedFsLookup")
-                .message("failed to get the desired fs item")
-                .source(format!("{:?}", json)));
-        }
-
-        let result = res.json::<rfs_api::Payload<rfs_api::fs::Item>>()?;
-
-        tracing::debug!(
-            "currnet fs item: {:?}",
-            result
-        );
-
-        result.into_payload()
+        payload.into_payload()
     };
 
-    let new_tags = {
-        if tags.len() > 0 {
-            Some(tags)
-        } else if drop_tags.len() > 0 || add_tags.len() > 0 {
-            let mut current_tags = match current {
-                rfs_api::fs::Item::Root(root) => root.tags,
-                rfs_api::fs::Item::Directory(dir) => dir.tags,
-                rfs_api::fs::Item::File(file) => file.tags,
-            };
+    let mut builder = UpdateMetadata::id(id);
 
-            for tag in drop_tags {
-                current_tags.remove(tag);
-            }
+    if !tags.is_empty() {
+        builder.add_iter_tags(tags);
+    } else if drop_tags.len() > 0 || add_tags.len() > 0 {
+        let mut current_tags = match current {
+            rfs_api::fs::Item::Root(root) => root.tags,
+            rfs_api::fs::Item::Directory(dir) => dir.tags,
+            rfs_api::fs::Item::File(file) => file.tags,
+        };
 
-            for (tag, value) in add_tags {
-                current_tags.insert(tag, value);
-            }
-
-            Some(current_tags)
-        } else {
-            None
+        for tag in drop_tags {
+            current_tags.remove(tag);
         }
-    };
 
-    let new_comment = if let Some(comment) = args.get_one("comment").cloned() {
-        Some(comment)
+        for (tag, value) in add_tags {
+            current_tags.insert(tag, value);
+        }
+
+        builder.add_iter_tags(current_tags);
+    }
+
+    if let Some(comment) = args.get_one::<String>("comment") {
+        builder.comment(comment);
     } else if args.get_flag("drop-comment") {
-        Some(String::new())
-    } else {
-        None
-    };
-
-    let action = rfs_api::fs::UpdateMetadata {
-        tags: new_tags,
-        comment: new_comment
-    };
-
-    if !action.has_work() {
-        println!("no changes have been specified");
-        return Ok(());
+        builder.comment(String::new());
     }
 
-    tracing::debug!("sending patch request to server: {:?}", action);
-
-    let url = state.server.url.join(&path)?;
-    let res = state.client.patch(url)
-        .json(&action)
-        .send()?;
-
-    tracing::debug!("response: {:#?}", res);
-
-    let status = res.status();
-
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedUpdateFs")
-            .message("failed to update the fs item")
-            .source(format!("{:?}", json)));
-    }
-
-    let result = res.json::<rfs_api::Payload<rfs_api::fs::Item>>()?;
+    let result = builder.send(client)
+        .context("failed to update fs item")?
+        .into_payload();
 
     println!("{:#?}", result);
 
     Ok(())
 }
 
-pub fn upload(state: &mut AppState, upload_args: &ArgMatches) -> error::Result<()> {
+pub fn upload(client: &ApiClient, upload_args: &ArgMatches) -> error::Result {
     let arg_path = upload_args.get_one("path")
         .cloned()
         .unwrap();
@@ -395,105 +327,82 @@ pub fn upload(state: &mut AppState, upload_args: &ArgMatches) -> error::Result<(
 
     if !metadata.is_file() {
         return Err(error::Error::new()
-            .kind("NotAFile")
-            .message("requested file path is not a file"));
+            .context("requested file path is not a file"));
     }
 
     let file = std::fs::OpenOptions::new()
         .read(true)
         .open(&file_path)
-        .map_err(|e| error::Error::new()
-            .kind("StdIoError")
-            .message("failed to open the desired file")
-            .source(e))?;
+        .context("failed to open file")?;
 
-    let res = match upload_args.subcommand() {
+    match upload_args.subcommand() {
         Some(("new", new_args)) => {
-            let parent: i64 = new_args.get_one("parent")
-                .cloned()
-                .unwrap();
-            let url_path = format!("/fs/{}", parent);
+            let parent = new_args.get_one::<i64>("parent")
+                .unwrap()
+                .try_into()
+                .context("invalid fs id format")?;
 
             let basename = if let Some(given) = new_args.get_one("basename").cloned() {
                 given
             } else {
-                let Some(found) = path_basename(&file_path)? else {
-                    return Err(error::Error::new()
-                        .kind("NoBasenameProvided")
-                        .message("no basename was provided and the current file did not contain a file name"));
-                };
-
-                found
+                path_basename(&file_path)?
+                    .context("no basename was provided and the current file did not contain a file name")?
             };
 
-            let mime: mime::Mime = if let Some(given) = new_args.get_one("mime").cloned() {
-                given
+            let mut builder = SendReadable::create(parent, basename, file);
+            builder.content_length(metadata.len());
+
+            if let Some(given) = new_args.get_one("mime").cloned() {
+                builder.content_type(given);
             } else {
                 if let Some(ext) = file_path.extension() {
                     let fallback = new_args.get_one("fallback-mime").cloned();
 
-                    ext_mime(ext, fallback)?
+                    builder.content_type(ext_mime(ext, fallback)?);
                 } else if let Some(given) = new_args.get_one("fallback-mime").cloned() {
-                    given
+                    builder.content_type(given);
                 } else {
-                    mime::APPLICATION_OCTET_STREAM.clone()
+                    builder.content_type(mime::APPLICATION_OCTET_STREAM);
                 }
-            };
+            }
 
-            let url = state.server.url.join(&url_path)?;
+            let result = builder.send(client)
+                .context("failed to upload file")?
+                .into_payload();
 
-            state.client.put(url)
-                .header("x-basename", basename)
-                .header("content-type", mime.as_ref())
-                .header("content-length", metadata.len())
-                .body(file)
-                .send()?
+            println!("{:#?}", result);
         },
         Some(("existing", existing_args)) => {
-            let id: i64 = existing_args.get_one("id")
-                .cloned()
-                .unwrap();
-            let url_path = format!("/fs/{}", id);
+            let id = existing_args.get_one::<i64>("id")
+                .unwrap()
+                .try_into()
+                .context("invalid fs id format")?;
 
-            let mime: mime::Mime = if let Some(given) = existing_args.get_one("mime").cloned() {
-                given
+            let mut builder = SendReadable::update(id, file);
+            builder.content_length(metadata.len());
+
+            if let Some(given) = existing_args.get_one("mime").cloned() {
+                builder.content_type(given);
             } else {
                 if let Some(ext) = file_path.extension() {
                     let fallback = existing_args.get_one("fallback-mime").cloned();
 
-                    ext_mime(ext, fallback)?
+                    builder.content_type(ext_mime(ext, fallback)?);
                 } else if let Some(given) = existing_args.get_one("fallback-mime").cloned() {
-                    given
+                    builder.content_type(given);
                 } else {
-                    mime::APPLICATION_OCTET_STREAM.clone()
+                    builder.content_type(mime::APPLICATION_OCTET_STREAM);
                 }
-            };
+            }
 
-            let url = state.server.url.join(&url_path)?;
+            let result = builder.send(client)
+                .context("failed to upload file")?
+                .into_payload();
 
-            state.client.put(url)
-                .header("content-type", mime.as_ref())
-                .header("content-length", metadata.len())
-                .body(file)
-                .send()?
+            println!("{:#?}", result);
         },
         _ => unreachable!()
-    };
-
-    let status = res.status();
-
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedFileUpload")
-            .message("failed to upload the desired file the server")
-            .source(format!("{:?}", json)));
     }
-
-    let result = res.json::<rfs_api::Payload<rfs_api::fs::Item>>()?;
-
-    println!("{:#?}", result.into_payload());
 
     Ok(())
 }

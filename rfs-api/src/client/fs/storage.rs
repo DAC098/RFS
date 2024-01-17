@@ -88,6 +88,19 @@ impl CreateStorage {
         self
     }
 
+    pub fn add_iter_tags<I, T, V>(&mut self, iter: I) -> &mut Self
+    where
+        T: Into<String>,
+        V: Into<String>,
+        I: IntoIterator<Item = (T, Option<V>)>
+    {
+        for (k, v) in iter {
+            self.body.tags.insert(k.into(), v.map(|v| v.into()));
+        }
+
+        self
+    }
+
     pub fn send(self, client: &ApiClient) -> Result<Payload<StorageItem>, RequestError> {
         let res = client.post("/storage")
             .json(&self.body)
@@ -134,6 +147,29 @@ impl UpdateStorage {
             tags.insert(tag.into(), value.map(|v| v.into()));
         } else {
             self.body.tags = Some(Tags::from([(tag.into(), value.map(|v| v.into()))]));
+        }
+
+        self
+    }
+
+    pub fn add_iter_tags<I, T, V>(&mut self, iter: I) -> &mut Self
+    where
+        T: Into<String>,
+        V: Into<String>,
+        I: IntoIterator<Item = (T, Option<V>)>
+    {
+        if let Some(tags) = &mut self.body.tags {
+            for (k, v) in iter {
+                tags.insert(k.into(), v.map(|v| v.into()));
+            }
+        } else {
+            let mut tags = Tags::new();
+
+            for (k, v) in iter {
+                tags.insert(k.into(), v.map(|v| v.into()));
+            }
+
+            self.body.tags = Some(tags);
         }
 
         self

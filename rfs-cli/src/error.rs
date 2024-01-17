@@ -16,26 +16,11 @@ impl Error {
         }
     }
 
-    pub fn kind<K>(self, _kind: K) -> Self
-    where
-        K: Into<String>
-    {
-        self
-    }
-
     pub fn context<C>(mut self, cxt: C) -> Error
     where
         C: Into<String>
     {
         self.context = Some(cxt.into());
-        self
-    }
-
-    pub fn message<M>(mut self, msg: M) -> Error
-    where
-        M: Into<String>
-    {
-        self.context = Some(msg.into());
         self
     }
 
@@ -67,15 +52,13 @@ impl std::error::Error for Error {
 
 impl From<String> for Error {
     fn from(msg: String) -> Self {
-        Error::new()
-            .message(msg)
+        Error::new().context(msg)
     }
 }
 
 impl From<&str> for Error {
     fn from(msg: &str) -> Self {
-        Error::new()
-            .message(msg)
+        Error::new().context(msg)
     }
 }
 
@@ -109,8 +92,7 @@ impl<T> Context<T> for std::option::Option<T> {
     {
         match self {
             Some(v) => Ok(v),
-            None => Err(Error::new()
-                .context(cxt))
+            None => Err(Error::new().context(cxt))
         }
     }
 }
@@ -119,8 +101,7 @@ macro_rules! simple_catch {
     ($e:path) => {
         impl From<$e> for Error {
             fn from(err: $e) -> Self {
-                Error::new()
-                    .source(err)
+                Error::new().source(err)
             }
         }
     };

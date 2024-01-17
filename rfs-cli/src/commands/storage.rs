@@ -1,10 +1,16 @@
 use std::path::PathBuf;
 
+use rfs_api::client::ApiClient;
+use rfs_api::client::fs::storage::{
+    CreateStorage,
+    RetrieveStorage,
+    UpdateStorage,
+};
+
 use clap::{Command, Arg, ArgAction, ArgMatches, value_parser};
 
-use crate::error;
+use crate::error::{self, Context};
 use crate::util;
-use crate::state::AppState;
 
 pub fn command() -> Command {
     Command::new("storage")
@@ -81,60 +87,35 @@ pub fn command() -> Command {
         )
 }
 
-pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
+pub fn create(client: &ApiClient, args: &ArgMatches) -> error::Result<()> {
     let name = args.get_one::<String>("name")
-        .cloned()
         .unwrap();
     let tags = util::tags_from_args("tag", args)?;
 
-    let type_ = match args.subcommand() {
+    match args.subcommand() {
         Some(("local", local_args)) => {
-            let path: PathBuf = local_args.get_one::<PathBuf>("path")
-                .cloned()
-                .unwrap();
+            let path = local_args.get_one::<PathBuf>("path").unwrap();
 
-            rfs_api::fs::storage::CreateStorageType::Local {
-                path
-            }
+            let mut builder = CreateStorage::local(name, path);
+            builder.add_iter_tags(tags);
+
+            let result = builder.send(client)
+                .context("failed to create storage")?
+                .into_payload();
+
+            println!("{:#?}", result);
         },
         _ => unreachable!()
     };
 
-    let action = rfs_api::fs::storage::CreateStorage {
-        name, type_, tags
-    };
-
-    tracing::event!(
-        tracing::Level::DEBUG,
-        "action: {:#?}",
-        action
-    );
-
-    let res = state.client.post(state.server.url.join("/storage")?)
-        .json(&action)
-        .send()?;
-
-    let status = res.status();
-
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedCreatingStorage")
-            .message("failed to create the new storage medium")
-            .source(format!("{:?}", json)));
-    }
-
-    let result = res.json::<rfs_api::Payload<rfs_api::fs::storage::StorageItem>>()?;
-
-    println!("{:?}", result.into_payload());
-
     Ok(())
 }
 
-pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
-    let id = args.get_one::<i64>("id").unwrap();
-    let path = format!("/storage/{}", id);
+pub fn update(client: &ApiClient, args: &ArgMatches) -> error::Result<()> {
+    let id: rfs_lib::ids::StorageId = args.get_one::<i64>("id")
+        .unwrap()
+        .try_into()
+        .context("invalid storage id format")?;
 
     let tags = util::tags_from_args("tag", args)?;
     let add_tags = util::tags_from_args("add-tag", args)?;
@@ -145,88 +126,43 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result<()> {
     };
 
     let mut current = {
-        let res = state.client.get(state.server.url.join(&path)?)
-            .send()?;
+        let result = RetrieveStorage::id(id.clone())
+            .send(client)
+            .context("failed to retrieve storage")?;
 
-        let status = res.status();
+        let Some(payload) = result else {
+            println!("storage not found");
+            return Ok(());
+        };
 
-        if status != reqwest::StatusCode::OK {
-            let json = res.json::<rfs_api::error::ApiError>()?;
-
-            return Err(error::Error::new()
-                .kind("FailedStorageLookup")
-                .message("failed to get the desired storage medium")
-                .source(format!("{:?}", json)));
-        }
-
-        let result = res.json::<rfs_api::Payload<rfs_api::fs::storage::StorageItem>>()?;
-
-        tracing::event!(
-            tracing::Level::INFO,
-            "current storage medium: {:?}",
-            result
-        );
-
-        result.into_payload()
+        payload.into_payload()
     };
 
-    let type_action = match &current.type_ {
-        rfs_api::fs::storage::StorageType::Local(_) => {
-            None
-        }
-    };
+    let mut builder = UpdateStorage::local(id);
 
-    let new_tags = {
-        if tags.len() > 0 {
-            Some(tags)
-        } else if drop_tags.len() > 0 || add_tags.len() > 0 {
-            for tag in drop_tags {
-                current.tags.remove(tag);
-            }
-
-            for (tag, value) in add_tags {
-                current.tags.insert(tag, value);
-            }
-
-            Some(current.tags)
-        } else {
-            None
-        }
-    };
-
-    let action = rfs_api::fs::storage::UpdateStorage {
-        name: args.get_one::<String>("rename").cloned(),
-        type_: type_action,
-        tags: new_tags
-    };
-
-    if !action.has_work() {
-        println!("no changes have been specified");
-        return Ok(());
+    if let Some(name) = args.get_one::<String>("rename") {
+        builder.name(name);
     }
 
-    let res = state.client.put(state.server.url.join(&path)?)
-        .json(&action)
-        .send()?;
+    if !tags.is_empty() {
+        builder.add_iter_tags(tags);
+    } else if !drop_tags.is_empty() || !add_tags.is_empty() {
+        for tag in drop_tags {
+            current.tags.remove(tag);
+        }
 
-    let status = res.status();
+        for (tag, value) in add_tags {
+            current.tags.insert(tag, value);
+        }
 
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedUpdateStorage")
-            .message("failed to update the desired storage medium")
-            .source(format!("{:?}", json)));
+        builder.add_iter_tags(current.tags);
     }
 
-    let result = res.json::<rfs_api::Payload<rfs_api::fs::storage::StorageItem>>()?;
+    let result = builder.send(client)
+        .context("failed to update storage")?
+        .into_payload();
 
-    tracing::event!(
-        tracing::Level::INFO,
-        "{:?}",
-        result
-    );
+    println!("{:#?}", result);
 
     Ok(())
 }

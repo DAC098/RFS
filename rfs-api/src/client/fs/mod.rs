@@ -84,6 +84,29 @@ impl CreateDir {
         self
     }
 
+    pub fn add_iter_tags<I, T, V>(&mut self, iter: I) -> &mut Self
+    where
+        T: Into<String>,
+        V: Into<String>,
+        I: IntoIterator<Item = (T, Option<V>)>
+    {
+        if let Some(tags) = &mut self.body.tags {
+            for (k, v) in iter {
+                tags.insert(k.into(), v.map(|v| v.into()));
+            }
+        } else {
+            let mut tags = Tags::new();
+
+            for (k, v) in iter {
+                tags.insert(k.into(), v.map(|v| v.into()));
+            }
+
+            self.body.tags = Some(tags);
+        }
+
+        self
+    }
+
     pub fn send(self, client: &ApiClient) -> Result<Payload<Item>, RequestError> {
         //self.body.assert_ok()?;
 
@@ -98,49 +121,67 @@ impl CreateDir {
     }
 }
 
-pub struct SendReadable<R>
-where
-    R: std::io::Read + Send + 'static
-{
-    parent: ids::FSId,
+pub struct SendReadable<R> {
+    id: ids::FSId,
     reader: R,
-    basename: String,
+    basename: Option<String>,
     content_type: Option<mime::Mime>,
+    content_length: Option<u64>,
+}
+
+impl<R> SendReadable<R> {
+    pub fn create<B>(parent: ids::FSId, basename: B, reader: R) -> SendReadable<R>
+    where
+        B: Into<String>,
+    {
+        SendReadable {
+            id: parent,
+            reader,
+            basename: Some(basename.into()),
+            content_type: None,
+            content_length: None,
+        }
+    }
+
+    pub fn update(id: ids::FSId, reader: R) -> SendReadable<R> {
+        SendReadable {
+            id,
+            reader,
+            basename: None,
+            content_type: None,
+            content_length: None,
+        }
+    }
+
+    pub fn content_type(&mut self, mime: mime::Mime) -> &mut Self {
+        self.content_type = Some(mime);
+        self
+    }
+
+    pub fn content_length(&mut self, length: u64) -> &mut Self {
+        self.content_length = Some(length);
+        self
+    }
 }
 
 impl<R> SendReadable<R>
 where
     R: std::io::Read + Send + 'static
 {
-    pub fn reader<T, B>(parent: ids::FSId, basename: B, reader: T) -> SendReadable<T>
-    where
-        B: Into<String>,
-        T: std::io::Read + Send
-    {
-        SendReadable {
-            parent,
-            reader,
-            basename: basename.into(),
-            content_type: None,
-        }
-    }
-
-    pub fn content_type<M>(&mut self, content_type: M) -> Result<&mut Self, mime::FromStrError>
-    where
-        M: AsRef<str>
-    {
-        self.content_type = Some(content_type.as_ref().parse()?);
-
-        Ok(self)
-    }
-
     pub fn send(self, client: &ApiClient) -> Result<Payload<Item>, RequestError> {
         let content_type = self.content_type.unwrap_or(mime::APPLICATION_OCTET_STREAM);
-        let res = client.put(format!("/fs/{}", self.parent.id()))
-            .header("x-basename", self.basename)
-            .header("content-type", content_type.to_string())
-            .body(Body::new(self.reader))
-            .send()?;
+        let mut builder = client.put(format!("/fs/{}", self.id.id()))
+            .header("content-type", content_type.to_string());
+
+        if let Some(length) = self.content_length {
+            builder = builder.header("content-length", length);
+        }
+
+        if let Some(basename) = self.basename {
+            builder = builder.header("x-basename", basename);
+        }
+
+        let res = builder.body(Body::new(self.reader)).send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(res.json()?),
@@ -182,6 +223,29 @@ impl UpdateMetadata {
             tags.insert(tag.into(), value.map(|v| v.into()));
         } else {
             self.body.tags = Some(Tags::from([(tag.into(), value.map(|v| v.into()))]));
+        }
+
+        self
+    }
+
+    pub fn add_iter_tags<I, T, V>(&mut self, iter: I) -> &mut Self
+    where
+        T: Into<String>,
+        V: Into<String>,
+        I: IntoIterator<Item = (T, Option<V>)>
+    {
+        if let Some(tags) = &mut self.body.tags {
+            for (k, v) in iter {
+                tags.insert(k.into(), v.map(|v| v.into()));
+            }
+        } else {
+            let mut tags = Tags::new();
+
+            for (k, v) in iter {
+                tags.insert(k.into(), v.map(|v| v.into()));
+            }
+
+            self.body.tags = Some(tags);
         }
 
         self
