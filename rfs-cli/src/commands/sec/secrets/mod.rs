@@ -1,8 +1,8 @@
+use rfs_api::client::ApiClient;
 use clap::{Command, ArgMatches};
 
 use crate::error;
 use crate::util;
-use crate::state::AppState;
 
 mod password;
 mod session;
@@ -16,20 +16,20 @@ pub fn command() -> Command {
         .subcommand(session::command())
 }
 
-pub fn password(state: &mut AppState, args: &ArgMatches) -> error::Result {
+pub fn password(client: &ApiClient, args: &ArgMatches) -> error::Result {
     match args.subcommand() {
-        Some(("get", get_matches)) => password::get(state, get_matches),
-        Some(("update", _update_matches)) => password::update(state, _update_matches),
-        Some(("remove", _remove_matches)) => password::remove(state, _remove_matches),
+        Some(("get", get_matches)) => password::get(client, get_matches),
+        Some(("update", _update_matches)) => password::update(client, _update_matches),
+        Some(("remove", _remove_matches)) => password::remove(client, _remove_matches),
         _ => unreachable!()
     }
 }
 
-pub fn session(state: &mut AppState, args: &ArgMatches) -> error::Result {
+pub fn session(client: &ApiClient, args: &ArgMatches) -> error::Result {
     match args.subcommand() {
-        Some(("get", _get_matches)) => session::get(state, _get_matches),
-        Some(("update", _update_matches)) => session::update(state, _update_matches),
-        Some(("remove", _remove_matches)) => session::remove(state, _remove_matches),
+        Some(("get", _get_matches)) => session::get(client, _get_matches),
+        Some(("update", _update_matches)) => session::update(client, _update_matches),
+        Some(("remove", _remove_matches)) => session::remove(client, _remove_matches),
         _ => unreachable!()
     }
 }

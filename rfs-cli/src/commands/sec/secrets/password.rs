@@ -1,8 +1,15 @@
+use rfs_api::client::ApiClient;
+use rfs_api::client::sec::secrets::{
+    CreatePasswordSecret,
+    QueryPasswordSecrets,
+    RetrievePasswordSecret,
+    DeletePasswordSecret
+};
+
 use clap::{Command, Arg, ArgMatches, value_parser};
 
-use crate::error;
+use crate::error::{self, Context};
 use crate::util;
-use crate::state::AppState;
 
 pub fn command() -> Command {
     Command::new("password")
@@ -34,93 +41,45 @@ pub fn command() -> Command {
         )
 }
 
-pub fn get(state: &mut AppState, args: &ArgMatches) -> error::Result {
+pub fn get(client: &ApiClient, args: &ArgMatches) -> error::Result {
     if let Some(version) = args.get_one::<u64>("version") {
-        let path = format!("/sec/secrets/password/{}", version);
-        let url = state.server.url.join(&path)?;
-        let res = state.client.get(url)
-            .send()?;
+        let result = RetrievePasswordSecret::version(*version)
+            .send(client)
+            .context("failed to retrieve password secret")?;
 
-        let status = res.status();
-
-        if status != reqwest::StatusCode::OK {
-            let json = res.json::<rfs_api::error::ApiError>()?;
-
-            return Err(error::Error::new()
-                .kind("FailedPasswordSecretsLookup")
-                .message("failed to retrieve password secrets version")
-                .source(json));
+        if let Some(payload) = result {
+            println!("{:?}", payload.into_payload());
+        } else {
+            println!("password secret not found");
         }
-
-        let result = res.json::<rfs_api::Payload<rfs_api::sec::secrets::PasswordVersion>>()?;
-
-        println!("{:?}", result);
     } else {
-        let path = "/sec/secrets/password";
-        let url = state.server.url.join(path)?;
-        let res = state.client.get(url)
-            .send()?;
+        let result = QueryPasswordSecrets::new()
+            .send(client)
+            .context("failed to retrieve password secrets")?
+            .into_payload();
 
-        let status = res.status();
-
-        if status != reqwest::StatusCode::OK {
-            let json = res.json::<rfs_api::error::ApiError>()?;
-
-            return Err(error::Error::new()
-                .kind("FailedPasswordSecretsLookup")
-                .message("failed to retrieve known password secrets")
-                .source(json));
+        for secret in result {
+            println!("{:?}", secret);
         }
-
-        let result: rfs_api::Payload<Vec<rfs_api::sec::secrets::PasswordListItem>> = res.json()?;
-
-        println!("{:?}", result);
     }
 
     Ok(())
 }
 
-pub fn update(state: &mut AppState, _args: &ArgMatches) -> error::Result {
-    let path = "/sec/secrets/password";
-    let url = state.server.url.join(path)?;
-    let res = state.client.post(url)
-        .send()?;
-
-    let status = res.status();
-
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedPasswordSecretsUpdate")
-            .message("failed to update password secrets")
-            .source(json));
-    }
-
-    println!("updated password secrets with new value");
+pub fn update(client: &ApiClient, _args: &ArgMatches) -> error::Result {
+    CreatePasswordSecret::new()
+        .send(client)
+        .context("failed to create password secret")?;
 
     Ok(())
 }
 
-pub fn remove(state: &mut AppState, args: &ArgMatches) -> error::Result {
+pub fn remove(client: &ApiClient, args: &ArgMatches) -> error::Result {
     let version = args.get_one::<u64>("version").unwrap();
-    let path = format!("/sec/secrets/password/{}", version);
-    let url = state.server.url.join(&path)?;
-    let res = state.client.delete(url)
-        .send()?;
 
-    let status = res.status();
-
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedPasswordSecretsRemove")
-            .message("failed to remove password secret version")
-            .source(json));
-    }
-
-    println!("removed password secret version");
+    DeletePasswordSecret::version(*version)
+        .send(client)
+        .context("failed to remove password secret")?;
 
     Ok(())
 }

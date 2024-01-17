@@ -238,7 +238,7 @@ pub async fn delete(
 
     let result = tokio::try_join!(
         transaction.execute(
-            "delete from authz_permissions where role_id $1",
+            "delete from authz_permissions where role_id = $1",
             &query_params
         ),
         transaction.execute(
@@ -256,7 +256,7 @@ pub async fn delete(
     }
 
     let _ = transaction.execute(
-        "delete from authz_roles where id = $!",
+        "delete from authz_roles where id = $1",
         &query_params
     ).await?;
 

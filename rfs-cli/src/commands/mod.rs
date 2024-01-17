@@ -137,10 +137,10 @@ pub fn auth(client: &ApiClient, args: &ArgMatches) -> error::Result {
     }
 }
 
-pub fn sec(state: &mut AppState, args: &ArgMatches) -> error::Result {
+pub fn sec(client: &ApiClient, args: &ArgMatches) -> error::Result {
     match args.subcommand() {
-        Some(("secrets", secrets_matches)) => sec::secrets(state, secrets_matches),
-        Some(("roles", roles_matches)) => sec::roles(state, roles_matches),
+        Some(("secrets", secrets_matches)) => sec::secrets(client, secrets_matches),
+        Some(("roles", roles_matches)) => sec::roles(client, roles_matches),
         _ => unreachable!()
     }
 }

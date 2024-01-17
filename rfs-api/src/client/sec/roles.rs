@@ -43,7 +43,7 @@ impl RetrieveRole {
         RetrieveRole { id }
     }
 
-    pub fn send(self, client: &ApiClient) -> Result<Option<Payload<Vec<Role>>>, RequestError> {
+    pub fn send(self, client: &ApiClient) -> Result<Option<Payload<Role>>, RequestError> {
         let res = client.get(format!("/sec/roles/{}", self.id)).send()?;
 
         match res.status() {

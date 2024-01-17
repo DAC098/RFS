@@ -1,8 +1,14 @@
+use rfs_api::client::ApiClient;
+use rfs_api::client::sec::secrets::{
+    CreateSessionSecret,
+    DeleteSessionSecret,
+    QuerySessionSecrets,
+};
+
 use clap::{Command, ArgMatches};
 
-use crate::error;
+use crate::error::{self, Context};
 use crate::util;
-use crate::state::AppState;
 
 pub fn command() -> Command {
     Command::new("session")
@@ -23,71 +29,31 @@ pub fn command() -> Command {
         )
 }
 
-pub fn get(state: &mut AppState, _args: &ArgMatches) -> error::Result {
-    let path = "/sec/secrets/session";
-    let url = state.server.url.join(path)?;
-    let res = state.client.get(url)
-        .send()?;
+pub fn get(client: &ApiClient, _args: &ArgMatches) -> error::Result {
+    let result = QuerySessionSecrets::new()
+        .send(client)
+        .context("failed to retrieve session secrets")?
+        .into_payload();
 
-    let status = res.status();
-
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedSessionSecretsLookup")
-            .message("failed to retrieve known session secrets")
-            .source(json));
+    for secret in result {
+        println!("{:?}", secret);
     }
-
-    let result: rfs_api::Payload<Vec<rfs_api::sec::secrets::SessionListItem>> = res.json()?;
-
-    println!("{:?}", result);
 
     Ok(())
 }
 
-pub fn update(state: &mut AppState, _args: &ArgMatches) -> error::Result {
-    let path = "/sec/secrets/session";
-    let url = state.server.url.join(path)?;
-    let res = state.client.post(url)
-        .send()?;
-
-    let status = res.status();
-
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedSessionSecretsUpdate")
-            .message("failed to update session secrets")
-            .source(json));
-    }
-
-    println!("updated session secrets with new value");
+pub fn update(client: &ApiClient, _args: &ArgMatches) -> error::Result {
+    CreateSessionSecret::new()
+        .send(client)
+        .context("failed to create session secret")?;
 
     Ok(())
 }
 
-pub fn remove(state: &mut AppState, _args: &ArgMatches) -> error::Result {
-    let path = "/sec/secrets/session";
-    let url = state.server.url.join(path)?;
-    let res = state.client.delete(url)
-        .query(&[("amount", 1)])
-        .send()?;
-
-    let status = res.status();
-
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedSessionSecretsRemove")
-            .message("failed to remove session secret")
-            .source(json));
-    }
-
-    println!("removed session secret");
+pub fn remove(client: &ApiClient, _args: &ArgMatches) -> error::Result {
+    DeleteSessionSecret::amount(1)
+        .send(client)
+        .context("failed to remove session secret")?;
 
     Ok(())
 }

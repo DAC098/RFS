@@ -124,7 +124,7 @@ fn run_subcommand(client: &mut ApiClient, state: &mut state::AppState, command: 
         "fs" => commands::fs(state, matches),
         "user" => commands::user(client, matches),
         "auth" => commands::auth(client, matches),
-        "sec" => commands::sec(state, matches),
+        "sec" => commands::sec(client, matches),
         _ => {
             println!("uknown command");
 

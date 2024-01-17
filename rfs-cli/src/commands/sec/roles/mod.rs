@@ -1,11 +1,25 @@
 use std::collections::HashSet;
 
+use rfs_api::client::ApiClient;
+use rfs_api::client::sec::roles::{
+    AddRoleGroups,
+    AddRoleUsers,
+    CreateRole,
+    DeleteRole,
+    DropRoleGroups,
+    DropRoleUsers,
+    QueryRoleGroups,
+    QueryRoleUsers,
+    QueryRoles,
+    RetrieveRole,
+    UpdateRole
+};
 use rfs_lib::sec::authz::permission::{Scope, Ability};
+
 use clap::{Command, Arg, ArgAction, ArgMatches, value_parser};
 
-use crate::error;
+use crate::error::{self, Context};
 use crate::util;
-use crate::state::AppState;
 
 pub fn id_arg() -> Arg {
     Arg::new("id")
@@ -168,39 +182,26 @@ pub fn command() -> Command {
         )
 }
 
-pub fn get(state: &mut AppState, args: &ArgMatches) -> error::Result {
-    let given_id: bool;
-    let path = if let Some(id) = args.get_one::<rfs_lib::ids::RoleId>("id") {
-        given_id = true;
-        format!("/sec/roles/{}", id)
+pub fn get(client: &ApiClient, args: &ArgMatches) -> error::Result {
+    if let Some(id) = args.get_one::<rfs_lib::ids::RoleId>("id") {
+        let result = RetrieveRole::id(*id)
+            .send(client)
+            .context("failed to retrieve role")?;
+
+        if let Some(payload) = result {
+            println!("{:#?}", payload.into_payload());
+        } else {
+            println!("role not found");
+        }
     } else {
-        given_id = false;
-        format!("/sec/roles")
-    };
+        let result = QueryRoles::new()
+            .send(client)
+            .context("failed to retrieve roles")?
+            .into_payload();
 
-    let url = state.server.url.join(&path)?;
-    let res = state.client.get(url)
-        .send()?;
-
-    let status = res.status();
-
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedRoleLookup")
-            .message("failed to lookup desired role information")
-            .source(json));
-    }
-
-    if given_id {
-        let result = res.json::<rfs_api::Payload<rfs_api::sec::roles::Role>>()?;
-
-        println!("{:#?}", result);
-    } else {
-        let result = res.json::<rfs_api::Payload<Vec<rfs_api::sec::roles::RoleListItem>>>()?;
-
-        println!("{:#?}", result);
+        for role in result {
+            println!("{:#?}", role);
+        }
     }
 
     Ok(())
@@ -249,88 +250,66 @@ fn parse_permissions(name: &str, args: &ArgMatches) -> error::Result<HashSet<(Sc
 
     if invalid.len() != 0 {
         return Err(error::Error::new()
-            .kind("InvalidFormat")
-            .message("provided permissions are an invalid format")
-            .source(format!("{:?}", invalid)));
+            .context(format!("provided permissions are an invalid format: {:?}", invalid)));
     }
 
     if invalid_scope.len() != 0 {
         return Err(error::Error::new()
-            .kind("InvalidPermissionScope")
-            .message("provided permissions that have an invalid scope")
-            .source(format!("{:?}", invalid_scope)));
+            .context(format!("provided permissions that have an invalid scope: {:?}", invalid_scope)));
     }
 
     if invalid_ability.len() != 0 {
         return Err(error::Error::new()
-            .kind("InvalidPermissionAbility")
-            .message("provided permissions that have an invalid ability")
-            .source(format!("{:?}", invalid_ability)));
+            .context(format!("provided permissions that have an invalid ability: {:?}", invalid_ability)));
     }
 
     Ok(check)
 }
 
-pub fn create(state: &mut AppState, args: &ArgMatches) -> error::Result {
+pub fn create(client: &ApiClient, args: &ArgMatches) -> error::Result {
+    let name = args.get_one::<String>("name").unwrap();
     let permissions = perm_tuple_to_role_permission(parse_permissions("permission", args)?);
-    let action = rfs_api::sec::roles::CreateRole {
-        name: args.get_one("name").cloned().unwrap(),
-        permissions
-    };
 
-    let url = state.server.url.join("/sec/roles")?;
-    let res = state.client.post(url)
-        .json(&action)
-        .send()?;
+    let mut builder = CreateRole::name(name);
+    builder.add_iter_permission(permissions);
 
-    let status = res.status();
+    let result = builder.send(client)
+        .context("failed to create role")?
+        .into_payload();
 
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedCreatingRole")
-            .message("failed to create the desired role")
-            .source(json));
-    }
-
-    let result = res.json::<rfs_api::Payload<rfs_api::sec::roles::Role>>()?;
-
-    println!("{:#?}", result);
+    println!("{:?}", result);
 
     Ok(())
 }
 
-pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result {
-    let id: rfs_lib::ids::RoleId = args.get_one("id").cloned().unwrap();
-    let path = format!("/sec/roles/{}", id);
+pub fn update(client: &ApiClient, args: &ArgMatches) -> error::Result {
+    let id = args.get_one::<rfs_lib::ids::RoleId>("id").unwrap();
 
     let permissions = parse_permissions("permission", args)?;
     let add_permissions = parse_permissions("add-permission", args)?;
     let drop_permissions = parse_permissions("drop-permission", args)?;
 
+    let result = RetrieveRole::id(*id)
+        .send(client)
+        .context("failed to retrieve role")?;
+
     let current = {
-        let url = state.server.url.join(&path)?;
-        let res = state.client.get(url).send()?;
+        let Some(payload) = result else {
+            println!("role not found");
+            return Ok(());
+        };
 
-        let status = res.status();
-
-        if status != reqwest::StatusCode::OK {
-            let json = res.json::<rfs_api::error::ApiError>()?;
-
-            return Err(error::Error::new()
-                .kind("FailedRoleLookup")
-                .message("failed to get the desired role")
-                .source(json));
-        }
-
-        let result = res.json::<rfs_api::Payload<rfs_api::sec::roles::Role>>()?;
-
-        result.into_payload()
+        payload.into_payload()
     };
 
-    let new_permissions = if permissions.len() > 0 {
-        Some(perm_tuple_to_role_permission(permissions))
+    let mut builder = UpdateRole::id(*id);
+
+    if let Some(name) = args.get_one::<String>("name") {
+        builder.name(name);
+    }
+
+    if permissions.len() > 0 {
+        builder.add_iter_permissions(perm_tuple_to_role_permission(permissions));
     } else if drop_permissions.len() > 0 || add_permissions.len() > 0 {
         let mut current_permissions: HashSet<(Scope, Ability)> = HashSet::from_iter(
             current.permissions.iter()
@@ -345,101 +324,60 @@ pub fn update(state: &mut AppState, args: &ArgMatches) -> error::Result {
             current_permissions.insert(key);
         }
 
-        Some(perm_tuple_to_role_permission(current_permissions))
+        builder.add_iter_permissions(perm_tuple_to_role_permission(current_permissions));
+    }
+
+    let result = builder.send(client)
+        .context("failed to update role")?
+        .into_payload();
+
+    println!("{:#?}", result);
+
+    Ok(())
+}
+
+pub fn delete(client: &ApiClient, args: &ArgMatches) -> error::Result {
+    let id = args.get_one::<rfs_lib::ids::RoleId>("id").unwrap();
+
+    DeleteRole::id(*id)
+        .send(client)
+        .context("failed to delete role")?;
+
+    Ok(())
+}
+
+pub fn users(client: &ApiClient, args: &ArgMatches) -> error::Result {
+    match args.subcommand() {
+        Some(("get", get_matches)) => get_users(client, get_matches),
+        Some(("add", add_matches)) => add_users(client, add_matches),
+        Some(("drop", drop_matches)) => drop_users(client, drop_matches),
+        _ => unreachable!()
+    }
+}
+
+pub fn groups(client: &ApiClient, args: &ArgMatches) -> error::Result {
+    match args.subcommand() {
+        Some(("get", get_matches)) => get_groups(client, get_matches),
+        Some(("add", add_matches)) => add_groups(client, add_matches),
+        Some(("drop", drop_matches)) => drop_groups(client, drop_matches),
+        _ => unreachable!()
+    }
+}
+
+pub fn get_users(client: &ApiClient, args: &ArgMatches) -> error::Result {
+    let id = args.get_one::<rfs_lib::ids::RoleId>("id").unwrap();
+
+    let result = QueryRoleUsers::id(*id)
+        .send(client)
+        .context("failed to retrieve role users")?;
+
+    if let Some(payload) = result {
+        for user in payload.into_payload() {
+            println!("{:#?}", user);
+        }
     } else {
-        None
-    };
-
-    let action = rfs_api::sec::roles::UpdateRole {
-        name: args.get_one("name").cloned(),
-        permissions: new_permissions,
-    };
-
-    let url = state.server.url.join(&path)?;
-    let res = state.client.patch(url)
-        .json(&action)
-        .send()?;
-
-    let status = res.status();
-
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedRoleUpdate")
-            .message("failed to update the desired role")
-            .source(json));
+        println!("role not found");
     }
-
-    let result = res.json::<rfs_api::Payload<rfs_api::sec::roles::Role>>()?;
-
-    println!("{:#?}", result);
-
-    Ok(())
-}
-
-pub fn delete(state: &mut AppState, args: &ArgMatches) -> error::Result {
-    let id = args.get_one::<rfs_lib::ids::RoleId>("id").unwrap();
-    let path = format!("/sec/roles/{}", id);
-
-    let url = state.server.url.join(&path)?;
-    let res = state.client.delete(url)
-        .send()?;
-
-    let status = res.status();
-
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedRoleDelete")
-            .message("failed to delete the desired role")
-            .source(json));
-    }
-
-    Ok(())
-}
-
-pub fn users(state: &mut AppState, args: &ArgMatches) -> error::Result {
-    match args.subcommand() {
-        Some(("get", get_matches)) => get_users(state, get_matches),
-        Some(("add", add_matches)) => add_users(state, add_matches),
-        Some(("drop", drop_matches)) => drop_users(state, drop_matches),
-        _ => unreachable!()
-    }
-}
-
-pub fn groups(state: &mut AppState, args: &ArgMatches) -> error::Result {
-    match args.subcommand() {
-        Some(("get", get_matches)) => get_groups(state, get_matches),
-        Some(("add", add_matches)) => add_groups(state, add_matches),
-        Some(("drop", drop_matches)) => drop_groups(state, drop_matches),
-        _ => unreachable!()
-    }
-}
-
-pub fn get_users(state: &mut AppState, args: &ArgMatches) -> error::Result {
-    let id = args.get_one::<rfs_lib::ids::RoleId>("id").unwrap();
-
-    let path = format!("/sec/roles/{}/users", id);
-    let url = state.server.url.join(&path)?;
-    let res = state.client.get(url)
-        .send()?;
-
-    let status = res.status();
-
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedRoleUsersLookup")
-            .message("failed to retrieve a list of users in the desired role")
-            .source(json));
-    }
-
-    let result = res.json::<rfs_api::Payload<Vec<rfs_api::sec::roles::RoleUser>>>()?;
-
-    println!("{:#?}", result);
 
     Ok(())
 }
@@ -452,11 +390,7 @@ fn get_user_ids(args: &ArgMatches) -> error::Result<Vec<rfs_lib::ids::UserId>> {
     };
 
     for id in list {
-        let flake = id.try_into()
-            .map_err(|e| error::Error::new()
-                .kind("InvalidUserId")
-                .message("A provided user id is not a valid format")
-                .source(e))?;
+        let flake = id.try_into().context("invalid user id format")?;
 
         rtn.push(flake);
     }
@@ -474,8 +408,7 @@ fn get_group_ids(args: &ArgMatches) -> error::Result<Vec<rfs_lib::ids::GroupId>>
     for id in list {
         if *id <= 0 {
             return Err(error::Error::new()
-                .kind("InvalidGroupId")
-                .message("a provided group id is not a valid format"));
+                .context("a provided group id is not a valid format"));
         }
 
         rtn.push(*id);
@@ -484,132 +417,68 @@ fn get_group_ids(args: &ArgMatches) -> error::Result<Vec<rfs_lib::ids::GroupId>>
     Ok(rtn)
 }
 
-pub fn add_users(state: &mut AppState, args: &ArgMatches) -> error::Result {
+pub fn add_users(client: &ApiClient, args: &ArgMatches) -> error::Result {
     let id = args.get_one::<rfs_lib::ids::RoleId>("id").unwrap();
-    let action = rfs_api::sec::roles::AddRoleUser {
-        ids: get_user_ids(args)?
-    };
+    let user_ids = get_user_ids(args)?;
 
-    let path = format!("/sec/roles/{}/users", id);
-    let url = state.server.url.join(&path)?;
-    let res = state.client.post(url)
-        .json(&action)
-        .send()?;
+    let mut builder = AddRoleUsers::id(*id);
+    builder.add_iter_id(user_ids);
+    builder.send(client)
+        .context("failed to add users to role")?;
 
-    let status = res.status();
+    Ok(())
+}
 
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
+pub fn drop_users(client: &ApiClient, args: &ArgMatches) -> error::Result {
+    let id = args.get_one::<rfs_lib::ids::RoleId>("id").unwrap();
+    let user_ids = get_user_ids(args)?;
 
-        return Err(error::Error::new()
-            .kind("FailedAddingRoleUsers")
-            .message("failed to add new users to the desired role")
-            .source(json));
+    let mut builder = DropRoleUsers::id(*id);
+    builder.add_iter_id(user_ids);
+    builder.send(client)
+        .context("failed to drop users from role")?;
+
+    Ok(())
+}
+
+pub fn get_groups(client: &ApiClient, args: &ArgMatches) -> error::Result {
+    let id = args.get_one::<rfs_lib::ids::RoleId>("id").unwrap();
+
+    let result = QueryRoleGroups::id(*id)
+        .send(client)
+        .context("failed to retrieve role groups")?;
+
+    if let Some(payload) = result {
+        for group in payload.into_payload() {
+            println!("{:#?}", group);
+        }
+    } else {
+        println!("role not found");
     }
 
     Ok(())
 }
 
-pub fn drop_users(state: &mut AppState, args: &ArgMatches) -> error::Result {
+pub fn add_groups(client: &ApiClient, args: &ArgMatches) -> error::Result {
     let id = args.get_one::<rfs_lib::ids::RoleId>("id").unwrap();
-    let action = rfs_api::sec::roles::DropRoleUser {
-        ids: get_user_ids(args)?
-    };
+    let group_ids = get_group_ids(args)?;
 
-    let path = format!("/sec/roles/{}/users", id);
-    let url = state.server.url.join(&path)?;
-    let res = state.client.delete(url)
-        .json(&action)
-        .send()?;
-
-    let status = res.status();
-
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedDroppingRoleUsers")
-            .message("failed to drop users from the desired role")
-            .source(json));
-    }
+    let mut builder = AddRoleGroups::id(*id);
+    builder.add_iter_id(group_ids);
+    builder.send(client)
+        .context("failed to add groups to role")?;
 
     Ok(())
 }
 
-pub fn get_groups(state: &mut AppState, args: &ArgMatches) -> error::Result {
+pub fn drop_groups(client: &ApiClient, args: &ArgMatches) -> error::Result {
     let id = args.get_one::<rfs_lib::ids::RoleId>("id").unwrap();
+    let group_ids = get_group_ids(args)?;
 
-    let path = format!("/sec/roles/{}/groups", id);
-    let url = state.server.url.join(&path)?;
-    let res = state.client.get(url)
-        .send()?;
-
-    let status = res.status();
-
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedRoleGroupsLookup")
-            .message("failed to retrieve a list of groups in the desired role")
-            .source(json));
-    }
-
-    let result = res.json::<rfs_api::Payload<Vec<rfs_api::sec::roles::RoleGroup>>>()?;
-
-    println!("{:#?}", result);
-
-    Ok(())
-}
-
-pub fn add_groups(state: &mut AppState, args: &ArgMatches) -> error::Result {
-    let id = args.get_one::<rfs_lib::ids::RoleId>("id").unwrap();
-    let action = rfs_api::sec::roles::AddRoleGroup {
-        ids: get_group_ids(args)?
-    };
-
-    let path = format!("/sec/roles/{}/groups", id);
-    let url = state.server.url.join(&path)?;
-    let res = state.client.post(url)
-        .json(&action)
-        .send()?;
-
-    let status = res.status();
-
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedAddingRoleGroups")
-            .message("failed to add new groups to the desired role")
-            .source(json));
-    }
-
-    Ok(())
-}
-
-pub fn drop_groups(state: &mut AppState, args: &ArgMatches) -> error::Result {
-    let id = args.get_one::<rfs_lib::ids::RoleId>("id").unwrap();
-    let action = rfs_api::sec::roles::DropRoleGroup {
-        ids: get_group_ids(args)?
-    };
-
-    let path = format!("/sec/roles/{}/groups", id);
-    let url = state.server.url.join(&path)?;
-    let res = state.client.delete(url)
-        .json(&action)
-        .send()?;
-
-    let status = res.status();
-
-    if status != reqwest::StatusCode::OK {
-        let json = res.json::<rfs_api::error::ApiError>()?;
-
-        return Err(error::Error::new()
-            .kind("FailedDroppingRoleGroups")
-            .message("failed to drop groups from the desired role")
-            .source(json));
-    }
+    let mut builder = DropRoleGroups::id(*id);
+    builder.add_iter_id(group_ids);
+    builder.send(client)
+        .context("failed to drop groups from role")?;
 
     Ok(())
 }
