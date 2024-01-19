@@ -3,7 +3,7 @@ pub mod serde;
 pub mod validation;
 pub mod history;
 
-pub mod user;
+pub mod users;
 pub mod sec;
 pub mod tags;
 pub mod storage;

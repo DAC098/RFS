@@ -31,7 +31,7 @@ pub async fn post(
         }
     }
 
-    if !rfs_lib::user::username_valid(&json.username) {
+    if !rfs_lib::users::username_valid(&json.username) {
         return Err(error::Error::api((
             error::ApiErrorKind::ValidationFailed,
             error::Detail::Keys(vec![String::from("username")])

@@ -88,7 +88,7 @@ pub async fn patch(
         if let Some(username) = json.username {
             use_comma = true;
 
-            if !rfs_lib::user::username_valid(&username) {
+            if !rfs_lib::users::username_valid(&username) {
                 return Err(error::Error::api((
                     error::ApiErrorKind::ValidationFailed,
                     error::Detail::with_key("username")
@@ -121,7 +121,7 @@ pub async fn patch(
             }
 
             if let Some(email) = opt_email {
-                if !rfs_lib::user::email_valid(&email) {
+                if !rfs_lib::users::email_valid(&email) {
                     return Err(error::Error::api((
                         error::ApiErrorKind::ValidationFailed,
                         error::Detail::with_key("email")

@@ -9,7 +9,7 @@ pub struct RequestUser {
 
 impl RequestUser {
     pub fn validate(&self) -> Result<(), ApiError> {
-        if !rfs_lib::user::username_valid(&self.username) {
+        if !rfs_lib::users::username_valid(&self.username) {
             return Err(ApiError::from((
                 ApiErrorKind::ValidationFailed,
                 Detail::with_key("username")

@@ -31,7 +31,7 @@ pub struct CreateGroup {
 
 impl Validator for CreateGroup {
     fn validate(&self) -> Result<(), ApiError> {
-        if !rfs_lib::user::groups::name_valid(&self.name) {
+        if !rfs_lib::users::groups::name_valid(&self.name) {
             Err(ApiError::from((
                 ApiErrorKind::ValidationFailed,
                 Detail::with_key("name")
@@ -49,7 +49,7 @@ pub struct UpdateGroup {
 
 impl Validator for UpdateGroup {
     fn validate(&self) -> Result<(), ApiError> {
-        if !rfs_lib::user::groups::name_valid(&self.name) {
+        if !rfs_lib::users::groups::name_valid(&self.name) {
             Err(ApiError::from((
                 ApiErrorKind::ValidationFailed,
                 Detail::with_key("name")

@@ -75,7 +75,7 @@ pub async fn post(
     let id = state.ids().wait_user_id()?;
     let username = json.username;
 
-    if !rfs_lib::user::username_valid(&username) {
+    if !rfs_lib::users::username_valid(&username) {
         return Err(error::Error::api((
             error::ApiErrorKind::ValidationFailed,
             error::Detail::with_key("username")
@@ -83,7 +83,7 @@ pub async fn post(
     };
 
     let email = if let Some(email) = json.email {
-        if !rfs_lib::user::email_valid(&email) {
+        if !rfs_lib::users::email_valid(&email) {
             return Err(error::Error::api((
                 error::ApiErrorKind::ValidationFailed,
                 error::Detail::with_key("email")

@@ -40,12 +40,12 @@ impl Validator for CreateUser {
     fn validate(&self) -> Result<(), ApiError> {
         let mut invalid = Vec::new();
 
-        if !rfs_lib::user::username_valid(&self.username) {
+        if !rfs_lib::users::username_valid(&self.username) {
             invalid.push("username");
         }
 
         if let Some(email) = &self.email {
-            if rfs_lib::user::email_valid(email) {
+            if rfs_lib::users::email_valid(email) {
                 invalid.push("email");
             }
         }
@@ -73,14 +73,14 @@ impl Validator for UpdateUser {
         let mut invalid = Vec::new();
 
         if let Some(username) = &self.username {
-            if !rfs_lib::user::username_valid(username) {
+            if !rfs_lib::users::username_valid(username) {
                 invalid.push("username");
             }
         }
 
         if let Some(maybe_email) = &self.email {
             if let Some(email) = maybe_email {
-                if !rfs_lib::user::email_valid(email) {
+                if !rfs_lib::users::email_valid(email) {
                     invalid.push("email");
                 }
             }
