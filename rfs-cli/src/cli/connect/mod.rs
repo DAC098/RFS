@@ -4,13 +4,12 @@ use rfs_api::client::auth::session::{
     RequestAuth,
     SubmitAuth,
     SubmitVerify,
-    DropSession,
 };
 
 use crate::input;
 use crate::error::{self, Context};
 
-fn submit_user(
+pub fn submit_user(
     client: &mut ApiClient
 ) -> error::Result<Option<rfs_api::auth::session::RequestedAuth>> {
     loop {
@@ -75,7 +74,7 @@ fn submit_password(client: &ApiClient) -> error::Result<Option<rfs_api::auth::se
     }
 }
 
-fn submit_auth(
+pub fn submit_auth(
     client: &ApiClient,
     auth_method: rfs_api::auth::session::RequestedAuth
 ) -> error::Result<Option<rfs_api::auth::session::RequestedVerify>> {
@@ -126,7 +125,7 @@ fn submit_totp(client: &ApiClient, digits: u32) -> error::Result {
     }
 }
 
-fn submit_verify(
+pub fn submit_verify(
     client: &ApiClient,
     verify_method: rfs_api::auth::session::RequestedVerify
 ) -> error::Result {
@@ -135,24 +134,4 @@ fn submit_verify(
             submit_totp(client, digits)
         }
     }
-}
-
-pub fn connect(client: &mut ApiClient) -> error::Result {
-    let Some(auth_method) = submit_user(client)? else {
-        return Ok(());
-    };
-
-    let Some(verify_method) = submit_auth(client, auth_method)? else {
-        return Ok(());
-    };
-
-    submit_verify(client, verify_method)
-}
-
-pub fn disconnect(client: &mut ApiClient) -> error::Result {
-    DropSession::new().send(client)?;
-
-    client.save_session().context("failed saving session data")?;
-
-    Ok(())
 }

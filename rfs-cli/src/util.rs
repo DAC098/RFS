@@ -1,63 +1,98 @@
 use std::collections::HashMap;
 use std::iter::Iterator;
+use std::str::FromStr;
 
-use clap::{Arg, ArgMatches};
+use clap::Args;
 
-use crate::error;
-
-pub fn default_help_arg() -> Arg {
-    use clap::ArgAction;
-
-    Arg::new("help")
-        .long("help")
-        .action(ArgAction::Help)
-        .help("display the current help information")
-}
-
-pub fn parse_tags_list<'a, I>(mut iter: I) -> (HashMap<String, Option<String>>, Vec<&'a str>)
+pub fn parse_flake_id<T>(arg: &str) -> Result<T, String>
 where
-    I: Iterator<Item = &'a str>
+    T: TryFrom<i64>
 {
-    let mut map = HashMap::new();
-    let mut invalid = Vec::new();
+    let Ok(int): Result<i64, _> = i64::from_str(arg) else {
+        return Err("invalid i64 value".into());
+    };
 
-    while let Some(parse) = iter.next() {
-        if let Some((name, value)) = parse.split_once(':') {
-            if name.len() == 0 {
-                invalid.push(parse);
-                continue;
-            }
+    let Ok(flake) = int.try_into() else {
+        return Err("invalid flake id".into());
+    };
 
-            if value.len() == 0 {
-                map.insert(name.to_owned(), None);
-            } else {
-                map.insert(name.to_owned(), Some(value.to_owned()));
-            }
-        } else {
-            if parse.len() == 0 {
-                invalid.push(parse);
-                continue;
-            }
-
-            map.insert(parse.to_owned(), None);
-        }
-    }
-
-    (map, invalid)
+    Ok(flake)
 }
 
-pub fn tags_from_args(name: &str, args: &ArgMatches) -> error::Result<HashMap<String, Option<String>>> {
-    if let Some(given) = args.get_many::<String>(name) {
-        let (parsed, invalid) = parse_tags_list(given.map(|v| v.as_str()));
+pub fn parse_mime(arg: &str) -> Result<mime::Mime, String> {
+    match mime::Mime::from_str(arg) {
+        Ok(m) => Ok(m),
+        Err(_) => Err("Invalid mime format".into())
+    }
+}
 
-        if invalid.len() > 0 {
-            return Err(error::Error::new()
-                .context(format!("provided tags that are an invalid format {:?}", invalid)));
+pub type Tag = (String, Option<String>);
+
+pub fn parse_tag(arg: &str) -> Result<Tag, String> {
+    if let Some((name, value)) = arg.split_once(':') {
+        if name.is_empty() {
+            return Err("tag name is empty".into());
         }
 
-        Ok(parsed)
+        if value.is_empty() {
+            Ok((name.into(), None))
+        } else {
+            Ok((name.into(), Some(value.into())))
+        }
     } else {
-        Ok(HashMap::new())
+        if arg.is_empty() {
+            return Err("tag is empty".into());
+        }
+
+        Ok((arg.into(), None))
+    }
+}
+
+#[derive(Debug, Args)]
+pub struct TagArgs {
+    /// overrides current tags
+    #[arg(
+        short,
+        long,
+        conflicts_with_all(["add_tag", "drop_tag"]),
+        value_parser(parse_tag)
+    )]
+    tag: Vec<Tag>,
+
+    /// adds to existing tags
+    #[arg(
+        long,
+        conflicts_with("tag"),
+        value_parser(parse_tag)
+    )]
+    add_tag: Vec<Tag>,
+
+    /// drops an existing tag
+    #[arg(
+        long,
+        conflicts_with("tag")
+    )]
+    drop_tag: Vec<String>
+}
+
+impl TagArgs {
+    pub fn merge_existing(
+        self,
+        mut hash_map: HashMap<String, Option<String>>
+    ) -> HashMap<String, Option<String>> {
+        if !self.tag.is_empty() {
+            HashMap::from_iter(self.tag)
+        } else if !self.drop_tag.is_empty() || !self.add_tag.is_empty() {
+            for tag in self.drop_tag {
+                hash_map.remove(&tag);
+            }
+
+            hash_map.extend(self.add_tag);
+
+            hash_map
+        } else {
+            hash_map
+        }
     }
 }
 

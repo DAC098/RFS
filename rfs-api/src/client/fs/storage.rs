@@ -79,6 +79,13 @@ impl CreateStorage {
         }
     }
 
+    pub fn comment<C>(&mut self, _comment: C) -> &mut Self
+    where
+        C: Into<String>
+    {
+        self
+    }
+
     pub fn add_tag<T, V>(&mut self, tag: T, value: Option<V>) -> &mut Self
     where
         T: Into<String>,
