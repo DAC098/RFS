@@ -13,6 +13,7 @@ use rfs_api::client::users::groups::{
 use clap::{Subcommand, Args};
 
 use crate::error::{self, Context};
+use crate::input;
 use crate::util;
 
 #[derive(Debug, Args)]
@@ -53,7 +54,11 @@ pub fn handle(client: &ApiClient, args: GroupsArgs) -> error::Result {
 struct GetArgs {
     /// id of the group to retrieve
     #[arg(long)]
-    id: Option<i64>
+    id: Option<i64>,
+
+    /// will retrieve all values and not prompt for more
+    #[arg(long)]
+    no_prompt: bool
 }
 
 fn get(client: &ApiClient, args: GetArgs) -> error::Result {
@@ -68,13 +73,26 @@ fn get(client: &ApiClient, args: GetArgs) -> error::Result {
             println!("group not found");
         }
     } else {
-        let result = QueryGroups::new()
-            .send(client)
-            .context("failed to retrieve groups")?
-            .into_payload();
+        let mut builder = QueryGroups::new();
 
-        for group in result {
-            println!("{:#?}", group);
+        loop {
+            let (_, payload) = builder.send(client)
+                .context("failed to retrieve groups")?
+                .into_tuple();
+
+            let Some(last) = payload.last() else {
+                break;
+            };
+
+            builder.last_id(last.id.clone());
+
+            for group in &payload {
+                println!("id: {} | name: \"{}\"", group.id, group.name);
+            }
+
+            if !args.no_prompt && !input::read_yn("continue?")? {
+                break;
+            }
         }
     }
 
@@ -173,19 +191,37 @@ struct GetUsersArgs {
     /// id of the group
     #[arg(long)]
     id: i64,
+
+    /// will retrieve all values and not prompt for more
+    #[arg(long)]
+    no_prompt: bool
 }
 
 fn get_users(client: &ApiClient, args: GetUsersArgs) -> error::Result {
-    let result = QueryGroupUsers::id(args.id)
-        .send(client)
-        .context("failed to retrieve group users")?;
+    let mut builder = QueryGroupUsers::id(args.id);
 
-    if let Some(payload) = result {
-        for user in payload.into_payload() {
-            println!("{:#?}", user);
+    loop {
+        let Some(body) = builder.send(client)
+            .context("failed to retrieve group users")? else {
+            println!("group not found");
+            return Ok(());
+        };
+
+        let payload = body.into_payload();
+
+        let Some(last) = payload.last() else {
+            break;
+        };
+
+        builder.last_id(last.id.clone());
+
+        for user in &payload {
+            println!("id: {}", user.id.id());
         }
-    } else {
-        println!("group not found");
+
+        if !args.no_prompt && !input::read_yn("continue?")? {
+            break;
+        }
     }
 
     Ok(())

@@ -33,3 +33,19 @@ where
 
     Ok(given.trim().to_owned())
 }
+
+pub fn read_yn<P>(prefix: P) -> std::io::Result<bool>
+where
+    P: std::fmt::Display
+{
+    let prompt = format!("{} [y|n]: ", prefix);
+    let result = read_stdin_trimmed(prompt)?;
+    let mut chars = result.chars();
+
+    if let Some(first) = chars.next() {
+        Ok(first.to_ascii_lowercase() == 'y')
+    } else {
+        Ok(false)
+    }
+}
+

@@ -9,6 +9,8 @@ pub mod tags;
 pub mod storage;
 pub mod fs;
 
+pub mod query;
+
 pub fn string_to_len_char(length: usize, ch: char) -> String {
     let mut rtn = String::with_capacity(length);
 

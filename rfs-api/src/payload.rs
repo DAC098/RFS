@@ -1,3 +1,5 @@
+use rfs_lib::query::{Limit, Offset};
+
 use http::StatusCode;
 use axum_core::response::{Response, IntoResponse};
 use serde::{Serialize, Deserialize};
@@ -6,40 +8,42 @@ use crate::response::{serialize_json, error_json};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Payload<T> {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    message: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none", flatten)]
+    pagination: Option<Pagination>,
+
     payload: T
 }
 
 impl<T> Payload<T> {
     pub fn new(payload: T) -> Self {
         Self {
-            message: None,
+            pagination: None,
             payload
         }
     }
 
+    pub fn pagination(&self) -> Option<&Pagination> {
+        self.pagination.as_ref()
+    }
+
+    pub fn set_pagination<P>(mut self, p: P) -> Self
+    where
+        P: Into<Pagination>
+    {
+        self.pagination = Some(p.into());
+        self
+    }
+
+    pub fn with_pagination<P>(&mut self, p: P) -> &mut Self
+    where
+        P: Into<Pagination>
+    {
+        self.pagination = Some(p.into());
+        self
+    }
+
     pub fn payload(&self) -> &T {
         &self.payload
-    }
-
-    pub fn message(&self) -> Option<&str> {
-        self.message.as_ref().map(|v| v.as_str())
-    }
-
-    pub fn set_message<M>(&mut self, msg: M)
-    where
-        M: Into<String>
-    {
-        self.message = Some(msg.into());
-    }
-
-    pub fn with_message<M>(mut self, msg: M) -> Self
-    where
-        M: Into<String>
-    {
-        self.message = Some(msg.into());
-        self
     }
 
     pub fn set_payload(&mut self, payload: T) {
@@ -53,13 +57,17 @@ impl<T> Payload<T> {
 
     pub fn swap_payload<P>(self, payload: P) -> Payload<P> {
         Payload {
-            message: self.message,
+            pagination: self.pagination,
             payload
         }
     }
 
     pub fn into_payload(self) -> T {
         self.payload
+    }
+
+    pub fn into_tuple(self) -> PayloadTuple<T> {
+        (self.pagination, self.payload)
     }
 }
 
@@ -68,22 +76,31 @@ where
     T: std::fmt::Display
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        match &self.message {
-            Some(message) => {
-                if f.alternate() {
-                    write!(f, "{} -> {:#}", message, self.payload)
-                } else {
-                    write!(f, "{} -> {}", message, self.payload)
-                }
-            },
-            None => {
-                if f.alternate() {
-                    write!(f, "{:#}", self.payload)
-                } else {
-                    write!(f, "{}", self.payload)
-                }
-            }
+        if f.alternate() {
+            write!(f, "{:#}", self.payload)
+        } else {
+            write!(f, "{}", self.payload)
         }
+    }
+}
+
+impl<P, T> From<(P, T)> for Payload<T>
+where
+    P: Into<Pagination>
+{
+    fn from((p, t): (P, T)) -> Self {
+        Payload {
+            pagination: Some(p.into()),
+            payload: t
+        }
+    }
+}
+
+pub type PayloadTuple<T> = (Option<Pagination>, T);
+
+impl<T> From<Payload<T>> for PayloadTuple<T> {
+    fn from(p: Payload<T>) -> PayloadTuple<T> {
+        (p.pagination, p.payload)
     }
 }
 
@@ -99,5 +116,93 @@ where
                 error_json()
             }
         }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Pagination {
+    limit: Limit,
+    offset: Option<Offset>
+}
+
+impl Pagination {
+    pub fn new() -> Self {
+        Self {
+            limit: Limit::Small,
+            offset: None,
+        }
+    }
+
+    pub fn limit(&self) -> &Limit {
+        &self.limit
+    }
+
+    pub fn with_limit(mut self, limit: Limit) -> Self {
+        self.limit = limit;
+        self
+    }
+
+    pub fn set_limit(&mut self, limit: Limit) -> &mut Self {
+        self.limit = limit;
+        self
+    }
+
+    pub fn offset(&self) -> Option<&Offset> {
+        self.offset.as_ref()
+    }
+
+    pub fn with_offset(mut self, offset: Offset) -> Self {
+        self.offset = Some(offset);
+        self
+    }
+
+    pub fn set_offset(&mut self, offset: Offset) -> &mut Self {
+        self.offset = Some(offset);
+        self
+    }
+}
+
+impl std::default::Default for Pagination {
+    fn default() -> Self {
+        Pagination::new()
+    }
+}
+
+impl From<(Limit, Offset)> for Pagination {
+    fn from(v: (Limit, Offset)) -> Self {
+        Pagination {
+            limit: v.0,
+            offset: Some(v.1),
+        }
+    }
+}
+
+impl From<Limit> for Pagination {
+    fn from(limit: Limit) -> Self {
+        Pagination {
+            limit,
+            offset: None,
+        }
+    }
+}
+
+impl From<&Limit> for Pagination {
+    fn from(limit: &Limit) -> Self {
+        Pagination {
+            limit: limit.clone(),
+            offset: None,
+        }
+    }
+}
+
+impl From<Pagination> for (Limit, Option<Offset>) {
+    fn from(p: Pagination) -> Self {
+        (p.limit, p.offset)
+    }
+}
+
+impl From<Pagination> for Limit {
+    fn from(p: Pagination) -> Self {
+        p.limit
     }
 }

@@ -1,9 +1,10 @@
 use std::fmt::Write;
 
 use rfs_lib::ids;
+use rfs_lib::query::{Limit, Offset};
 
 use axum::http::StatusCode;
-use axum::extract::{Path, State};
+use axum::extract::{Query, Path, State};
 use axum::response::IntoResponse;
 use futures::TryStreamExt;
 use serde::Deserialize;
@@ -20,10 +21,22 @@ pub struct Params {
     pub group_id: ids::GroupId,
 }
 
+#[derive(Deserialize)]
+pub struct GetQuery {
+    #[serde(default)]
+    limit: Limit,
+
+    #[serde(default)]
+    offset: Offset,
+
+    last_id: Option<ids::UserId>
+}
+
 pub async fn get(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
     Path(Params { group_id }): Path<Params>,
+    Query(GetQuery { limit, offset, last_id }): Query<GetQuery>,
 ) -> error::Result<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
@@ -36,21 +49,54 @@ pub async fn get(
         return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
-    let _params: sql::ParamsVec = vec![&group_id];
+    let mut pagination = rfs_api::Pagination::from(&limit);
+    let offset_num = limit.sql_offset(offset);
+    let params: sql::ParamsArray<3>;
+    let query: &str;
 
-    let Some(_group) = user::group::Group::retrieve(&conn, &group_id).await? else {
-        return Err(error::Error::api(error::ApiErrorKind::GroupNotFound));
+    // this is probably a bad idea
+    let maybe_last_id;
+
+    if let Some(last_id) = last_id {
+        maybe_last_id = last_id;
+
+        params = [&group_id, &maybe_last_id, &limit];
+        query = "\
+            select users.id \
+            from users \
+            join group_users on \
+                users.id = group_users.user_id \
+            where group_users.group_id = $1 and \
+                  users.id > $2 \
+            order by users.id \
+            limit $3";
+    } else {
+        pagination.set_offset(offset);
+
+        params = [&group_id, &limit, &offset_num];
+        query = "\
+            select users.id \
+            from users \
+            join group_users on \
+                users.id = group_users.user_id \
+            where group_users.group_id = $1 \
+            order by users.id \
+            limit $2 \
+            offset $3";
+    }
+
+    let group_fut = user::group::Group::retrieve(&conn, &group_id);
+    let users_fut = conn.query_raw(query, params);
+
+    let result = match tokio::try_join!(group_fut, users_fut) {
+        Ok((Some(_), rows)) => rows,
+        Ok((None, _)) => {
+            return Err(error::Error::api(error::ApiErrorKind::GroupNotFound));
+        },
+        Err(err) => {
+            return Err(error::Error::from(err));
+        }
     };
-
-    let result = conn.query_raw(
-        "\
-        select users.id \
-        from users \
-        join group_users on \
-            users.id = group_users.user_id \
-        where group_users.group_id = $1",
-        &[&group_id]
-    ).await?;
 
     futures::pin_mut!(result);
 
@@ -64,7 +110,7 @@ pub async fn get(
         list.push(item);
     }
 
-    Ok(rfs_api::Payload::new(list))
+    Ok(rfs_api::Payload::from((pagination, list)))
 }
 
 pub async fn post(

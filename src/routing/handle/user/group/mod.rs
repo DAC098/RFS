@@ -1,8 +1,12 @@
+use rfs_lib::ids::GroupId;
+use rfs_lib::query::{Limit, Offset};
+
 use axum::http::StatusCode;
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::response::IntoResponse;
 use futures::TryStreamExt;
 use tokio_postgres::error::SqlState;
+use serde::Deserialize;
 
 use crate::net::error;
 use crate::state::ArcShared;
@@ -12,9 +16,21 @@ use crate::sql;
 
 pub mod group_id;
 
+#[derive(Deserialize)]
+pub struct GetQuery {
+    #[serde(default)]
+    limit: Limit,
+
+    #[serde(default)]
+    offset: Offset,
+
+    last_id: Option<GroupId>
+}
+
 pub async fn get(
     State(state): State<ArcShared>,
-    initiator: initiator::Initiator
+    initiator: initiator::Initiator,
+    Query(GetQuery { limit, offset, last_id }): Query<GetQuery>,
 ) -> error::Result<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
@@ -27,12 +43,38 @@ pub async fn get(
         return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
-    let params: sql::ParamsVec = vec![];
+    let mut pagination = rfs_api::Pagination::from(&limit);
 
-    let result = conn.query_raw(
-        "select id, name from groups",
-        params
-    ).await?;
+    let result = if let Some(last_id) = last_id {
+        let params: sql::ParamsVec = vec![&last_id, &limit];
+
+        conn.query_raw(
+            "\
+            select groups.id, \
+                   groups.name \
+            from groups \
+            where groups.id > $1 \
+            order by groups.id \
+            limit $2",
+            params
+        ).await?
+    } else {
+        pagination.set_offset(offset);
+
+        let offset_num = limit.sql_offset(offset);
+        let params: sql::ParamsVec = vec![&limit, &offset_num];
+
+        conn.query_raw(
+            "\
+            select groups.id, \
+                   groups.name \
+            from groups \
+            order by groups.id \
+            limit $1 \
+            offset $2",
+            params
+        ).await?
+    };
 
     futures::pin_mut!(result);
 
@@ -47,7 +89,7 @@ pub async fn get(
         list.push(item);
     }
 
-    Ok(rfs_api::Payload::new(list))
+    Ok(rfs_api::Payload::from((pagination, list)))
 }
 
 pub async fn post(

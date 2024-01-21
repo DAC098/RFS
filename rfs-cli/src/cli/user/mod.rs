@@ -1,5 +1,6 @@
 use rfs_api::client::ApiClient;
 use rfs_api::client::users::{
+    QueryUsers,
     CreateUser,
     UpdateUser,
 };
@@ -7,6 +8,7 @@ use rfs_api::client::users::{
 use clap::{Subcommand, Args};
 
 use crate::error::{self, Context};
+use crate::input;
 use crate::util;
 
 mod group;
@@ -19,6 +21,9 @@ pub struct UsersArgs {
 
 #[derive(Debug, Subcommand)]
 enum UsersCmds {
+    /// retrieves a list of users
+    Get(GetArgs),
+
     /// creats a new user
     Create(CreateArgs),
 
@@ -31,10 +36,44 @@ enum UsersCmds {
 
 pub fn handle(client: &ApiClient, args: UsersArgs) -> error::Result {
     match args.command {
+        UsersCmds::Get(given) => get(client, given),
         UsersCmds::Create(given) => create(client, given),
         UsersCmds::Update(given) => update(client, given),
         UsersCmds::Groups(given) => group::handle(client, given),
     }
+}
+
+#[derive(Debug, Args)]
+struct GetArgs {
+    /// will retrieve all values and not prompt for more
+    #[arg(long)]
+    no_prompt: bool
+}
+
+fn get(client: &ApiClient, args: GetArgs) -> error::Result {
+    let mut builder = QueryUsers::new();
+
+    loop {
+        let (_pagination, payload) = builder.send(client)
+            .context("failed to retrieve users")?
+            .into_tuple();
+
+        let Some(last) = payload.last() else {
+            break;
+        };
+
+        builder.last_id(last.id.clone());
+
+        for user in &payload {
+            println!("id: {} | username: {}", user.id.id(), user.username);
+        }
+
+        if !args.no_prompt && !input::read_yn("continue?")? {
+            break;
+        }
+    }
+
+    Ok(())
 }
 
 #[derive(Debug, Args)]

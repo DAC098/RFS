@@ -2,7 +2,14 @@ use rfs_lib::ids;
 
 use crate::client::error::RequestError;
 use crate::client::ApiClient;
-use crate::{Validator, Payload, ApiError, ApiErrorKind};
+use crate::{
+    Validator,
+    Payload,
+    ApiError,
+    ApiErrorKind,
+    Limit,
+    Offset,
+};
 use crate::users::{
     CreateUser as CreateUserBody,
     UpdateUser as UpdateUserBody,
@@ -12,15 +19,59 @@ use crate::users::{
 
 pub mod groups;
 
-pub struct QueryUsers {}
+pub struct QueryUsers {
+    limit: Option<Limit>,
+    offset: Option<Offset>,
+    last_id: Option<ids::UserId>,
+}
 
 impl QueryUsers {
     pub fn new() -> Self {
-        QueryUsers {}
+        QueryUsers {
+            limit: None,
+            offset: None,
+            last_id: None,
+        }
     }
 
-    pub fn send(self, client: &ApiClient) -> Result<Payload<Vec<ListItem>>, RequestError> {
-        let res = client.get("/user").send()?;
+    pub fn limit<L>(&mut self, limit: Limit) -> &mut Self
+    where
+        L: Into<Option<Limit>>
+    {
+        self.limit = limit.into();
+        self
+    }
+
+    pub fn offset<O>(&mut self, offset: O) -> &mut Self 
+    where
+        O: Into<Option<Offset>>
+    {
+        self.offset = offset.into();
+        self
+    }
+
+    pub fn last_id<I>(&mut self, last_id: I) -> &mut Self
+    where
+        I: Into<Option<ids::UserId>>
+    {
+        self.last_id = last_id.into();
+        self
+    }
+
+    pub fn send(&self, client: &ApiClient) -> Result<Payload<Vec<ListItem>>, RequestError> {
+        let mut builder = client.get("/user");
+
+        if let Some(limit) = &self.limit {
+            builder = builder.query(&[("limit", limit)]);
+        }
+
+        if let Some(last_id) = &self.last_id {
+            builder = builder.query(&[("last_id", last_id)]);
+        } else if let  Some(offset) = &self.offset {
+            builder = builder.query(&[("offset", offset)]);
+        }
+
+        let res = builder.send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(res.json()?),

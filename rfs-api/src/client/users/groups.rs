@@ -2,7 +2,14 @@ use rfs_lib::ids;
 
 use crate::client::error::RequestError;
 use crate::client::ApiClient;
-use crate::{Payload, Validator, ApiError, ApiErrorKind};
+use crate::{
+    Payload,
+    Validator,
+    ApiError,
+    ApiErrorKind,
+    Limit,
+    Offset
+};
 use crate::users::groups::{
     CreateGroup as CreateGroupBody,
     UpdateGroup as UpdateGroupBody,
@@ -13,15 +20,59 @@ use crate::users::groups::{
     ListItem,
 };
 
-pub struct QueryGroups {}
+pub struct QueryGroups {
+    limit: Option<Limit>,
+    offset: Option<Offset>,
+    last_id: Option<ids::GroupId>,
+}
 
 impl QueryGroups {
     pub fn new() -> Self {
-        QueryGroups {}
+        QueryGroups {
+            limit: None,
+            offset: None,
+            last_id: None,
+        }
     }
 
-    pub fn send(self, client: &ApiClient) -> Result<Payload<Vec<ListItem>>, RequestError> {
-        let res = client.get("/user/group").send()?;
+    pub fn limit<L>(&mut self, limit: Limit) -> &mut Self
+    where
+        L: Into<Option<Limit>>
+    {
+        self.limit = limit.into();
+        self
+    }
+
+    pub fn offset<O>(&mut self, offset: O) -> &mut Self
+    where
+        O: Into<Option<Offset>>
+    {
+        self.offset = offset.into();
+        self
+    }
+
+    pub fn last_id<I>(&mut self, last_id: I) -> &mut Self
+    where
+        I: Into<Option<ids::GroupId>>
+    {
+        self.last_id = last_id.into();
+        self
+    }
+
+    pub fn send(&self, client: &ApiClient) -> Result<Payload<Vec<ListItem>>, RequestError> {
+        let mut builder= client.get("/user/group");
+
+        if let Some(limit) = &self.limit {
+            builder = builder.query(&[("limit", limit)]);
+        }
+
+        if let Some(last_id) = &self.last_id {
+            builder = builder.query(&[("last_id", last_id)]);
+        } else if let Some(offset) = &self.offset {
+            builder = builder.query(&[("offset", offset)]);
+        }
+
+        let res = builder.send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(res.json()?),
@@ -31,16 +82,60 @@ impl QueryGroups {
 }
 
 pub struct QueryGroupUsers {
-    id: ids::GroupId
+    id: ids::GroupId,
+    limit: Option<Limit>,
+    offset: Option<Offset>,
+    last_id: Option<ids::UserId>,
 }
 
 impl QueryGroupUsers {
     pub fn id(id: ids::GroupId) -> Self {
-        QueryGroupUsers { id }
+        QueryGroupUsers { 
+            id,
+            limit: None,
+            offset: None,
+            last_id: None,
+        }
     }
 
-    pub fn send(self, client: &ApiClient) -> Result<Option<Payload<Vec<GroupUser>>>, RequestError> {
-        let res = client.get(format!("/user/group/{}/users", self.id)).send()?;
+    pub fn limit<L>(&mut self, limit: Limit) -> &mut Self
+    where
+        L: Into<Option<Limit>>
+    {
+        self.limit = limit.into();
+        self
+    }
+
+    pub fn offset<O>(&mut self, offset: O) -> &mut Self
+    where
+        O: Into<Option<Offset>>
+    {
+        self.offset = offset.into();
+        self
+    }
+
+    pub fn last_id<I>(&mut self, last_id: I) -> &mut Self
+    where
+        I: Into<Option<ids::UserId>>
+    {
+        self.last_id = last_id.into();
+        self
+    }
+
+    pub fn send(&self, client: &ApiClient) -> Result<Option<Payload<Vec<GroupUser>>>, RequestError> {
+        let mut builder = client.get(format!("/user/group/{}/users", self.id));
+
+        if let Some(limit) = &self.limit {
+            builder = builder.query(&[("limit", limit)]);
+        }
+
+        if let Some(last_id) = &self.last_id {
+            builder = builder.query(&[("last_id", last_id)]);
+        } else if let Some(offset) = &self.offset {
+            builder = builder.query(&[("offset", offset)]);
+        }
+
+        let res = builder.send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(Some(res.json()?)),

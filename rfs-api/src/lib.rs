@@ -14,7 +14,13 @@ pub mod sec;
 pub mod fs;
 
 mod payload;
-pub use payload::Payload;
+pub use payload::{
+    Payload,
+    Pagination,
+    PayloadTuple
+};
+
+pub use rfs_lib::query::{Limit, Offset};
 
 pub type Tags = HashMap<String, Option<String>>;
 
