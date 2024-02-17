@@ -2,7 +2,14 @@ use rfs_lib::ids;
 
 use crate::client::error::RequestError;
 use crate::client::ApiClient;
-use crate::{Payload, Validator, ApiError, ApiErrorKind};
+use crate::{
+    Payload,
+    Validator,
+    ApiError,
+    ApiErrorKind,
+    Limit,
+    Offset,
+};
 use crate::sec::roles::{
     CreateRole as CreateRoleBody,
     UpdateRole as UpdateRoleBody,
@@ -17,15 +24,59 @@ use crate::sec::roles::{
     Permission
 };
 
-pub struct QueryRoles {}
+pub struct QueryRoles {
+    limit: Option<Limit>,
+    offset: Option<Offset>,
+    last_id: Option<ids::RoleId>,
+}
 
 impl QueryRoles {
     pub fn new() -> Self {
-        QueryRoles {}
+        QueryRoles {
+            limit: None,
+            offset: None,
+            last_id: None,
+        }
     }
 
-    pub fn send(self, client: &ApiClient) -> Result<Payload<Vec<RoleListItem>>, RequestError> {
-        let res = client.get("/sec/roles").send()?;
+    pub fn limit<L>(&mut self, limit: L) -> &mut Self
+    where
+        L: Into<Option<Limit>>
+    {
+        self.limit = limit.into();
+        self
+    }
+
+    pub fn offset<O>(&mut self, offset: O) -> &mut Self
+    where
+        O: Into<Option<Offset>>
+    {
+        self.offset = offset.into();
+        self
+    }
+
+    pub fn last_id<I>(&mut self, last_id: I) -> &mut Self
+    where
+        I: Into<Option<ids::RoleId>>
+    {
+        self.last_id = last_id.into();
+        self
+    }
+
+    pub fn send(&self, client: &ApiClient) -> Result<Payload<Vec<RoleListItem>>, RequestError> {
+        let mut builder = client.get("/sec/roles");
+
+        if let Some(limit) = &self.limit {
+            builder = builder.query(&[("limit", limit)]);
+        }
+
+        if let Some(last_id) = &self.last_id {
+            builder = builder.query(&[("last_id", last_id)]);
+        } else if let Some(offset) = &self.offset {
+            builder = builder.query(&[("offset", offset)]);
+        }
+
+        let res = builder.send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(res.json()?),
@@ -63,16 +114,60 @@ impl RetrieveRole {
 }
 
 pub struct QueryRoleUsers {
-    id: ids::RoleId
+    id: ids::RoleId,
+    limit: Option<Limit>,
+    offset: Option<Offset>,
+    last_id: Option<ids::UserId>,
 }
 
 impl QueryRoleUsers {
     pub fn id(id: ids::RoleId) -> Self {
-        QueryRoleUsers { id }
+        QueryRoleUsers {
+            id,
+            limit: None,
+            offset: None,
+            last_id: None,
+        }
     }
 
-    pub fn send(self, client: &ApiClient) -> Result<Option<Payload<Vec<RoleUser>>>, RequestError> {
-        let res = client.get(format!("/sec/roles/{}/users", self.id)).send()?;
+    pub fn limit<L>(&mut self, limit: L) -> &mut Self
+    where
+        L: Into<Option<Limit>>
+    {
+        self.limit = limit.into();
+        self
+    }
+
+    pub fn offset<O>(&mut self, offset: O) -> &mut Self
+    where
+        O: Into<Option<Offset>>
+    {
+        self.offset = offset.into();
+        self
+    }
+
+    pub fn last_id<I>(&mut self, last_id: I) -> &mut Self
+    where
+        I: Into<Option<ids::UserId>>
+    {
+        self.last_id = last_id.into();
+        self
+    }
+
+    pub fn send(&self, client: &ApiClient) -> Result<Option<Payload<Vec<RoleUser>>>, RequestError> {
+        let mut builder = client.get(format!("/sec/roles/{}/users", self.id));
+
+        if let Some(limit) = &self.limit {
+            builder = builder.query(&[("limit", limit)]);
+        }
+
+        if let Some(last_id) = &self.last_id {
+            builder = builder.query(&[("last_id", last_id)]);
+        } else if let Some(offset) = &self.offset {
+            builder = builder.query(&[("offset", offset)]);
+        }
+
+        let res = builder.send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(Some(res.json()?)),
@@ -91,16 +186,60 @@ impl QueryRoleUsers {
 }
 
 pub struct QueryRoleGroups {
-    id: ids::RoleId
+    id: ids::RoleId,
+    limit: Option<Limit>,
+    offset: Option<Offset>,
+    last_id: Option<ids::GroupId>,
 }
 
 impl QueryRoleGroups {
     pub fn id(id: ids::RoleId) -> Self {
-        QueryRoleGroups { id }
+        QueryRoleGroups {
+            id,
+            limit: None,
+            offset: None,
+            last_id: None,
+        }
     }
 
-    pub fn send(self, client: &ApiClient) -> Result<Option<Payload<Vec<RoleGroup>>>, RequestError> {
-        let res = client.get(format!("/sec/roles/{}/groups", self.id)).send()?;
+    pub fn limit<L>(&mut self, limit: L) -> &mut Self
+    where
+        L: Into<Option<Limit>>
+    {
+        self.limit = limit.into();
+        self
+    }
+
+    pub fn offset<O>(&mut self, offset: O) -> &mut Self
+    where
+        O: Into<Option<Offset>>
+    {
+        self.offset = offset.into();
+        self
+    }
+
+    pub fn last_id<I>(&mut self, last_id: I) -> &mut Self
+    where
+        I: Into<Option<ids::GroupId>>
+    {
+        self.last_id = last_id.into();
+        self
+    }
+
+    pub fn send(&self, client: &ApiClient) -> Result<Option<Payload<Vec<RoleGroup>>>, RequestError> {
+        let mut builder = client.get(format!("/sec/roles/{}/groups", self.id));
+
+        if let Some(limit) = &self.limit {
+            builder = builder.query(&[("limit", limit)]);
+        }
+
+        if let Some(last_id) = &self.last_id {
+            builder = builder.query(&[("last_id", last_id)]);
+        } else if let Some(offset) = &self.offset {
+            builder = builder.query(&[("offset", offset)]);
+        }
+
+        let res = builder.send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(Some(res.json()?)),

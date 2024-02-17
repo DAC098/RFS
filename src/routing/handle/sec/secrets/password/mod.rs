@@ -2,7 +2,7 @@ use axum::http::StatusCode;
 use axum::extract::State;
 use axum::response::IntoResponse;
 
-use crate::net::error;
+use crate::net::error::{self, Context};
 use crate::state::ArcShared;
 use crate::sec::secrets::Key;
 use crate::sec::authn::initiator;
@@ -26,20 +26,21 @@ pub async fn get(
         return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
-    let peppers = state.sec().peppers().inner();
+    let peppers = state.sec()
+        .peppers()
+        .inner();
     let mut known_versions;
 
     {
         let Ok(reader) = peppers.read() else {
-            return Err(error::Error::new().source("peppers rwlock poisoned"));
+            return Err(error::Error::new().context("peppers rwlock poisoned"));
         };
 
         known_versions = Vec::with_capacity(reader.len());
 
         for (version, key) in reader.iter() {
-            let Some(created) = time::utc_to_chrono_datetime(key.created()) else {
-                return Err(error::Error::new().source("timestamp error for password key"));
-            };
+            let created = time::utc_to_chrono_datetime(key.created())
+                .context("timestamp error for password key")?;
 
             known_versions.push(rfs_api::sec::secrets::PasswordListItem {
                 version: *version,
@@ -68,9 +69,7 @@ pub async fn post(
 
     let wrapper = state.sec().peppers();
     let data = Key::rand_key_data()?;
-    let Some(created) = time::utc_now() else {
-        return Err(error::Error::new().source("failed to create timestamp"));
-    };
+    let created = time::utc_now().context("failed to create timestamp")?;
 
     let key = Key::new(data, created);
 
@@ -82,9 +81,8 @@ pub async fn post(
         writer.update(key);
     }
 
-    if let Err(err) = wrapper.save() {
-        return Err(error::Error::new().source(err));
-    }
+    wrapper.save()
+        .context("failed to save password secret")?;
 
     Ok(StatusCode::NO_CONTENT)
 }

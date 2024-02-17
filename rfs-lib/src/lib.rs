@@ -1,3 +1,5 @@
+pub mod error;
+
 pub mod ids;
 pub mod serde;
 pub mod validation;

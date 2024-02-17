@@ -20,6 +20,7 @@ use clap::{Subcommand, Args};
 
 use crate::error::{self, Context};
 use crate::util;
+use crate::input;
 
 #[derive(Debug, Args)]
 pub struct RolesArgs {
@@ -64,6 +65,10 @@ struct GetArgs {
     /// id of the role to retrieve
     #[arg(long)]
     id: Option<rfs_lib::ids::RoleId>,
+
+    /// will retrieve all values and not prompt for more
+    #[arg(long)]
+    no_prompt: bool
 }
 
 fn get(client: &ApiClient, args: GetArgs) -> error::Result {
@@ -78,13 +83,26 @@ fn get(client: &ApiClient, args: GetArgs) -> error::Result {
             println!("role not found");
         }
     } else {
-        let result = QueryRoles::new()
-            .send(client)
-            .context("failed to retrieve roles")?
-            .into_payload();
+        let mut builder = QueryRoles::new();
 
-        for role in result {
-            println!("{:#?}", role);
+        loop {
+            let (_pagination, payload) = builder.send(client)
+                .context("failed to retrieve roles")?
+                .into_tuple();
+
+            let Some(last) = payload.last() else {
+                break;
+            };
+
+            builder.last_id(last.id);
+
+            for role in &payload {
+                println!("id: {} | name: {}", role.id, role.name);
+            }
+
+            if !args.no_prompt && !input::read_yn("continue?")? {
+                break;
+            }
         }
     }
 
@@ -261,19 +279,34 @@ struct GetUsersArgs {
     /// id of the role
     #[arg(long)]
     id: rfs_lib::ids::RoleId,
+
+    /// will retrieve all values and not prompt for more
+    #[arg(long)]
+    no_prompt: bool
 }
 
 fn get_users(client: &ApiClient, args: GetUsersArgs) -> error::Result {
-    let result = QueryRoleUsers::id(args.id)
-        .send(client)
-        .context("failed to retrieve role users")?;
+    let mut builder = QueryRoleUsers::id(args.id);
 
-    if let Some(payload) = result {
-        for user in payload.into_payload() {
-            println!("{:#?}", user);
+    loop {
+        let (_pagination, payload) = builder.send(client)
+            .context("failed to retrieve users")?
+            .context("role not found")?
+            .into_tuple();
+
+        let Some(last) = payload.last() else {
+            break;
+        };
+
+        builder.last_id(last.id.clone());
+
+        for user in &payload {
+            println!("id: {}", user.id.id());
         }
-    } else {
-        println!("role not found");
+
+        if !args.no_prompt && !input::read_yn("continue?")? {
+            break;
+        }
     }
 
     Ok(())
@@ -353,19 +386,34 @@ struct GetGroupsArgs {
     /// id of the role
     #[arg(long)]
     id: rfs_lib::ids::RoleId,
+
+    /// will retrieve all values and not prompt for more
+    #[arg(long)]
+    no_prompt: bool
 }
 
 fn get_groups(client: &ApiClient, args: GetGroupsArgs) -> error::Result {
-    let result = QueryRoleGroups::id(args.id)
-        .send(client)
-        .context("failed to retrieve role groups")?;
+    let mut builder = QueryRoleGroups::id(args.id);
 
-    if let Some(payload) = result {
-        for group in payload.into_payload() {
-            println!("{:#?}", group);
+    loop {
+        let (_pagination, payload) = builder.send(client)
+            .context("failed to retrieve role groups")?
+            .context("role not found")?
+            .into_tuple();
+
+        let Some(last) = payload.last() else {
+            break;
+        };
+
+        builder.last_id(last.id);
+
+        for group in &payload {
+            println!("id: {}", group.id);
         }
-    } else {
-        println!("role not found");
+
+        if !args.no_prompt && !input::read_yn("continue?")? {
+            break;
+        }
     }
 
     Ok(())

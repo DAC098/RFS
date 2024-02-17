@@ -4,7 +4,7 @@ use axum::response::IntoResponse;
 
 use serde::Deserialize;
 
-use crate::net::error;
+use crate::net::error::{self, Context};
 use crate::state::ArcShared;
 use crate::sec::secrets::Key;
 use crate::sec::authn::initiator;
@@ -26,7 +26,10 @@ pub async fn get(
         return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
-    let session_keys = state.sec().session_info().keys().inner();
+    let session_keys = state.sec()
+        .session_info()
+        .keys()
+        .inner();
     let mut known_keys;
 
     {
@@ -37,9 +40,8 @@ pub async fn get(
         known_keys = Vec::with_capacity(reader.stored());
 
         for key in reader.iter() {
-            let Some(created) = time::utc_to_chrono_datetime(key.created()) else {
-                return Err(error::Error::new().source("timestamp error for session key"));
-            };
+            let created = time::utc_to_chrono_datetime(key.created())
+                .context("timestamp error for session key")?;
 
             known_keys.push(rfs_api::sec::secrets::SessionListItem { created });
         }
@@ -65,9 +67,7 @@ pub async fn post(
 
     let wrapper = state.sec().session_info().keys();
     let data = Key::rand_key_data()?;
-    let Some(created) = time::utc_now() else {
-        return Err(error::Error::new().source("timestamp error for session key"));
-    };
+    let created = time::utc_now().context("timestamp error for session key")?;
 
     let key = Key::new(data, created);
 
@@ -79,9 +79,7 @@ pub async fn post(
         writer.push(key);
     }
 
-    if let Err(err) = wrapper.save() {
-        return Err(error::Error::new().source(err));
-    }
+    wrapper.save().context("failed to save session secret")?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -131,9 +129,7 @@ pub async fn delete(
         }
     }
 
-    if let Err(err) = wrapper.save() {
-        return Err(error::Error::new().source(err));
-    }
+    wrapper.save().context("failed to save session secret")?;
 
     Ok(StatusCode::NO_CONTENT)
 }

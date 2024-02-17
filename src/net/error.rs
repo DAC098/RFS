@@ -10,10 +10,7 @@ pub use rfs_api::error::{
 
 type BoxDynError = Box<dyn std::error::Error + Send + Sync>;
 
-pub async fn handle_error<E>(
-    _headers: HeaderMap,
-    error: E
-) -> Response
+pub async fn handle_error<E>(error: E) -> Response
 where
     E: Into<Error>
 {
@@ -261,3 +258,39 @@ simple_from!(rust_otp::error::Error);
 simple_from!(snowcloud_cloud::error::Error);
 
 simple_from!(rust_kms_local::local::Error);
+
+// ----------------------------------------------------------------------------
+
+use rfs_lib::context_trait;
+
+context_trait!(Error);
+
+impl<T, E> Context<T, E> for std::result::Result<T, E>
+where
+    E: Into<BoxDynError>
+{
+    fn context<C>(self, cxt: C) -> std::result::Result<T, Error>
+    where
+        C: Into<String>
+    {
+        match self {
+            Ok(v) => Ok(v),
+            Err(err) => Err(Error::new()
+                .context(cxt)
+                .source(err))
+        }
+    }
+}
+
+impl<T> Context<T, ()> for std::option::Option<T> {
+    fn context<C>(self, cxt: C) -> std::result::Result<T, Error>
+    where
+        C: Into<String>
+    {
+        match self {
+            Some(v) => Ok(v),
+            None => Err(Error::new()
+                .context(cxt))
+        }
+    }
+}

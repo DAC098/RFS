@@ -35,7 +35,7 @@ impl QueryGroups {
         }
     }
 
-    pub fn limit<L>(&mut self, limit: Limit) -> &mut Self
+    pub fn limit<L>(&mut self, limit: L) -> &mut Self
     where
         L: Into<Option<Limit>>
     {
