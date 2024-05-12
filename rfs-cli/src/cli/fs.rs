@@ -8,6 +8,7 @@ use rfs_api::client::fs::{
     RetrieveItem,
     SendReadable,
     UpdateMetadata,
+    DeleteItem,
 };
 use clap::{Subcommand, Args};
 
@@ -22,6 +23,9 @@ pub struct FsArgs {
 
 #[derive(Debug, Subcommand)]
 enum FsCmds {
+    /// retrieves the desired fs item
+    Get(GetArgs),
+
     /// creates a new fs item
     Create(CreateArgs),
 
@@ -30,13 +34,18 @@ enum FsCmds {
 
     /// uploads a file to the server
     Upload(UploadArgs),
+
+    /// deletes the desired fs item
+    Delete(DeleteArgs),
 }
 
 pub fn handle(client: &ApiClient, args: FsArgs) -> error::Result {
     match args.command {
+        FsCmds::Get(given) => get(client, given),
         FsCmds::Create(given) => create(client, given),
         FsCmds::Update(given) => update(client, given),
         FsCmds::Upload(given) => upload(client, given),
+        FsCmds::Delete(given) => delete(client, given),
     }
 }
 
@@ -97,6 +106,25 @@ fn ext_mime(ext: &OsStr, fallback: Option<mime::Mime>) -> error::Result<mime::Mi
     } else {
         Ok(guess.first_or_octet_stream())
     }
+}
+
+#[derive(Debug, Args)]
+struct GetArgs {
+    /// the id of the item to retrieve
+    #[arg(long, value_parser(util::parse_flake_id::<rfs_lib::ids::FSId>))]
+    id: rfs_lib::ids::FSId,
+}
+
+fn get(client: &ApiClient, args: GetArgs) -> error::Result {
+    let result = RetrieveItem::id(args.id)
+        .send(client)
+        .context("failed to retrieve the fs item")?
+        .context("desired fs item was not found")?
+        .into_payload();
+
+    println!("{result:#?}");
+
+    Ok(())
 }
 
 #[derive(Debug, Args)]
@@ -340,6 +368,21 @@ fn upload(client: &ApiClient, args: UploadArgs) -> error::Result {
             println!("{:#?}", result);
         },
     }
+
+    Ok(())
+}
+
+#[derive(Debug, Args)]
+struct DeleteArgs {
+    /// id of the fs item to delete
+    #[arg(long, value_parser(util::parse_flake_id::<rfs_lib::ids::FSId>))]
+    id: rfs_lib::ids::FSId,
+}
+
+fn delete(client: &ApiClient, args: DeleteArgs) -> error::Result {
+    DeleteItem::id(args.id)
+        .send(client)
+        .context("failed to delete fs item")?;
 
     Ok(())
 }

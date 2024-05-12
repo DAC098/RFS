@@ -1,6 +1,8 @@
+use std::collections::HashSet;
 use std::fmt::Write;
 use std::str::FromStr;
 use std::path::PathBuf;
+use std::io::ErrorKind as StdIoErrorKind;
 
 use rfs_lib::ids;
 use tokio::io::{AsyncWriteExt, BufWriter};
@@ -9,7 +11,7 @@ use axum::http::{StatusCode, HeaderMap};
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
-use futures::{Stream, StreamExt};
+use futures::{Stream, StreamExt, TryStreamExt};
 use deadpool_postgres::GenericClient;
 use serde::Deserialize;
 
@@ -264,7 +266,7 @@ pub async fn put(
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         permission::Scope::Fs,
         permission::Ability::Write,
     ).await? {
@@ -286,10 +288,7 @@ pub async fn put(
         item
     );
 
-    let Some(medium) = storage::Medium::retrieve(
-        &conn,
-        item.storage_id()
-    ).await? else {
+    let Some(medium) = storage::Medium::retrieve(&conn, item.storage_id()).await? else {
         return Err(error::Error::api(error::ApiErrorKind::StorageNotFound));
     };
 
@@ -535,8 +534,6 @@ pub async fn patch(
         return Err(error::Error::api(error::ApiErrorKind::NoWork));
     }
 
-    tracing::debug!("action {:?}", json);
-
     let transaction = conn.transaction().await?;
 
     {
@@ -548,10 +545,7 @@ pub async fn patch(
 
         if let Some(comment) = &json.comment {
             if comment.len() == 0 {
-                write!(
-                    &mut update_query,
-                    ", comment = null",
-                ).unwrap();
+                write!(&mut update_query, ", comment = null").unwrap();
 
                 item.set_comment(None);
             } else {
@@ -592,9 +586,214 @@ pub async fn patch(
 }
 
 pub async fn delete(
-    State(_state): State<ArcShared>,
-    _initiator: initiator::Initiator,
-    Path(PathParams { fs_id: _ }): Path<PathParams>,
+    State(state): State<ArcShared>,
+    initiator: initiator::Initiator,
+    Path(PathParams { fs_id }): Path<PathParams>,
 ) -> error::Result<impl IntoResponse> {
+    let mut conn = state.pool().get().await?;
+
+    if !permission::has_ability(
+        &conn,
+        &initiator.user.id,
+        permission::Scope::Fs,
+        permission::Ability::Write,
+    ).await? {
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
+    }
+
+    let Some(item) = fs::Item::retrieve(&conn, &fs_id).await? else {
+        return Err(error::Error::api(error::ApiErrorKind::FileNotFound));
+    };
+
+    if *item.user_id() != initiator.user.id {
+        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
+    }
+
+    let Some(medium) = storage::Medium::retrieve(&conn, item.storage_id()).await? else {
+        return Err(error::Error::api(error::ApiErrorKind::StorageNotFound));
+    };
+
+    match item {
+        fs::Item::Root(root) => {
+            return Err(error::Error::api(
+                error::ApiErrorKind::NotPermitted
+            ));
+        },
+        fs::Item::Directory(dir) => {
+            delete_dir(&state, &mut conn, &initiator, medium, dir).await?;
+        },
+        fs::Item::File(file) => {
+            delete_file(&state, &mut conn, &initiator, medium ,file).await?;
+        }
+    }
+
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn delete_file(
+    state: &ArcShared,
+    conn: &mut impl GenericClient,
+    initiator: &initiator::Initiator,
+    medium: storage::Medium,
+    file: fs::File,
+) -> error::Result<()> {
+    let transaction = conn.transaction().await?;
+
+    transaction.execute(
+        "delete from fs where id = $1",
+        &[&file.id]
+    ).await?;
+
+    match medium.type_ {
+        storage::types::Type::Local(local) => {
+            let full_path = local.path.join(file.path.join(file.basename));
+
+            tokio::fs::remove_file(&full_path).await?;
+        }
+    }
+
+    transaction.commit().await?;
+
+    Ok(())
+}
+
+async fn delete_dir(
+    state: &ArcShared,
+    conn: &mut impl GenericClient,
+    initiator: &initiator::Initiator,
+    medium: storage::Medium,
+    directory: fs::Directory,
+) -> error::Result<()> {
+    let transaction = conn.transaction().await?;
+
+    let results = transaction.query_raw(
+        "\
+        with recursive dir_tree as (\
+            select fs_root.id, \
+                   fs_root.parent, \
+                   fs_root.basename, \
+                   fs_root.fs_type, \
+                   fs_root.fs_path, \
+                   1 as level, \
+                   fs_root.hash \
+            from fs fs_root \
+            where id = $1 \
+            union \
+            select fs_contents.id, \
+                   fs_contents.parent, \
+                   fs_contents.basename, \
+                   fs_contents.fs_type, \
+                   fs_contents.fs_path, \
+                   dir_tree.level + 1 as level, \
+                   fs_contents.hash \
+            from fs fs_contents \
+            inner join dir_tree on dir_tree.id = fs_contents.parent\
+        ) \
+        select * \
+        from dir_tree \
+        order by level desc, \
+                 parent, \
+                 fs_type, \
+                 id",
+        &[&directory.id]
+    ).await?;
+
+    futures::pin_mut!(results);
+
+    let mut skip_parents: HashSet<ids::FSId> = HashSet::new();
+    let mut deleted: Vec<ids::FSId> = Vec::new();
+    let mut failed: Vec<ids::FSId> = Vec::new();
+    let mut skipped: Vec<ids::FSId> = Vec::new();
+
+    while let Some(row) = results.try_next().await? {
+        let id: ids::FSId = row.get(0);
+        let parent: Option<ids::FSId> = row.get(1);
+        let basename: String = row.get(2);
+        let fs_type: fs::consts::FS_TYPE = row.get(3);
+        let fs_path = sql::pathbuf_from_sql(row.get(4));
+        let level: i32 = row.get(5);
+
+        if skip_parents.contains(&id) {
+            tracing::debug!("skipping fs item. id: {}", id.id());
+
+            skipped.push(id);
+
+            if let Some(parent) = parent {
+                skip_parents.insert(parent);
+            }
+
+            continue;
+        }
+
+        let full_path = match &medium.type_ {
+            storage::types::Type::Local(local) => {
+                local.path.join(fs_path.join(basename))
+            }
+        };
+
+        tracing::debug!("deleting id: {}\ndepth: {level}\npath: {}", id.id(), full_path.display());
+
+        match fs_type {
+            fs::consts::FILE_TYPE => {
+                if let Err(err) = tokio::fs::remove_file(&full_path).await {
+                    match err.kind() {
+                        StdIoErrorKind::NotFound => {
+                            deleted.push(id);
+                        }
+                        _ => {
+                            tracing::error!("failed to delete file. id: {} path: {} {err}", id.id(), full_path.display());
+
+                            failed.push(id);
+
+                            if let Some(parent) = parent {
+                                skip_parents.insert(parent);
+                            }
+                        }
+                    }
+                } else {
+                    deleted.push(id);
+                }
+            }
+            fs::consts::DIR_TYPE => {
+                if let Err(err) = tokio::fs::remove_dir(&full_path).await {
+                    match err.kind() {
+                        StdIoErrorKind::NotFound => {
+                            deleted.push(id);
+                        }
+                        _ => {
+                            tracing::error!("failed to delete directory. id: {} path: {} {err}", id.id(), full_path.display());
+
+                            failed.push(id);
+
+                            if let Some(parent) = parent {
+                                skip_parents.insert(parent);
+                            }
+                        }
+                    }
+                } else {
+                    deleted.push(id);
+                }
+            }
+            _ => {
+                tracing::debug!("unhandled file type. id: {} type: {fs_type}", id.id());
+
+                skipped.push(id);
+
+                if let Some(parent) = parent {
+                    skip_parents.insert(parent);
+                }
+            }
+        }
+    }
+
+    let del_result = transaction.execute(
+        "delete from fs where id = any($1)",
+        &[&deleted]
+    ).await?;
+
+    tracing::debug!("deleted: {del_result} skipped: {} failed: {}", skipped.len(), failed.len());
+
+    transaction.commit().await?;
+
+    Ok(())
 }

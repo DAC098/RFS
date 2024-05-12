@@ -77,6 +77,7 @@ pub enum ApiErrorKind {
 
     NoWork,
     NoOp,
+    NotPermitted,
 
     ValidationFailed,
     InvalidData,
@@ -110,6 +111,7 @@ impl From<&ApiErrorKind> for StatusCode {
             ApiErrorKind::InvalidTags |
             ApiErrorKind::NoWork |
             ApiErrorKind::NoOp |
+            ApiErrorKind::NotPermitted |
             ApiErrorKind::ValidationFailed |
             ApiErrorKind::InvalidData |
             ApiErrorKind::MissingData |
