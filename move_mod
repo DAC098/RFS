@@ -1,0 +1,99 @@
+#!/usr/bin/env node
+
+const fs = require("node:fs")
+const path = require("node:path")
+
+const cwd = process.cwd();
+
+let working_dir = "";
+
+for (let argc = 2; argc < process.argv.length; ++argc) {
+    console.log(process.argv[argc]);
+
+    if (path.isAbsolute(process.argv[argc])) {
+        working_dir = process.argv[argc];
+    } else {
+        working_dir = path.resolve(process.argv[argc]);
+    }
+}
+
+console.log("working_dir", working_dir);
+
+let stack = [];
+
+try {
+    let current = fs.readdirSync(working_dir, {withFileTypes: true});
+
+    stack.push({
+        contents: current,
+        index: 0,
+        path: working_dir,
+        name: path.basename(working_dir),
+    });
+} catch (err) {
+    console.log("failed to directory contents", err);
+    return;
+}
+
+function move_file(curr_path, new_path) {
+    console.log("moving file:", curr_path, "->", new_path);
+
+    try {
+        fs.renameSync(curr_path, new_path);
+    } catch (err) {
+        console.error("failed to move file", err);
+    }
+}
+
+function rm_dir(dir_path) {
+    console.log("removing dir:", dir_path);
+
+    try {
+        fs.rmdirSync(dir_path);
+    } catch (err) {
+        console.log("failed to remove dir:", err);
+    }
+}
+
+while (stack.length != 0) {
+    let current = stack.pop();
+
+    for (; current.index < current.contents.length; ++current.index) {
+        let entry = current.contents[current.index];
+        let entry_path = path.join(current.path, entry.name);
+
+        try {
+            if (entry.isFile()) {
+                if (entry.name === "mod.rs") {
+                    let new_path = path.join(path.dirname(current.path), `${current.name}.rs`);
+
+                    move_file(entry_path, new_path);
+
+                    if (current.contents.length === 1) {
+                        console.log("deleting directory:", current.path);
+
+                        rm_dir(current.path);
+                    }
+                } else {
+                    console.log(current.index, entry_path);
+                }
+            } else if (entry.isDirectory()) {
+                current.index += 1;
+
+                stack.push(current);
+                stack.push({
+                    contents: fs.readdirSync(entry_path, {withFileTypes: true}),
+                    index: 0,
+                    path: entry_path,
+                    name: entry.name,
+                });
+
+                break;
+            } else {
+                console.log("non file item:", entry_path);
+            }
+        } catch (err) {
+            console.log("error when working on directory entry:", entry_path, "\n", err);
+        }
+    }
+}
