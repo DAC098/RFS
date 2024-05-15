@@ -42,7 +42,7 @@ pub enum Item {
 
 impl Item {
     fn query_to_item(
-        row: tokio_postgres::Row, 
+        row: tokio_postgres::Row,
         tags: tags::TagMap
     ) -> Result<Item, PgError> {
         let fs_type = row.get(4);
@@ -163,6 +163,13 @@ impl Item {
     pub fn try_into_file(self) -> Option<File> {
         match self {
             Self::File(file) => Some(file),
+            _ => None
+        }
+    }
+
+    pub fn try_into_dir(self) -> Option<Directory> {
+        match self {
+            Self::Directory(dir) => Some(dir),
             _ => None
         }
     }

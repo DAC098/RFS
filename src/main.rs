@@ -189,6 +189,10 @@ async fn init() -> error::Result<()> {
                 .delete(routing::handle::storage::storage_id::delete)
         )
         .route(
+            "/fs/roots",
+            get(routing::handle::fs::roots::get)
+        )
+        .route(
             "/fs/:fs_id",
             get(routing::handle::fs::fs_id::get)
                 .post(routing::handle::fs::fs_id::post)
@@ -198,7 +202,7 @@ async fn init() -> error::Result<()> {
         )
         .route(
             "/fs/:fs_id/contents",
-            get(routing::okay)
+            get(routing::handle::fs::fs_id::contents::get)
         )
         .route(
             "/fs/:fs_id/data",

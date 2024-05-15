@@ -3,19 +3,25 @@ use reqwest::blocking::Body;
 
 use crate::client::error::RequestError;
 use crate::client::ApiClient;
-use crate::{Payload, ApiError, ApiErrorKind, Tags};
+use crate::{
+    Payload,
+    ApiError,
+    ApiErrorKind,
+    Tags,
+    Limit,
+    Offset,
+};
 use crate::fs::{
-    //CreateItem as CreateItemBody,
     CreateDir as CreateDirBody,
     UpdateMetadata as UpdateMetadataBody,
-    //ListItem,
-    Item
+    Item,
+    ItemMin,
 };
 
 pub mod storage;
 
 pub struct RetrieveItem {
-    id: ids::FSId
+    id: ids::FSId,
 }
 
 impl RetrieveItem {
@@ -37,6 +43,130 @@ impl RetrieveItem {
 
                 Err(RequestError::Api(err))
             },
+            _ => Err(RequestError::Api(res.json()?))
+        }
+    }
+}
+
+pub struct RetrieveRoots {
+    limit: Option<Limit>,
+    offset: Option<Offset>,
+    last_id: Option<ids::FSId>,
+}
+
+impl RetrieveRoots {
+    pub fn new() -> Self {
+        RetrieveRoots {
+            limit: None,
+            offset: None,
+            last_id: None,
+        }
+    }
+
+    pub fn limit<L>(&mut self, limit: L) -> &mut Self
+    where
+        L: Into<Option<Limit>>
+    {
+        self.limit = limit.into();
+        self
+    }
+
+    pub fn offset<O>(&mut self, offset: O) -> &mut Self
+    where
+        O: Into<Option<Offset>>
+    {
+        self.offset = offset.into();
+        self
+    }
+
+    pub fn last_id<I>(&mut self, last_id: I) -> &mut Self
+    where
+        I: Into<Option<ids::FSId>>
+    {
+        self.last_id = last_id.into();
+        self
+    }
+
+    pub fn send(&self, client: &ApiClient) -> Result<Payload<Vec<ItemMin>>, RequestError> {
+        let mut builder = client.get("/fs/roots");
+
+        if let Some(limit) = &self.limit {
+            builder = builder.query(&[("limit", limit)]);
+        }
+
+        if let Some(last_id) = &self.last_id {
+            builder = builder.query(&[("last_id", last_id)]);
+        } else if let  Some(offset) = &self.offset {
+            builder = builder.query(&[("offset", offset)]);
+        }
+
+        let res = builder.send()?;
+
+        match res.status() {
+            reqwest::StatusCode::OK => Ok(res.json()?),
+            _ => Err(RequestError::Api(res.json()?))
+        }
+    }
+}
+
+pub struct RetrieveContents {
+    id: ids::FSId,
+    limit: Option<Limit>,
+    offset: Option<Offset>,
+    last_id: Option<ids::FSId>,
+}
+
+impl RetrieveContents {
+    pub fn id(id: ids::FSId) -> Self {
+        RetrieveContents {
+            id,
+            limit: None,
+            offset: None,
+            last_id: None,
+        }
+    }
+
+    pub fn limit<L>(&mut self, limit: L) -> &mut Self
+    where
+        L: Into<Option<Limit>>
+    {
+        self.limit = limit.into();
+        self
+    }
+
+    pub fn offset<O>(&mut self, offset: O) -> &mut Self
+    where
+        O: Into<Option<Offset>>
+    {
+        self.offset = offset.into();
+        self
+    }
+
+    pub fn last_id<I>(&mut self, last_id: I) -> &mut Self
+    where
+        I: Into<Option<ids::FSId>>
+    {
+        self.last_id = last_id.into();
+        self
+    }
+
+    pub fn send(&self, client: &ApiClient) -> Result<Payload<Vec<ItemMin>>, RequestError> {
+        let mut builder = client.get(format!("/fs/{}/contents", self.id.id()));
+
+        if let Some(limit) = &self.limit {
+            builder = builder.query(&[("limit", limit)]);
+        }
+
+        if let Some(last_id) = &self.last_id {
+            builder = builder.query(&[("last_id", last_id)]);
+        } else if let  Some(offset) = &self.offset {
+            builder = builder.query(&[("offset", offset)]);
+        }
+
+        let res = builder.send()?;
+
+        match res.status() {
+            reqwest::StatusCode::OK => Ok(res.json()?),
             _ => Err(RequestError::Api(res.json()?))
         }
     }

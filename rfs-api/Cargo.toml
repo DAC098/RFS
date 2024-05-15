@@ -28,5 +28,4 @@ url = { workspace = true }
 [dependencies.reqwest]
 workspace = true
 optional = true
-default-features = false
 features = ["cookies", "blocking", "json", "stream"]

@@ -38,8 +38,13 @@ pub struct Root {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub enum Checksum {
-    Blake3(String),
+pub struct RootMin {
+    #[serde(with = "string_id")]
+    pub id: ids::FSId,
+    #[serde(with = "string_id")]
+    pub user_id: ids::UserId,
+    pub created: DateTime<Utc>,
+    pub updated: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -57,13 +62,29 @@ pub struct File {
     pub mime: mime::Mime,
     pub tags: Tags,
     pub comment: Option<String>,
-    pub checksums: Vec<Checksum>,
+    pub hash: Vec<u8>,
     pub storage: Storage,
     pub created: DateTime<Utc>,
     pub updated: Option<DateTime<Utc>>,
     pub deleted: Option<DateTime<Utc>>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FileMin {
+    #[serde(with = "string_id")]
+    pub id: ids::FSId,
+    #[serde(with = "string_id")]
+    pub user_id: ids::UserId,
+    #[serde(with = "string_id")]
+    pub parent: ids::FSId,
+    pub basename: String,
+    pub path: PathBuf,
+    pub size: u64,
+    #[serde(with = "mime_str")]
+    pub mime: mime::Mime,
+    pub created: DateTime<Utc>,
+    pub updated: Option<DateTime<Utc>>,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UpdateMetadata {
@@ -126,8 +147,29 @@ pub struct Directory {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct DirectoryMin {
+    #[serde(with = "string_id")]
+    pub id: ids::FSId,
+    #[serde(with = "string_id")]
+    pub user_id: ids::UserId,
+    #[serde(with = "string_id")]
+    pub parent: ids::FSId,
+    pub basename: String,
+    pub path: PathBuf,
+    pub created: DateTime<Utc>,
+    pub updated: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub enum Item {
     Root(Root),
     File(File),
     Directory(Directory),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum ItemMin {
+    Root(RootMin),
+    File(FileMin),
+    Directory(DirectoryMin),
 }

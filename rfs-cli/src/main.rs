@@ -2,6 +2,7 @@ mod error;
 mod input;
 mod util;
 mod cli;
+mod formatting;
 
 fn main() {
     use tracing_subscriber::{FmtSubscriber, EnvFilter};

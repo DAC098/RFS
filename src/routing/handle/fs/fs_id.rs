@@ -24,6 +24,8 @@ use crate::storage;
 use crate::fs;
 use crate::tags;
 
+pub mod contents;
+
 async fn stream_to_writer<S, E, W>(
     mut stream: S,
     hasher: &mut blake3::Hasher,

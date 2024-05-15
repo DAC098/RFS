@@ -97,7 +97,7 @@ impl File {
             mime: self.mime,
             tags: self.tags,
             comment: self.comment,
-            checksums: Vec::new(),
+            hash: self.hash.as_bytes().to_vec(),
             storage: self.storage.into_schema(),
             created: self.created,
             updated: self.updated,
