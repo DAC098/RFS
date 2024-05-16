@@ -16,19 +16,7 @@ pub async fn post(
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    if !rfs_lib::sec::authn::password_valid(&json.updated) {
-        return Err(error::Error::api((
-            error::ApiErrorKind::ValidationFailed,
-            error::Detail::Keys(vec![String::from("password")]),
-        )));
-    };
-
-    if json.updated != json.confirm {
-        return Err(error::Error::api((
-            error::ApiErrorKind::InvalidData,
-            error::Detail::Keys(vec![String::from("confirm")])
-        )));
-    }
+    json.validate()?;
 
     let transaction = conn.transaction().await?;
 
@@ -37,13 +25,6 @@ pub async fn post(
             return Err(error::Error::api((
                 error::ApiErrorKind::MissingData,
                 error::Detail::Keys(vec![String::from("current")])
-            )));
-        };
-
-        if !rfs_lib::sec::authn::password_valid(&given) {
-            return Err(error::Error::api((
-                error::ApiErrorKind::ValidationFailed,
-                error::Detail::Keys(vec![String::from("password")])
             )));
         };
 
@@ -76,17 +57,12 @@ pub async fn delete(
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
+    json.validate()?;
+
     let transaction = conn.transaction().await?;
 
     let Some(current) = Password::retrieve(&transaction, &initiator.user.id).await? else {
         return Err(error::Error::api(error::ApiErrorKind::PasswordNotFound));
-    };
-
-    let Some(given) = json.current else {
-        return Err(error::Error::api((
-            error::ApiErrorKind::MissingData,
-            error::Detail::Keys(vec![String::from("current")]),
-        )));
     };
 
     if !current.verify(given, state.sec().peppers())? {

@@ -261,7 +261,7 @@ impl Session {
 
         let _ = conn.execute(
             "\
-            update auth_session
+            update auth_session \
             set user_id = $2, \
                 dropped = $3, \
                 issued_on = $4, \

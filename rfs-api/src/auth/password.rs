@@ -43,5 +43,18 @@ impl CreatePassword {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DeletePassword {
-    pub current: Option<String>
+    pub current: String
+}
+
+impl DeletePassword {
+    pub fn validate(&self) -> Result<(), ApiError> {
+        if !rfs_lib::sec::authn::password_valid(&self.current) {
+            return Err(ApiError::from((
+                ApiErrorKind::ValidationFailed,
+                Detail::with_key("current")
+            )));
+        }
+
+        Ok(())
+    }
 }

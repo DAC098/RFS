@@ -170,29 +170,38 @@ pub async fn delete(
         let mut iter = batch.iter();
 
         if let Some((id, v, h)) = iter.next() {
+            tracing::debug!("id: {} | v: {v} | h: {h}", id.id());
+
             write_sql_array(&mut batch_user_id, id, &mut batch_params, false);
             write_sql_array(&mut batch_version, v, &mut batch_params, false);
             write_sql_array(&mut batch_hash, h, &mut batch_params, false);
 
             for (id, v, h) in iter {
+                tracing::debug!("id: {} | v: {v} | h: {h}", id.id());
+
                 write_sql_array(&mut batch_user_id, id, &mut batch_params, true);
                 write_sql_array(&mut batch_version, v, &mut batch_params, true);
                 write_sql_array(&mut batch_hash, h, &mut batch_params, true);
             }
 
+            tracing::debug!("batch_user_id: \"{batch_user_id}\"");
+            tracing::debug!("batch_version: \"{batch_version}\"");
+            tracing::debug!("batch_hash: \"{batch_hash}\"");
+
             let query = format!("\
                 with to_update as (\
                     select * \
                     from unnest(\
-                        ARRAY[{batch_user_id}], \
-                        ARRAY[{batch_version}], \
+                        ARRAY[{batch_user_id}]::bigint[], \
+                        ARRAY[{batch_version}]::bigint[], \
                         ARRAY[{batch_hash}]\
                     ) as t(user_id, version, hash)\
                 ) \
                 update auth_password set \
                     user_id = to_update.user_id, \
-                    version = to_udpate.version, \
+                    version = to_update.version, \
                     hash = to_update.hash \
+                from to_update \
                 where to_update.user_id = auth_password.user_id");
 
             transaction.execute(&query, &batch_params).await?;
@@ -202,6 +211,8 @@ pub async fn delete(
             break;
         }
     }
+
+    transaction.commit().await?;
 
     state.sec()
         .peppers()

@@ -1,6 +1,6 @@
 use crate::client::error::RequestError;
 use crate::client::ApiClient;
-use crate::auth::password::CreatePassword;
+use crate::auth::password::{DeletePassword, CreatePassword};
 
 pub struct UpdatePassword {
     body: CreatePassword
@@ -34,6 +34,37 @@ impl UpdatePassword {
 
         let url = client.info.url.join("/auth/password").unwrap();
         let res = client.client.post(url)
+            .json(&self.body)
+            .send()?;
+
+        match res.status() {
+            reqwest::StatusCode::NO_CONTENT => Ok(()),
+            _ => Err(RequestError::Api(res.json()?))
+        }
+    }
+}
+
+pub struct RemovePassword {
+    body: DeletePassword
+}
+
+impl RemovePassword {
+    pub fn remove<P>(current: P) -> Self
+    where
+        P: Into<String>
+    {
+        RemovePassword {
+            body: DeletePassword {
+                current: current.into()
+            }
+        }
+    }
+
+    pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
+        self.body.validate()?;
+
+        let url = client.info.url.join("/auth/password").unwrap();
+        let res = client.client.delete(url)
             .json(&self.body)
             .send()?;
 
