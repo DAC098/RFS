@@ -1,3 +1,5 @@
+use rfs_api::auth::session::SubmittedAuth;
+
 use axum::http::{StatusCode, HeaderMap};
 use axum::extract::State;
 use axum::response::IntoResponse;
@@ -11,12 +13,13 @@ use crate::sec::authn::initiator::{self, LookupError};
 pub async fn post(
     State(state): State<ArcShared>,
     headers: HeaderMap,
-    axum::Json(json): axum::Json<rfs_api::auth::session::SubmittedAuth>,
+    axum::Json(json): axum::Json<SubmittedAuth>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
-    let peppers = state.sec().peppers().inner();
 
-    let mut session = match initiator::lookup_header_map(state.auth(), &conn, &headers).await {
+    let transaction = conn.transaction().await?;
+
+    let mut session = match initiator::lookup_header_map(state.auth(), &transaction, &headers).await {
         Ok(_initiator) => {
             return Err(error::Error::api(error::ApiErrorKind::AlreadyAuthenticated));
         },
@@ -31,10 +34,8 @@ pub async fn post(
         }
     };
 
-    let transaction = conn.transaction().await?;
-
     match json {
-        rfs_api::auth::session::SubmittedAuth::Password(given) => match session.auth_method {
+        SubmittedAuth::Password(given) => match session.auth_method {
             AuthMethod::Password => {
                 if !rfs_lib::sec::authn::password_valid(&given) {
                     return Err(error::Error::api(error::ApiErrorKind::InvalidPassword));
@@ -48,19 +49,8 @@ pub async fn post(
                         .source("session required user password but user password was not found"));
                 };
 
-                {
-                    let Ok(reader) = peppers.read() else {
-                        return Err(error::Error::new().source("peppers rwlock poisoned"));
-                    };
-
-                    let Some(pepper) = reader.get(&user_password.version) else {
-                        return Err(error::Error::new()
-                            .source("password secret version not found. unable verify user password"));
-                    };
-
-                    if !user_password.verify(&given, pepper.data())? {
-                        return Err(error::Error::api(error::ApiErrorKind::InvalidPassword));
-                    }
+                if !user_password.verify(&given, state.sec().peppers())? {
+                    return Err(error::Error::api(error::ApiErrorKind::InvalidPassword));
                 }
 
                 session.authenticated = true;

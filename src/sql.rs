@@ -10,6 +10,7 @@ use tokio_postgres::types::{self, ToSql};
 
 pub type PgJson<T> = types::Json<T>;
 
+pub type ParamsValue<'a> = &'a (dyn ToSql + Sync);
 pub type ParamsVec<'a> = Vec<&'a (dyn ToSql + Sync)>;
 pub type ParamsArray<'a, const N: usize> = [&'a (dyn ToSql + Sync); N];
 

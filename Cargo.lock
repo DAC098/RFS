@@ -1670,6 +1670,7 @@ dependencies = [
  "sha2",
  "sha3",
  "snowcloud-cloud",
+ "thiserror",
  "tokio",
  "tokio-postgres",
  "tokio-util",
@@ -1765,6 +1766,7 @@ dependencies = [
  "serde_json",
  "serde_repr",
  "snowcloud-flake",
+ "thiserror",
 ]
 
 [[package]]

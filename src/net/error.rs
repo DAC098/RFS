@@ -224,6 +224,8 @@ macro_rules! simple_from {
     }
 }
 
+simple_from!(rfs_lib::sec::chacha::CryptoError);
+
 simple_from!(std::io::Error);
 simple_from!(std::fmt::Error);
 

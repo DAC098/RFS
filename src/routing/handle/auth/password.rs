@@ -1,3 +1,5 @@
+use rfs_api::auth::password::CreatePassword;
+
 use axum::http::StatusCode;
 use axum::extract::State;
 use axum::response::IntoResponse;
@@ -10,10 +12,9 @@ use crate::sec::authn::password::{self, Password};
 pub async fn post(
     State(state): State<ArcShared>,
     initiator: Initiator,
-    axum::Json(json): axum::Json<rfs_api::auth::password::CreatePassword>,
+    axum::Json(json): axum::Json<CreatePassword>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
-    let peppers = state.sec().peppers().inner();
 
     if !rfs_lib::sec::authn::password_valid(&json.updated) {
         return Err(error::Error::api((
@@ -29,7 +30,9 @@ pub async fn post(
         )));
     }
 
-    if let Some(current) = Password::retrieve(&conn, &initiator.user.id).await? {
+    let transaction = conn.transaction().await?;
+
+    if let Some(mut current) = Password::retrieve(&transaction, &initiator.user.id).await? {
         let Some(given) = json.current else {
             return Err(error::Error::api((
                 error::ApiErrorKind::MissingData,
@@ -44,78 +47,24 @@ pub async fn post(
             )));
         };
 
-        let salt = password::gen_salt()?;
-        let hash;
-        let version;
-
-        {
-            let reader = peppers.read()
-                .map_err(|_| error::Error::new().source("secrets rwlock poisoned"))?;
-
-            let secret = if current.version == 0 {
-                &[]
-            } else {
-                let Some(secret) = reader.get(&current.version) else {
-                    return Err(error::Error::new()
-                        .source("password secret version not found. unable to verify user password"));
-                };
-
-                secret.data().as_slice()
-            };
-
-            if !current.verify(given, secret)? {
-                return Err(error::Error::api((
-                    error::ApiErrorKind::InvalidData,
-                    error::Detail::Keys(vec![String::from("password")])
-                )));
-            }
-
-            if let Some((ver, pepper)) = reader.latest_version() {
-                hash = password::gen_hash(&json.updated, &salt, pepper.data())?;
-                version = *ver;
-            } else {
-                hash = password::gen_hash(&json.updated, &salt, &[])?;
-                version = 0;
-            }
+        if !current.verify(&given, state.sec().peppers())? {
+            return Err(error::Error::api((
+                error::ApiErrorKind::InvalidData,
+                error::Detail::Keys(vec![String::from("password")])
+            )));
         }
 
-        let transaction = conn.transaction().await?;
-
-        let _ = transaction.execute(
-            "update auth_password set hash = $2, version = $3 where user_id = $1",
-            &[initiator.user().id(), &hash, &(version as i64)]
-        );
-
-        transaction.commit().await?;
+        current.update(given, state.sec().peppers(), &transaction).await?;
     } else {
-        let salt = password::gen_salt()?;
-        let version;
-        let hash;
-
-        {
-            let reader = peppers.read()
-                .map_err(|_| error::Error::new().source("peppers rwlock poisoned"))?;
-
-            if let Some((ver, pepper)) = reader.latest_version() {
-                hash = password::gen_hash(&json.updated, &salt, pepper.data())?;
-                version = *ver;
-            } else {
-                hash = password::gen_hash(&json.updated, &salt, &[])?;
-                version = 0;
-            }
-        }
-
-        let transaction = conn.transaction().await?;
-
-        let _ = transaction.execute(
-            "\
-            insert into auth_password (user_id, version, hash) values
-            ($1, $2, $3)",
-            &[&initiator.user().id(), &(version as i64), &hash]
+        password::Password::create(
+            initiator.user.id.clone(),
+            json.updated,
+            state.sec().peppers(),
+            &transaction
         ).await?;
-
-        transaction.commit().await?;
     }
+
+    transaction.commit().await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -126,9 +75,10 @@ pub async fn delete(
     axum::Json(json): axum::Json<rfs_api::auth::password::DeletePassword>,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
-    let peppers = state.sec().peppers().inner();
 
-    let Some(current) = Password::retrieve(&conn, &initiator.user.id).await? else {
+    let transaction = conn.transaction().await?;
+
+    let Some(current) = Password::retrieve(&transaction, &initiator.user.id).await? else {
         return Err(error::Error::api(error::ApiErrorKind::PasswordNotFound));
     };
 
@@ -139,35 +89,14 @@ pub async fn delete(
         )));
     };
 
-    {
-        let reader = peppers.read()
-            .map_err(|_| error::Error::new().source("peppers rwlock poisoned"))?;
-
-        let secret = if current.version == 0 {
-            &[]
-        } else {
-            let Some(secret) = reader.get(&current.version) else {
-                return Err(error::Error::new()
-                    .source("password secret version not found. unable to verify user password"));
-            };
-
-            secret.data().as_slice()
-        };
-
-        if !current.verify(given, secret)? {
-            return Err(error::Error::api((
-                error::ApiErrorKind::InvalidData,
-                error::Detail::Keys(vec![String::from("current")])
-            )));
-        }
+    if !current.verify(given, state.sec().peppers())? {
+        return Err(error::Error::api((
+            error::ApiErrorKind::InvalidData,
+            error::Detail::Keys(vec![String::from("current")])
+        )));
     }
 
-    let transaction = conn.transaction().await?;
-
-    let _ = transaction.execute(
-        "delete from auth_password where user_id = $1",
-        &[initiator.user().id()]
-    ).await?;
+    current.delete(&transaction).await?;
 
     transaction.commit().await?;
 

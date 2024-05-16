@@ -1,10 +1,4 @@
-
-
-
 use rfs_lib::sec::chacha;
-
-
-
 
 use crate::error;
 use crate::config;
@@ -62,7 +56,7 @@ impl SessionInfo {
 #[derive(Debug)]
 pub struct Sec {
     session_info: SessionInfo,
-    peppers: secrets::PepperWrapper,
+    peppers: secrets::PeppersManager,
 }
 
 impl Sec {
@@ -80,10 +74,10 @@ impl Sec {
 
         let secrets_file = config.settings.data.join("sec/secrets/passwords.data");
 
-        let peppers = secrets::PepperWrapper::load_create(secrets_file, password_key)
+        let peppers = secrets::PeppersManager::load(secrets_file, password_key.into())
             .map_err(|e| error::Error::new()
-                .kind("PepperWrapperFailed")
-                .message("failed to save new pepper secrets file")
+                .kind("PepperManagerFailed")
+                .message("failed to create PeppersManager")
                 .source(e))?;
 
         Ok(Sec {
@@ -96,7 +90,7 @@ impl Sec {
         &self.session_info
     }
 
-    pub fn peppers(&self) -> &secrets::PepperWrapper {
+    pub fn peppers(&self) -> &secrets::PeppersManager {
         &self.peppers
     }
 }

@@ -1,120 +1,71 @@
 use chacha20poly1305::{
+    aead::{Aead, AeadCore, OsRng},
     XChaCha20Poly1305,
-    aead::Aead,
     KeyInit,
-    Error as ChaChaError
+    XNonce,
 };
-use rand::RngCore;
 
-pub const KEY_LEN: usize = 32;
 pub const NONCE_LEN: usize = 24;
+pub const KEY_LEN: usize = 32;
 
 pub type Key = [u8; KEY_LEN];
-pub type Nonce = [u8; NONCE_LEN];
-
-#[derive(Debug)]
-pub enum Error {
-    InvalidEncoding,
-    ChaCha,
-    Rand(rand::Error),
-}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::Rand(e) => write!(f, "Error::Rand {}", e),
-            Error::ChaCha => write!(f, "Error::ChaCha"),
-            Error::InvalidEncoding => write!(f, "Error::InvalidEncoding")
-        }
-    }
-}
-
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Error::Rand(e) => Some(e),
-            Error::ChaCha |
-            Error::InvalidEncoding => None
-        }
-    }
-}
-
-impl From<rand::Error> for Error {
-    fn from(e: rand::Error) -> Self {
-        Error::Rand(e)
-    }
-}
-
-impl From<ChaChaError> for Error {
-    fn from(_: ChaChaError) -> Self {
-        Error::ChaCha
-    }
-}
 
 #[inline]
 pub fn empty_key() -> Key {
     [0; KEY_LEN]
 }
 
-pub fn make_nonce() -> Result<Nonce, Error> {
-    let mut nonce: Nonce = [0; NONCE_LEN];
+#[derive(Debug, thiserror::Error)]
+pub enum CryptoError {
+    #[error("invalid data provided")]
+    InvalidData,
 
-    rand::rngs::OsRng.try_fill_bytes(&mut nonce)?;
+    #[error("data encryption failed")]
+    EncryptFailed,
 
-    Ok(nonce)
+    #[error("data decryption failed")]
+    DecryptFailed,
 }
 
-fn decode_data(data: Vec<u8>) -> Result<(Nonce, Vec<u8>), Error> {
-    let mut nonce: Nonce = [0; NONCE_LEN];
-    let mut encrypted: Vec<u8> = Vec::with_capacity(data.len() - nonce.len());
-    let mut iter = data.into_iter();
-
-    for i in 0..nonce.len() {
-        if let Some(b) = iter.next() {
-            nonce[i] = b;
-        } else {
-            return Err(Error::InvalidEncoding);
-        }
+fn decode_data(mut data: Vec<u8>) -> Result<(XNonce, Vec<u8>), CryptoError> {
+    if data.len() < NONCE_LEN {
+        return Err(CryptoError::InvalidData);
     }
 
-    while let Some(b) = iter.next() {
-        encrypted.push(b);
-    }
+    let nonce = XNonce::from_exact_iter(data.drain(..NONCE_LEN)).unwrap();
 
-    Ok((nonce, encrypted))
+    Ok((nonce, data))
 }
 
-fn encode_data(nonce: Nonce, data: Vec<u8>) -> Result<Vec<u8>, Error> {
+fn encode_data(nonce: XNonce, data: Vec<u8>) -> Vec<u8> {
     let mut rtn: Vec<u8> = Vec::with_capacity(nonce.len() + data.len());
+    rtn.extend(nonce);
+    rtn.extend(data);
 
-    for b in nonce {
-        rtn.push(b);
-    }
-
-    for b in data {
-        rtn.push(b);
-    }
-
-    Ok(rtn)
+    rtn
 }
 
-pub fn decrypt_data(key: &Key, data: Vec<u8>) -> Result<Vec<u8>, Error> {
+pub fn decrypt_data(key: &Key, data: Vec<u8>) -> Result<Vec<u8>, CryptoError> {
     let (nonce, encrypted) = decode_data(data)?;
 
-    let cipher = XChaCha20Poly1305::new_from_slice(key)
-        .expect("invalid key provided to chacha cipher");
+    let cipher = XChaCha20Poly1305::new_from_slice(key).unwrap();
 
-    Ok(cipher.decrypt((&nonce).into(), encrypted.as_slice())?)
+    let Ok(result) = cipher.decrypt(&nonce, encrypted.as_slice()) else {
+        return Err(CryptoError::DecryptFailed);
+    };
+
+    Ok(result)
 }
 
-pub fn encrypt_data(key: &Key, data: Vec<u8>) -> Result<Vec<u8>, Error> {
-    let nonce = make_nonce()?;
-    let cipher = XChaCha20Poly1305::new_from_slice(key)
-        .expect("invalid key provded to chacha cipher");
+pub fn encrypt_data(key: &Key, data: Vec<u8>) -> Result<Vec<u8>, CryptoError> {
+    let nonce = XChaCha20Poly1305::generate_nonce(&mut OsRng);
+    let cipher = XChaCha20Poly1305::new_from_slice(key).unwrap();
 
-    let encrypted = cipher.encrypt((&nonce).into(), data.as_slice())?;
+    let Ok(encrypted) = cipher.encrypt(&nonce, data.as_slice()) else {
+        return Err(CryptoError::EncryptFailed);
+    };
 
-    encode_data(nonce, encrypted)
+    Ok(encode_data(nonce, encrypted))
 }
 
 #[cfg(test)]
@@ -124,7 +75,7 @@ mod test {
     #[test]
     fn encrypt_decrypt() {
         let bytes = b"i am test data to encrypt and decrypt";
-        let empty_key = [0u8; KEY_LEN];
+        let empty_key = empty_key();
 
         let encrypted = match encrypt_data(&empty_key, bytes.to_vec()) {
             Ok(e) => e,
