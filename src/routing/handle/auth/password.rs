@@ -65,7 +65,7 @@ pub async fn delete(
         return Err(error::Error::api(error::ApiErrorKind::PasswordNotFound));
     };
 
-    if !current.verify(given, state.sec().peppers())? {
+    if !current.verify(&json.current, state.sec().peppers())? {
         return Err(error::Error::api((
             error::ApiErrorKind::InvalidData,
             error::Detail::Keys(vec![String::from("current")])
