@@ -10,7 +10,7 @@ use clap::Args;
 
 use crate::error::{self, Context};
 use crate::util;
-use crate::formatting::{self, Column, Float};
+use crate::formatting::{self, Column, Float, PRETTY_OPTIONS, print_table};
 
 #[derive(Debug, Args)]
 pub struct GetArgs {
@@ -190,7 +190,7 @@ fn retrieve_id(client: &ApiClient, id: ids::FSId, args: GetArgs) -> error::Resul
         ];
 
         loop {
-            let (_pagination, payload) = builder.send(client)
+            let (pagination, payload) = builder.send(client)
                 .context("failed to retrieve fs item contents")?
                 .into_tuple();
 
@@ -205,6 +205,8 @@ fn retrieve_id(client: &ApiClient, id: ids::FSId, args: GetArgs) -> error::Resul
             };
 
             builder.last_id(last_id);
+
+            let len = payload.len();
 
             for item in payload {
                 let mut output_item = std::array::from_fn(|_| None);
@@ -236,53 +238,31 @@ fn retrieve_id(client: &ApiClient, id: ids::FSId, args: GetArgs) -> error::Resul
                     }
                 }
 
-                for index in 0..columns.len() {
-                    if let Some(st) = &output_item[index] {
+                for (value, col) in output_item.iter().zip(&mut columns) {
+                    if let Some(st) = &value {
                         let chars_count = st.chars().count();
 
-                        columns[index].update_width(chars_count);
+                        col.update_width(chars_count);
                     }
                 }
 
                 insert_item_min(&mut output_list, item, output_item);
             }
-        }
 
-        let empty = "";
+            if let Some(pagination) = pagination {
+                let limit = *pagination.limit() as usize;
+
+                if len != limit {
+                    break;
+                }
+            }
+        }
 
         if output_list.is_empty() {
             println!("no contents");
         } else {
-            let total = output_list.len();
-            let index_width = (total.ilog10() + 1) as usize;
-
-            println!("contents: {total}");
-
-            print!("{:index_width$}", "");
-
-            for col in &columns {
-                print!(" ");
-
-                col.print_header();
-            }
-
-            println!("");
-
-            for (index, (_, item)) in output_list.iter().enumerate() {
-                print!("{:>index_width$}", index + 1);
-
-                for (value, col) in item.iter().zip(&columns) {
-                    print!(" ");
-
-                    if let Some(st) = value {
-                        col.print_value(st);
-                    } else {
-                        col.print_value(&empty);
-                    }
-                }
-
-                println!("");
-            }
+            print_table(&output_list, &columns, &PRETTY_OPTIONS)
+                .context("failed to output results to stdout")?;
         }
     }
 
@@ -292,7 +272,7 @@ fn retrieve_id(client: &ApiClient, id: ids::FSId, args: GetArgs) -> error::Resul
 fn retrieve_roots(client: &ApiClient, args: GetArgs) -> error::Result {
     let ts_format = args.ts_format;
     let mut builder = RetrieveRoots::new();
-    let mut output_list: Vec<(ItemMin, [Option<String>; 4])> = Vec::new();
+    let mut output_list: Vec<(ItemMin, [Option<String>; 3])> = Vec::new();
     let mut columns = [
         Column::builder("id").float(Float::Right).build(),
         Column::builder("name").build(),
@@ -300,7 +280,7 @@ fn retrieve_roots(client: &ApiClient, args: GetArgs) -> error::Result {
     ];
 
     loop {
-        let (_pagination, payload) = builder.send(client)
+        let (pagination, payload) = builder.send(client)
             .context("failed to retrieve fs roots")?
             .into_tuple();
 
@@ -315,6 +295,8 @@ fn retrieve_roots(client: &ApiClient, args: GetArgs) -> error::Result {
         };
 
         builder.last_id(last_id);
+
+        let len = payload.len();
 
         for item in payload {
             let mut output_item = std::array::from_fn(|_| None);
@@ -344,43 +326,21 @@ fn retrieve_roots(client: &ApiClient, args: GetArgs) -> error::Result {
 
             insert_item_min(&mut output_list, item, output_item);
         }
-    }
 
-    let empty = "";
+        if let Some(pagination) = pagination {
+            let limit = *pagination.limit() as usize;
+
+            if len != limit {
+                break;
+            }
+        }
+    }
 
     if output_list.is_empty() {
         println!("no roots");
     } else {
-        let total = output_list.len();
-        let index_width = (total.ilog10() + 1) as usize;
-
-        println!("contents: {total}");
-
-        print!("{:index_width$}", "");
-
-        for col in &columns {
-            print!(" ");
-
-            col.print_header();
-        }
-
-        println!("");
-
-        for (index, (_, item)) in output_list.iter().enumerate() {
-            print!("{:>index_width$}", index + 1);
-
-            for (value, col) in item.iter().zip(&columns) {
-                print!(" ");
-
-                if let Some(st) = value {
-                    col.print_value(st);
-                } else {
-                    col.print_value(&empty);
-                }
-            }
-
-            println!("");
-        }
+        print_table(&output_list, &columns, &PRETTY_OPTIONS)
+            .context("failed to output results to stdout")?;
     }
 
     Ok(())

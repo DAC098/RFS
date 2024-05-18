@@ -1,6 +1,7 @@
 use std::collections::{HashMap, BinaryHeap};
 use std::fmt::{Write, Formatter, Display, Result as FmtResult};
 use std::default::Default;
+use std::iter::Iterator;
 
 use chrono::{DateTime, Utc, Local, SecondsFormat};
 use clap::ValueEnum;
@@ -322,19 +323,11 @@ impl Column {
         }
     }
 
-    pub fn print_header(&self) {
-        let mut stdout = std::io::stdout();
-
-        self.write_value(&self.name, &mut stdout).unwrap();
-    }
-
-    pub fn print_value<D>(&self, value: &D)
+    pub fn write_header<O>(&self, output: &mut O) -> std::io::Result<()>
     where
-        D: Display + Sized
+        O: std::io::Write
     {
-        let mut stdout = std::io::stdout();
-
-        self.write_value(value, &mut stdout).unwrap();
+        self.write_value(&self.name, output)
     }
 
     pub fn update_width(&mut self, width: usize) -> bool {
@@ -345,4 +338,101 @@ impl Column {
             false
         }
     }
+}
+
+pub struct HeaderSep {
+    pub ch: char,
+    pub col_sep: &'static str,
+}
+
+pub struct TableOptions {
+    pub col_sep: &'static str,
+    pub header_sep: Option<HeaderSep>,
+}
+
+/*
+pub const SIMPLE_OPTIONS: TableOptions = TableOptions {
+    col_sep: " ",
+    header_sep: None,
+};
+*/
+
+pub const PRETTY_OPTIONS: TableOptions = TableOptions {
+    col_sep: " | ",
+    header_sep: Some(HeaderSep {
+        ch: '-',
+        col_sep: "-+-",
+    })
+};
+
+pub fn write_table<O, T, U, const N: usize>(
+    output: &mut O,
+    rows: &[(T, [Option<U>; N])],
+    columns: &[Column; N],
+    options: &TableOptions,
+) -> std::io::Result<()>
+where
+    O: std::io::Write,
+    U: Display + Sized,
+{
+    let empty = "";
+    let total = rows.len();
+    let index_width = (total.ilog10() + 2) as usize;
+
+    write!(output, "{empty:index_width$}")?;
+
+    for col in columns {
+        write!(output, "{}", options.col_sep)?;
+
+        col.write_header(output)?;
+    }
+
+    if let Some(header_sep) = &options.header_sep {
+        write!(output, "\n")?;
+
+        for _ in 0..index_width {
+            write!(output, "{}", header_sep.ch)?;
+        }
+
+        for col in columns {
+            write!(output, "{}", header_sep.col_sep)?;
+
+            for _ in 0..col.width {
+                write!(output, "{}", header_sep.ch)?;
+            }
+        }
+    }
+
+    write!(output, "\n")?;
+
+    for (index, (_, row)) in rows.iter().enumerate() {
+        write!(output, "{:>index_width$}", index + 1)?;
+
+        for (col, value) in columns.iter().zip(row) {
+            write!(output, "{}", options.col_sep)?;
+
+            if let Some(st) = value {
+                col.write_value(st, output)?;
+            } else {
+                col.write_value(&empty, output)?;
+            }
+        }
+
+        write!(output, "\n")?;
+    }
+
+    Ok(())
+}
+
+pub fn print_table<T, U, const N: usize>(
+    rows: &[(T, [Option<U>; N])],
+    columns: &[Column; N],
+    options: &TableOptions
+) -> std::io::Result<()>
+where
+    U: Display + Sized,
+{
+    let mut stdout = std::io::stdout();
+
+    write_table(&mut stdout, rows, columns, options)
 }
