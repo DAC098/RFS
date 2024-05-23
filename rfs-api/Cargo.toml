@@ -17,6 +17,7 @@ mime = { workspace = true }
 chrono = { workspace = true }
 bytes = { workspace = true }
 tracing = { workspace = true }
+thiserror = { workspace = true }
 
 strum = { version = "0.25", features = ["derive"] }
 http = { version = "1" }

@@ -1697,6 +1697,7 @@ dependencies = [
  "serde_json",
  "snowcloud-flake",
  "strum",
+ "thiserror",
  "tracing",
  "url",
 ]
