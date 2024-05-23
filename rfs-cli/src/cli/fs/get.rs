@@ -1,6 +1,6 @@
 use rfs_lib::ids;
 use rfs_api::fs::{Item, ItemMin};
-use rfs_api::client::ApiClient;
+use rfs_api::client::{ApiClient, iterate};
 use rfs_api::client::fs::{
     RetrieveItem,
     RetrieveRoots,
@@ -189,73 +189,47 @@ fn retrieve_id(client: &ApiClient, id: ids::FSId, args: GetArgs) -> error::Resul
             Column::builder("mod").float(Float::Right).build(),
         ];
 
-        loop {
-            let (pagination, payload) = builder.send(client)
-                .context("failed to retrieve fs item contents")?
-                .into_tuple();
+        for result in iterate::Iterate::new(client, &mut builder) {
+            let item = result.context("failed to retrieve fs item contents")?;
 
-            let Some(last) = payload.last() else {
-                break;
-            };
+            let mut output_item = std::array::from_fn(|_| None);
 
-            let last_id = match last {
-                ItemMin::Root(root) => root.id.clone(),
-                ItemMin::Directory(dir) => dir.id.clone(),
-                ItemMin::File(file) => file.id.clone(),
-            };
+            match &item {
+                ItemMin::Root(root) => {
+                    let time = root.updated.as_ref().unwrap_or(&root.created);
 
-            builder.last_id(last_id);
-
-            let len = payload.len();
-
-            for item in payload {
-                let mut output_item = std::array::from_fn(|_| None);
-
-                match &item {
-                    ItemMin::Root(root) => {
-                        let time = root.updated.as_ref().unwrap_or(&root.created);
-
-                        output_item[0] = Some("root".into());
-                        output_item[1] = Some(root.id.id().to_string());
-                        output_item[4] = Some(formatting::datetime_to_string(&time, &ts_format));
-                    }
-                    ItemMin::Directory(dir) => {
-                        let time = dir.updated.as_ref().unwrap_or(&dir.created);
-
-                        output_item[0] = Some("dir".into());
-                        output_item[1] = Some(dir.id.id().to_string());
-                        output_item[3] = Some(dir.basename.clone());
-                        output_item[4] = Some(formatting::datetime_to_string(&time, &ts_format));
-                    }
-                    ItemMin::File(file) => {
-                        let time = file.updated.as_ref().unwrap_or(&file.created);
-
-                        output_item[0] = Some("file".into());
-                        output_item[1] = Some(file.id.id().to_string());
-                        output_item[2] = Some(formatting::bytes_to_unit(file.size, &size_format));
-                        output_item[3] = Some(file.basename.clone());
-                        output_item[4] = Some(formatting::datetime_to_string(&time, &ts_format));
-                    }
+                    output_item[0] = Some("root".into());
+                    output_item[1] = Some(root.id.id().to_string());
+                    output_item[4] = Some(formatting::datetime_to_string(&time, &ts_format));
                 }
+                ItemMin::Directory(dir) => {
+                    let time = dir.updated.as_ref().unwrap_or(&dir.created);
 
-                for (value, col) in output_item.iter().zip(&mut columns) {
-                    if let Some(st) = &value {
-                        let chars_count = st.chars().count();
-
-                        col.update_width(chars_count);
-                    }
+                    output_item[0] = Some("dir".into());
+                    output_item[1] = Some(dir.id.id().to_string());
+                    output_item[3] = Some(dir.basename.clone());
+                    output_item[4] = Some(formatting::datetime_to_string(&time, &ts_format));
                 }
+                ItemMin::File(file) => {
+                    let time = file.updated.as_ref().unwrap_or(&file.created);
 
-                insert_item_min(&mut output_list, item, output_item);
-            }
-
-            if let Some(pagination) = pagination {
-                let limit = *pagination.limit() as usize;
-
-                if len != limit {
-                    break;
+                    output_item[0] = Some("file".into());
+                    output_item[1] = Some(file.id.id().to_string());
+                    output_item[2] = Some(formatting::bytes_to_unit(file.size, &size_format));
+                    output_item[3] = Some(file.basename.clone());
+                    output_item[4] = Some(formatting::datetime_to_string(&time, &ts_format));
                 }
             }
+
+            for (value, col) in output_item.iter().zip(&mut columns) {
+                if let Some(st) = &value {
+                    let chars_count = st.chars().count();
+
+                    col.update_width(chars_count);
+                }
+            }
+
+            insert_item_min(&mut output_list, item, output_item);
         }
 
         if output_list.is_empty() {
@@ -279,61 +253,35 @@ fn retrieve_roots(client: &ApiClient, args: GetArgs) -> error::Result {
         Column::builder("mod").float(Float::Right).build(),
     ];
 
-    loop {
-        let (pagination, payload) = builder.send(client)
-            .context("failed to retrieve fs roots")?
-            .into_tuple();
+    for result in iterate::Iterate::new(client, &mut builder) {
+        let item = result.context("failed to retrieve fs roots")?;
 
-        let Some(last) = payload.last() else {
-            break;
-        };
+        let mut output_item = std::array::from_fn(|_| None);
 
-        let last_id = match last {
-            ItemMin::Root(root) => root.id.clone(),
-            ItemMin::Directory(dir) => dir.id.clone(),
-            ItemMin::File(file) => file.id.clone(),
-        };
+        match &item {
+            ItemMin::Root(root) => {
+                let time = root.updated.as_ref().unwrap_or(&root.created);
 
-        builder.last_id(last_id);
-
-        let len = payload.len();
-
-        for item in payload {
-            let mut output_item = std::array::from_fn(|_| None);
-
-            match &item {
-                ItemMin::Root(root) => {
-                    let time = root.updated.as_ref().unwrap_or(&root.created);
-
-                    output_item[0] = Some(root.id.id().to_string());
-                    output_item[2] = Some(formatting::datetime_to_string(&time, &ts_format));
-                }
-                ItemMin::Directory(_dir) => {
-                    println!("unexpected fs item in result");
-                }
-                ItemMin::File(_file) => {
-                    println!("unexpected fs item in result");
-                }
+                output_item[0] = Some(root.id.id().to_string());
+                output_item[2] = Some(formatting::datetime_to_string(&time, &ts_format));
             }
-
-            for index in 0..columns.len() {
-                if let Some(st) = &output_item[index] {
-                    let chars_count = st.chars().count();
-
-                    columns[index].update_width(chars_count);
-                }
+            ItemMin::Directory(_dir) => {
+                println!("unexpected fs item in result");
             }
-
-            insert_item_min(&mut output_list, item, output_item);
-        }
-
-        if let Some(pagination) = pagination {
-            let limit = *pagination.limit() as usize;
-
-            if len != limit {
-                break;
+            ItemMin::File(_file) => {
+                println!("unexpected fs item in result");
             }
         }
+
+        for index in 0..columns.len() {
+            if let Some(st) = &output_item[index] {
+                let chars_count = st.chars().count();
+
+                columns[index].update_width(chars_count);
+            }
+        }
+
+        insert_item_min(&mut output_list, item, output_item);
     }
 
     if output_list.is_empty() {

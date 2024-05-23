@@ -2,7 +2,7 @@ use rfs_lib::ids;
 use reqwest::blocking::Body;
 
 use crate::client::error::RequestError;
-use crate::client::ApiClient;
+use crate::client::{ApiClient, iterate};
 use crate::{
     Payload,
     ApiError,
@@ -109,6 +109,35 @@ impl RetrieveRoots {
     }
 }
 
+impl iterate::Pageable for RetrieveRoots {
+    type Id = ids::FSId;
+    type Item = ItemMin;
+
+    #[inline]
+    fn get_last_id(item: &Self::Item) -> Option<Self::Id> {
+        Some(match item {
+            ItemMin::Root(root) => root.id.clone(),
+            ItemMin::Directory(dir) => dir.id.clone(),
+            ItemMin::File(file) => file.id.clone(),
+        })
+    }
+
+    #[inline]
+    fn set_limit(&mut self, limit: Option<Limit>) {
+        self.limit(limit);
+    }
+
+    #[inline]
+    fn set_last_id(&mut self, id: Option<Self::Id>) {
+        self.last_id(id);
+    }
+
+    #[inline]
+    fn send(&self, client: &ApiClient) -> Result<Payload<Vec<Self::Item>>, RequestError> {
+        self.send(client)
+    }
+}
+
 pub struct RetrieveContents {
     id: ids::FSId,
     limit: Option<Limit>,
@@ -169,6 +198,35 @@ impl RetrieveContents {
             reqwest::StatusCode::OK => Ok(res.json()?),
             _ => Err(RequestError::Api(res.json()?))
         }
+    }
+}
+
+impl iterate::Pageable for RetrieveContents {
+    type Id = ids::FSId;
+    type Item = ItemMin;
+
+    #[inline]
+    fn get_last_id(item: &Self::Item) -> Option<Self::Id> {
+        Some(match item {
+            ItemMin::Root(root) => root.id.clone(),
+            ItemMin::Directory(dir) => dir.id.clone(),
+            ItemMin::File(file) => file.id.clone(),
+        })
+    }
+
+    #[inline]
+    fn set_limit(&mut self, limit: Option<Limit>) {
+        self.limit(limit);
+    }
+
+    #[inline]
+    fn set_last_id(&mut self, id: Option<Self::Id>) {
+        self.last_id(id);
+    }
+
+    #[inline]
+    fn send(&self, client: &ApiClient) -> Result<Payload<Vec<Self::Item>>, RequestError> {
+        self.send(client)
     }
 }
 

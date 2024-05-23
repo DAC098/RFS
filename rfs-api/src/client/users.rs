@@ -1,7 +1,7 @@
 use rfs_lib::ids;
 
 use crate::client::error::RequestError;
-use crate::client::ApiClient;
+use crate::client::{ApiClient, iterate};
 use crate::{
     Validator,
     Payload,
@@ -34,7 +34,7 @@ impl QueryUsers {
         }
     }
 
-    pub fn limit<L>(&mut self, limit: Limit) -> &mut Self
+    pub fn limit<L>(&mut self, limit: L) -> &mut Self
     where
         L: Into<Option<Limit>>
     {
@@ -77,6 +77,31 @@ impl QueryUsers {
             reqwest::StatusCode::OK => Ok(res.json()?),
             _ => Err(RequestError::Api(res.json()?))
         }
+    }
+}
+
+impl iterate::Pageable for QueryUsers {
+    type Id = ids::UserId;
+    type Item = ListItem;
+
+    #[inline]
+    fn get_last_id(item: &Self::Item) -> Option<Self::Id> {
+        Some(item.id.clone())
+    }
+
+    #[inline]
+    fn set_limit(&mut self, limit: Option<Limit>) {
+        self.limit(limit);
+    }
+
+    #[inline]
+    fn set_last_id(&mut self, id: Option<Self::Id>) {
+        self.last_id(id);
+    }
+
+    #[inline]
+    fn send(&self, client: &ApiClient) -> Result<Payload<Vec<Self::Item>>, RequestError> {
+        self.send(client)
     }
 }
 

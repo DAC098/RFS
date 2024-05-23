@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 
 use rfs_lib::ids;
 use rfs_api::client::ApiClient;
+use rfs_api::client::iterate;
 use rfs_api::client::users::{
     QueryUsers,
     RetrieveUser,
@@ -92,43 +93,23 @@ fn get(client: &ApiClient, args: GetArgs) -> error::Result {
             Column::builder("username").build(),
         ];
 
-        loop {
-            let (pagination, payload) = builder.send(client)
-                .context("failed to retrieve users")?
-                .into_tuple();
+        for result in iterate::Iterate::new(client, &mut builder) {
+            let user = result.context("failed to retrieve users")?;
 
-            let Some(last) = payload.last() else {
-                break;
-            };
+            let mut output_user = std::array::from_fn(|_| None);
 
-            builder.last_id(last.id.clone());
+            output_user[0] = Some(user.id.id().to_string());
+            output_user[1] = Some(user.username.clone());
 
-            let len = payload.len();
+            for (value, col) in output_user.iter().zip(&mut columns) {
+                if let Some(st) = &value {
+                    let chars_count = st.chars().count();
 
-            for user in payload {
-                let mut output_user = std::array::from_fn(|_| None);
-
-                output_user[0] = Some(user.id.id().to_string());
-                output_user[1] = Some(user.username.clone());
-
-                for (value, col) in output_user.iter().zip(&mut columns) {
-                    if let Some(st) = &value {
-                        let chars_count = st.chars().count();
-
-                        col.update_width(chars_count);
-                    }
-                }
-
-                insert_user(&mut output_list, user, output_user);
-            }
-
-            if let Some(pagination) = pagination {
-                let limit = (*pagination.limit()) as usize;
-
-                if len != limit {
-                    break;
+                    col.update_width(chars_count);
                 }
             }
+
+            insert_user(&mut output_list, user, output_user);
         }
 
         if output_list.is_empty() {
