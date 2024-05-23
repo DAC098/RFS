@@ -11,6 +11,7 @@ pub mod auth;
 pub mod users;
 pub mod sec;
 pub mod fs;
+pub mod iterate;
 
 use error::{ApiClientError, RequestError};
 
