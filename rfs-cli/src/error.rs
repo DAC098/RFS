@@ -1,3 +1,5 @@
+use rfs_lib::context_trait;
+
 type BoxDynError = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Debug)]
@@ -62,13 +64,9 @@ impl From<&str> for Error {
     }
 }
 
-pub trait Context<T> {
-    fn context<C>(self, cxt: C) -> std::result::Result<T, Error>
-    where
-        C: Into<String>;
-}
+context_trait!(Error);
 
-impl<T, E> Context<T> for std::result::Result<T, E>
+impl<T, E> Context<T, E> for std::result::Result<T, E>
 where
     E: Into<BoxDynError>
 {
@@ -85,7 +83,7 @@ where
     }
 }
 
-impl<T> Context<T> for std::option::Option<T> {
+impl<T> Context<T, ()> for std::option::Option<T> {
     fn context<C>(self, cxt: C) -> std::result::Result<T, Error>
     where
         C: Into<String>

@@ -33,10 +33,13 @@ impl Error for ApiClientError {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum RequestError {
-    Api(ApiError),
-    Reqwest(reqwest::Error)
+    #[error(transparent)]
+    Api(#[from] ApiError),
+
+    #[error(transparent)]
+    Reqwest(#[from] reqwest::Error)
 }
 
 impl RequestError {
@@ -45,35 +48,5 @@ impl RequestError {
             RequestError::Api(v) => Ok(v),
             RequestError::Reqwest(v) => Err(v)
         }
-    }
-}
-
-impl fmt::Display for RequestError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            RequestError::Api(_) => write!(f, "RequestError::Api"),
-            RequestError::Reqwest(_) => write!(f, "RequestError::Reqwest"),
-        }
-    }
-}
-
-impl Error for RequestError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            RequestError::Api(v) => Some(v),
-            RequestError::Reqwest(v) => Some(v)
-        }
-    }
-}
-
-impl From<reqwest::Error> for RequestError {
-    fn from(err: reqwest::Error) -> Self {
-        RequestError::Reqwest(err)
-    }
-}
-
-impl From<ApiError> for RequestError {
-    fn from(err: ApiError) -> Self {
-        RequestError::Api(err)
     }
 }
