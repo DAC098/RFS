@@ -1,7 +1,7 @@
 use rfs_lib::ids;
 
 use crate::client::error::RequestError;
-use crate::client::ApiClient;
+use crate::client::{ApiClient, iterate};
 use crate::{
     Payload,
     Validator,
@@ -81,6 +81,31 @@ impl QueryGroups {
     }
 }
 
+impl iterate::Pageable for QueryGroups {
+    type Id = ids::GroupId;
+    type Item = ListItem;
+
+    #[inline]
+    fn get_last_id(item: &Self::Item) -> Option<Self::Id> {
+        Some(item.id)
+    }
+
+    #[inline]
+    fn set_limit(&mut self, limit: Option<Limit>) {
+        self.limit(limit);
+    }
+
+    #[inline]
+    fn set_last_id(&mut self, id: Option<Self::Id>) {
+        self.last_id(id);
+    }
+
+    #[inline]
+    fn send(&self, client: &ApiClient) -> Result<Payload<Vec<Self::Item>>, RequestError> {
+        self.send(client)
+    }
+}
+
 pub struct QueryGroupUsers {
     id: ids::GroupId,
     limit: Option<Limit>,
@@ -90,7 +115,7 @@ pub struct QueryGroupUsers {
 
 impl QueryGroupUsers {
     pub fn id(id: ids::GroupId) -> Self {
-        QueryGroupUsers { 
+        QueryGroupUsers {
             id,
             limit: None,
             offset: None,
@@ -98,7 +123,7 @@ impl QueryGroupUsers {
         }
     }
 
-    pub fn limit<L>(&mut self, limit: Limit) -> &mut Self
+    pub fn limit<L>(&mut self, limit: L) -> &mut Self
     where
         L: Into<Option<Limit>>
     {
@@ -122,7 +147,7 @@ impl QueryGroupUsers {
         self
     }
 
-    pub fn send(&self, client: &ApiClient) -> Result<Option<Payload<Vec<GroupUser>>>, RequestError> {
+    pub fn send(&self, client: &ApiClient) -> Result<Payload<Vec<GroupUser>>, RequestError> {
         let mut builder = client.get(format!("/user/group/{}/users", self.id));
 
         if let Some(limit) = &self.limit {
@@ -138,18 +163,34 @@ impl QueryGroupUsers {
         let res = builder.send()?;
 
         match res.status() {
-            reqwest::StatusCode::OK => Ok(Some(res.json()?)),
-            reqwest::StatusCode::NOT_FOUND => {
-                let err: ApiError = res.json()?;
-
-                if *err.kind() == ApiErrorKind::GroupNotFound {
-                    return Ok(None);
-                }
-
-                Err(RequestError::Api(err))
-            },
+            reqwest::StatusCode::OK => Ok(res.json()?),
             _ => Err(RequestError::Api(res.json()?))
         }
+    }
+}
+
+impl iterate::Pageable for QueryGroupUsers {
+    type Id = ids::UserId;
+    type Item = GroupUser;
+
+    #[inline]
+    fn get_last_id(item: &Self::Item) -> Option<Self::Id> {
+        Some(item.id.clone())
+    }
+
+    #[inline]
+    fn set_limit(&mut self, limit: Option<Limit>) {
+        self.limit(limit);
+    }
+
+    #[inline]
+    fn set_last_id(&mut self, id: Option<Self::Id>) {
+        self.last_id(id);
+    }
+
+    #[inline]
+    fn send(&self, client: &ApiClient) -> Result<Payload<Vec<Self::Item>>, RequestError> {
+        self.send(client)
     }
 }
 

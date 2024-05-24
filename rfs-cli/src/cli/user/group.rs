@@ -1,4 +1,8 @@
-use rfs_api::client::ApiClient;
+use rfs_api::users::groups::{
+    ListItem,
+    GroupUser,
+};
+use rfs_api::client::{ApiClient, iterate};
 use rfs_api::client::users::groups::{
     QueryGroups,
     RetrieveGroup,
@@ -13,7 +17,7 @@ use rfs_api::client::users::groups::{
 use clap::{Subcommand, Args};
 
 use crate::error::{self, Context};
-use crate::input;
+use crate::formatting::{TextTable, Column, Float, PRETTY_OPTIONS, print_table};
 use crate::util;
 
 #[derive(Debug, Args)]
@@ -74,25 +78,24 @@ fn get(client: &ApiClient, args: GetArgs) -> error::Result {
         }
     } else {
         let mut builder = QueryGroups::new();
+        let mut table = TextTable::with_columns([
+            Column::builder("id").float(Float::Right).build(),
+            Column::builder("name").build(),
+        ]);
 
-        loop {
-            let (_, payload) = builder.send(client)
-                .context("failed to retrieve groups")?
-                .into_tuple();
+        for result in iterate::Iterate::new(client, &mut builder) {
+            let group = result.context("failed to retrieve groups")?;
+            let mut row = table.add_row();
+            row.set_col(0, group.id);
+            row.set_col(1, group.name.clone());
+            row.finish(group);
+        }
 
-            let Some(last) = payload.last() else {
-                break;
-            };
-
-            builder.last_id(last.id.clone());
-
-            for group in &payload {
-                println!("id: {} | name: \"{}\"", group.id, group.name);
-            }
-
-            if !args.no_prompt && !input::read_yn("continue?")? {
-                break;
-            }
+        if table.is_empty() {
+            println!("no contents");
+        } else {
+            table.print(&PRETTY_OPTIONS)
+                .context("failed to output results to stdout")?;
         }
     }
 
@@ -199,29 +202,22 @@ struct GetUsersArgs {
 
 fn get_users(client: &ApiClient, args: GetUsersArgs) -> error::Result {
     let mut builder = QueryGroupUsers::id(args.id);
+    let mut table = TextTable::with_columns([
+        Column::builder("id").float(Float::Right).build(),
+    ]);
 
-    loop {
-        let Some(body) = builder.send(client)
-            .context("failed to retrieve group users")? else {
-            println!("group not found");
-            return Ok(());
-        };
+    for result in iterate::Iterate::new(client, &mut builder) {
+        let user = result.context("failed to retrieve group users")?;
+        let mut row = table.add_row();
+        row.set_col(0, user.id.id());
+        row.finish(user);
+    }
 
-        let payload = body.into_payload();
-
-        let Some(last) = payload.last() else {
-            break;
-        };
-
-        builder.last_id(last.id.clone());
-
-        for user in &payload {
-            println!("id: {}", user.id.id());
-        }
-
-        if !args.no_prompt && !input::read_yn("continue?")? {
-            break;
-        }
+    if table.is_empty() {
+        println!("no contents");
+    } else {
+        table.print(&PRETTY_OPTIONS)
+            .context("failed to output results to stdout")?;
     }
 
     Ok(())
