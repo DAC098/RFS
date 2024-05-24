@@ -1,3 +1,4 @@
+use rfs_api::auth::totp::TotpRecovery;
 use rfs_api::client::ApiClient;
 use rfs_api::client::auth::totp::{
     RetrieveTotpRecovery,
@@ -9,6 +10,7 @@ use rfs_api::client::auth::totp::{
 use clap::{Subcommand, Args};
 
 use crate::error::{self, Context};
+use crate::formatting::{TextTable, Column, PRETTY_OPTIONS};
 
 #[derive(Debug, Args)]
 pub struct RecoveryArgs {
@@ -50,15 +52,34 @@ fn print_recovery(recovery: &rfs_api::auth::totp::TotpRecovery) {
     println!("{}", recovery.hash);
 }
 
+fn sort_recovery(a: &TotpRecovery, b: &TotpRecovery) -> bool {
+    a.key > b.key
+}
 
 fn get(client: &ApiClient) -> error::Result {
     let result = RetrieveTotpRecovery::new()
         .send(client)
         .context("failed to retrieve totp recovery keys")?
         .into_payload();
+    let mut table = TextTable::with_columns([
+        Column::builder("key").build(),
+        Column::builder("used").build(),
+        Column::builder("hash").build(),
+    ]);
 
     for recovery in result {
-        print_recovery(&recovery);
+        let mut row = table.add_row();
+        row.set_col(0, recovery.key.clone());
+        row.set_col(1, recovery.used);
+        row.set_col(2, recovery.hash.clone());
+        row.finish_sort_by(recovery, sort_recovery);
+    }
+
+    if table.is_empty() {
+        println!("no recovery keys");
+    } else {
+        table.print(&PRETTY_OPTIONS)
+            .context("failed to output to stdout")?;
     }
 
     Ok(())
