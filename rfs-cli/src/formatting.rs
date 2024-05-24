@@ -436,3 +436,73 @@ where
 
     write_table(&mut stdout, rows, columns, options)
 }
+
+pub struct TextTable<T, const N: usize> {
+    columns: [Column; N],
+    rows: Vec<(T, [Option<String>; N])>
+}
+
+pub struct TextRow<'a, T, const N: usize> {
+    table: &'a mut TextTable<T, N>,
+    row: [Option<String>; N],
+}
+
+impl<'a, T, const N: usize> TextRow<'a, T, N> {
+    pub fn set_col<V>(&mut self, index: usize, value: V) -> bool
+    where
+        V: Display
+    {
+        if index >= N {
+            false
+        } else {
+            self.row[index] = Some(value.to_string());
+            true
+        }
+    }
+
+    pub fn finish(self, data: T) {
+        for (value, col) in self.row.iter().zip(&mut self.table.columns) {
+            if let Some(st) = &value {
+                let chars_count = st.chars().count();
+
+                col.update_width(chars_count);
+            }
+        }
+
+        self.table.rows.push((data, self.row));
+    }
+}
+
+impl<T, const N: usize> TextTable<T, N> {
+    pub fn with_columns(columns: [Column; N]) -> Self {
+        TextTable {
+            columns,
+            rows: Vec::new()
+        }
+    }
+
+    pub fn add_row(&mut self) -> TextRow<'_, T, N> {
+        TextRow {
+            table: self,
+            row: std::array::from_fn(|_| None),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.rows.is_empty()
+    }
+
+    pub fn write<O>(&self, output: &mut O, options: &TableOptions) -> std::io::Result<()>
+    where
+        O: std::io::Write
+    {
+        write_table(output, &self.rows, &self.columns, options)
+    }
+
+    #[inline]
+    pub fn print(&self, options: &TableOptions) -> std::io::Result<()> {
+        let mut stdout = std::io::stdout();
+
+        self.write(&mut stdout, options)
+    }
+}
