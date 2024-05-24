@@ -8,6 +8,7 @@ use rfs_api::client::sec::secrets::{
 use clap::{Subcommand, Args};
 
 use crate::error::{self, Context};
+use crate::formatting::{TextTable, Column, Float, PRETTY_OPTIONS};
 
 #[derive(Debug, Args)]
 pub struct SessionArgs {
@@ -40,9 +41,21 @@ fn get(client: &ApiClient) -> error::Result {
         .send(client)
         .context("failed to retrieve session secrets")?
         .into_payload();
+    let mut table = TextTable::with_columns([
+        Column::builder("created").float(Float::Right).build()
+    ]);
 
     for secret in result {
-        println!("{:?}", secret);
+        let mut row = table.add_row();
+        row.set_col(0, secret.created);
+        row.finish(secret);
+    }
+
+    if table.is_empty() {
+        println!("no secrets");
+    } else {
+        table.print(&PRETTY_OPTIONS)
+            .context("failed to output to stdout")?;
     }
 
     Ok(())

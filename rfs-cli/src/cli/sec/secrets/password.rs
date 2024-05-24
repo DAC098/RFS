@@ -9,6 +9,7 @@ use rfs_api::client::sec::secrets::{
 use clap::{Subcommand, Args};
 
 use crate::error::{self, Context};
+use crate::formatting::{TextTable, Column, Float, PRETTY_OPTIONS};
 
 #[derive(Debug, Args)]
 pub struct PasswordArgs {
@@ -59,9 +60,23 @@ fn get(client: &ApiClient, args: GetArgs) -> error::Result {
             .send(client)
             .context("failed to retrieve password secrets")?
             .into_payload();
+        let mut table = TextTable::with_columns([
+            Column::builder("version").float(Float::Right).build(),
+            Column::builder("created").float(Float::Right).build(),
+        ]);
 
         for secret in result {
-            println!("{:?}", secret);
+            let mut row = table.add_row();
+            row.set_col(0, secret.version);
+            row.set_col(1, secret.created);
+            row.finish(secret);
+        }
+
+        if table.is_empty() {
+            println!("no secrets");
+        } else {
+            table.print(&PRETTY_OPTIONS)
+                .context("failed to output results to stdout")?;
         }
     }
 
