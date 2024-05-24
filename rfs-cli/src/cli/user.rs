@@ -15,7 +15,7 @@ use clap::{Subcommand, Args};
 
 use crate::error::{self, Context};
 use crate::util;
-use crate::formatting::{Column, Float, PRETTY_OPTIONS, print_table};
+use crate::formatting::{TextTable, Column, Float, PRETTY_OPTIONS};
 
 mod group;
 
@@ -49,16 +49,12 @@ pub fn handle(client: &ApiClient, args: UsersArgs) -> error::Result {
     }
 }
 
-fn insert_user<T>(list: &mut Vec<(ListItem, T)>, original: ListItem, output: T) {
-    let pos = list.partition_point(|(v, _)| {
-        match v.username.cmp(&original.username) {
-            Ordering::Equal => v.id.id() < original.id.id(),
-            Ordering::Less => true,
-            Ordering::Greater => false,
-        }
-    });
-
-    list.insert(pos, (original, output));
+fn sort_user(a: &ListItem, b: &ListItem) -> bool {
+    match b.username.cmp(&a.username) {
+        Ordering::Equal => b.id.id() < a.id.id(),
+        Ordering::Less => true,
+        Ordering::Greater => false,
+    }
 }
 
 #[derive(Debug, Args)]
@@ -87,35 +83,24 @@ fn get(client: &ApiClient, args: GetArgs) -> error::Result {
         }
     } else {
         let mut builder = QueryUsers::new();
-        let mut output_list: Vec<(ListItem, [Option<String>; 2])> = Vec::new();
-        let mut columns = [
+        let mut table = TextTable::with_columns([
             Column::builder("id").float(Float::Right).build(),
             Column::builder("username").build(),
-        ];
+        ]);
 
         for result in iterate::Iterate::new(client, &mut builder) {
             let user = result.context("failed to retrieve users")?;
+            let mut row = table.add_row();
+            row.set_col(0, user.id.id());
+            row.set_col(1, user.username.clone());
 
-            let mut output_user = std::array::from_fn(|_| None);
-
-            output_user[0] = Some(user.id.id().to_string());
-            output_user[1] = Some(user.username.clone());
-
-            for (value, col) in output_user.iter().zip(&mut columns) {
-                if let Some(st) = &value {
-                    let chars_count = st.chars().count();
-
-                    col.update_width(chars_count);
-                }
-            }
-
-            insert_user(&mut output_list, user, output_user);
+            row.finish_sort_by(user, sort_user);
         }
 
-        if output_list.is_empty() {
+        if table.is_empty() {
             println!("no contents");
         } else {
-            print_table(&output_list, &columns, &PRETTY_OPTIONS)
+            table.print(&PRETTY_OPTIONS)
                 .context("failed to output results to stdout")?;
         }
     }

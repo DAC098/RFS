@@ -1,7 +1,3 @@
-use rfs_api::users::groups::{
-    ListItem,
-    GroupUser,
-};
 use rfs_api::client::{ApiClient, iterate};
 use rfs_api::client::users::groups::{
     QueryGroups,
@@ -17,7 +13,7 @@ use rfs_api::client::users::groups::{
 use clap::{Subcommand, Args};
 
 use crate::error::{self, Context};
-use crate::formatting::{TextTable, Column, Float, PRETTY_OPTIONS, print_table};
+use crate::formatting::{TextTable, Column, Float, PRETTY_OPTIONS};
 use crate::util;
 
 #[derive(Debug, Args)]

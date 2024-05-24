@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use rfs_lib::ids;
 use rfs_api::fs::{Item, ItemMin};
 use rfs_api::client::{ApiClient, iterate};
@@ -10,7 +12,7 @@ use clap::Args;
 
 use crate::error::{self, Context};
 use crate::util;
-use crate::formatting::{self, Column, Float, PRETTY_OPTIONS, print_table};
+use crate::formatting::{self, TextTable, Column, Float, PRETTY_OPTIONS};
 
 #[derive(Debug, Args)]
 pub struct GetArgs {
@@ -39,68 +41,40 @@ pub struct GetArgs {
     ts_format: formatting::DateFormat,
 }
 
-fn insert_item_min<T>(list: &mut Vec<(ItemMin, T)>, original: ItemMin, output: T) {
-    let pos = list.partition_point(|(v, _)| {
-        match v {
-            ItemMin::Root(root) => {
-                match &original {
-                    ItemMin::Root(orig_root) => {
-                        root.id.id() < orig_root.id.id()
-                    },
-                    ItemMin::Directory(_orig_dir) => {
-                        false
-                    },
-                    ItemMin::File(_orig_file) => {
-                        false
-                    },
-                }
+fn sort_item(a: &ItemMin, b: &ItemMin) -> bool {
+    match b {
+        ItemMin::Root(root) => match a {
+            ItemMin::Root(a_root) => root.id.id() < a_root.id.id(),
+            ItemMin::Directory(_a_dir) => false,
+            ItemMin::File(_a_file) => false,
+        },
+        ItemMin::Directory(dir) => match a {
+            ItemMin::Root(_a_root) => true,
+            ItemMin::Directory(a_dir) => match dir.basename.cmp(&a_dir.basename) {
+                Ordering::Equal => dir.id.id() < a_dir.id.id(),
+                Ordering::Less => true,
+                Ordering::Greater => false,
             },
-            ItemMin::Directory(dir) => {
-                match &original {
-                    ItemMin::Root(_orig_root) => {
-                        true
-                    },
-                    ItemMin::Directory(orig_dir) => {
-                        if dir.basename == orig_dir.basename {
-                            dir.id.id() < orig_dir.id.id()
-                        } else {
-                            dir.basename < orig_dir.basename
-                        }
-                    },
-                    ItemMin::File(orig_file) => {
-                        if dir.basename == orig_file.basename {
-                            dir.id.id() < orig_file.id.id()
-                        } else {
-                            dir.basename < orig_file.basename
-                        }
-                    },
-                }
+            ItemMin::File(a_file) => match dir.basename.cmp(&a_file.basename) {
+                Ordering::Equal => dir.id.id() < a_file.id.id(),
+                Ordering::Less => true,
+                Ordering::Greater => false,
             },
-            ItemMin::File(file) => {
-                match &original {
-                    ItemMin::Root(_orig_root) => {
-                        true
-                    },
-                    ItemMin::Directory(orig_dir) => {
-                        if file.basename == orig_dir.basename {
-                            file.id.id() < orig_dir.id.id()
-                        } else {
-                            file.basename < orig_dir.basename
-                        }
-                    },
-                    ItemMin::File(orig_file) => {
-                        if file.basename == orig_file.basename {
-                            file.id.id() < orig_file.id.id()
-                        } else {
-                            file.basename < orig_file.basename
-                        }
-                    },
-                }
+        },
+        ItemMin::File(file) => match a {
+            ItemMin::Root(_a_root) => true,
+            ItemMin::Directory(a_dir) => match file.basename.cmp(&a_dir.basename) {
+                Ordering::Equal => file.id.id() < a_dir.id.id(),
+                Ordering::Less => true,
+                Ordering::Greater => false,
             },
-        }
-    });
-
-    list.insert(pos, (original, output));
+            ItemMin::File(a_file) => match file.basename.cmp(&a_file.basename) {
+                Ordering::Equal => file.id.id() < a_file.id.id(),
+                Ordering::Less => true,
+                Ordering::Greater => false,
+            },
+        },
+    }
 }
 
 fn retrieve_id(client: &ApiClient, id: ids::FSId, args: GetArgs) -> error::Result {
@@ -180,62 +154,52 @@ fn retrieve_id(client: &ApiClient, id: ids::FSId, args: GetArgs) -> error::Resul
 
     if args.contents && !ignore_contents {
         let mut builder = RetrieveContents::id(id);
-        let mut output_list: Vec<(ItemMin, [Option<String>; 5])> = Vec::new();
-        let mut columns = [
+        let mut table = TextTable::with_columns([
             Column::builder("type").build(),
             Column::builder("id").float(Float::Right).build(),
             Column::builder("size").float(Float::Right).build(),
             Column::builder("name").build(),
             Column::builder("mod").float(Float::Right).build(),
-        ];
+        ]);
 
         for result in iterate::Iterate::new(client, &mut builder) {
             let item = result.context("failed to retrieve fs item contents")?;
-
-            let mut output_item = std::array::from_fn(|_| None);
+            let mut row = table.add_row();
 
             match &item {
                 ItemMin::Root(root) => {
                     let time = root.updated.as_ref().unwrap_or(&root.created);
 
-                    output_item[0] = Some("root".into());
-                    output_item[1] = Some(root.id.id().to_string());
-                    output_item[4] = Some(formatting::datetime_to_string(&time, &ts_format));
+                    row.set_col(0, "root");
+                    row.set_col(1, root.id.id());
+                    row.set_col(4, formatting::datetime_to_string(&time, &ts_format));
                 }
                 ItemMin::Directory(dir) => {
                     let time = dir.updated.as_ref().unwrap_or(&dir.created);
 
-                    output_item[0] = Some("dir".into());
-                    output_item[1] = Some(dir.id.id().to_string());
-                    output_item[3] = Some(dir.basename.clone());
-                    output_item[4] = Some(formatting::datetime_to_string(&time, &ts_format));
+                    row.set_col(0, "dir");
+                    row.set_col(1, dir.id.id());
+                    row.set_col(3, dir.basename.clone());
+                    row.set_col(4, formatting::datetime_to_string(&time, &ts_format));
                 }
                 ItemMin::File(file) => {
                     let time = file.updated.as_ref().unwrap_or(&file.created);
 
-                    output_item[0] = Some("file".into());
-                    output_item[1] = Some(file.id.id().to_string());
-                    output_item[2] = Some(formatting::bytes_to_unit(file.size, &size_format));
-                    output_item[3] = Some(file.basename.clone());
-                    output_item[4] = Some(formatting::datetime_to_string(&time, &ts_format));
+                    row.set_col(0, "file");
+                    row.set_col(1, file.id.id());
+                    row.set_col(2, formatting::bytes_to_unit(file.size, &size_format));
+                    row.set_col(3, file.basename.clone());
+                    row.set_col(4, formatting::datetime_to_string(&time, &ts_format));
                 }
             }
 
-            for (value, col) in output_item.iter().zip(&mut columns) {
-                if let Some(st) = &value {
-                    let chars_count = st.chars().count();
-
-                    col.update_width(chars_count);
-                }
-            }
-
-            insert_item_min(&mut output_list, item, output_item);
+            row.finish_sort_by(item, sort_item);
         }
 
-        if output_list.is_empty() {
+        if table.is_empty() {
             println!("no contents");
         } else {
-            print_table(&output_list, &columns, &PRETTY_OPTIONS)
+            table.print(&PRETTY_OPTIONS)
                 .context("failed to output results to stdout")?;
         }
     }
@@ -246,24 +210,22 @@ fn retrieve_id(client: &ApiClient, id: ids::FSId, args: GetArgs) -> error::Resul
 fn retrieve_roots(client: &ApiClient, args: GetArgs) -> error::Result {
     let ts_format = args.ts_format;
     let mut builder = RetrieveRoots::new();
-    let mut output_list: Vec<(ItemMin, [Option<String>; 3])> = Vec::new();
-    let mut columns = [
+    let mut table = TextTable::with_columns([
         Column::builder("id").float(Float::Right).build(),
         Column::builder("name").build(),
         Column::builder("mod").float(Float::Right).build(),
-    ];
+    ]);
 
     for result in iterate::Iterate::new(client, &mut builder) {
         let item = result.context("failed to retrieve fs roots")?;
-
-        let mut output_item = std::array::from_fn(|_| None);
+        let mut row = table.add_row();
 
         match &item {
             ItemMin::Root(root) => {
                 let time = root.updated.as_ref().unwrap_or(&root.created);
 
-                output_item[0] = Some(root.id.id().to_string());
-                output_item[2] = Some(formatting::datetime_to_string(&time, &ts_format));
+                row.set_col(0, root.id.id());
+                row.set_col(2, formatting::datetime_to_string(&time, &ts_format));
             }
             ItemMin::Directory(_dir) => {
                 println!("unexpected fs item in result");
@@ -273,21 +235,13 @@ fn retrieve_roots(client: &ApiClient, args: GetArgs) -> error::Result {
             }
         }
 
-        for index in 0..columns.len() {
-            if let Some(st) = &output_item[index] {
-                let chars_count = st.chars().count();
-
-                columns[index].update_width(chars_count);
-            }
-        }
-
-        insert_item_min(&mut output_list, item, output_item);
+        row.finish_sort_by(item, sort_item);
     }
 
-    if output_list.is_empty() {
+    if table.is_empty() {
         println!("no roots");
     } else {
-        print_table(&output_list, &columns, &PRETTY_OPTIONS)
+        table.print(&PRETTY_OPTIONS)
             .context("failed to output results to stdout")?;
     }
 

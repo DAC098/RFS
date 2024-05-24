@@ -424,19 +424,6 @@ where
     Ok(())
 }
 
-pub fn print_table<T, U, const N: usize>(
-    rows: &[(T, [Option<U>; N])],
-    columns: &[Column; N],
-    options: &TableOptions
-) -> std::io::Result<()>
-where
-    U: Display + Sized,
-{
-    let mut stdout = std::io::stdout();
-
-    write_table(&mut stdout, rows, columns, options)
-}
-
 pub struct TextTable<T, const N: usize> {
     columns: [Column; N],
     rows: Vec<(T, [Option<String>; N])>
@@ -470,6 +457,23 @@ impl<'a, T, const N: usize> TextRow<'a, T, N> {
         }
 
         self.table.rows.push((data, self.row));
+    }
+
+    pub fn finish_sort_by<F>(self, data: T, cb: F)
+    where
+        F: Fn(&T, &T) -> bool
+    {
+        for (value, col) in self.row.iter().zip(&mut self.table.columns) {
+            if let Some(st) = &value {
+                let chars_count = st.chars().count();
+
+                col.update_width(chars_count);
+            }
+        }
+
+        let index = self.table.rows.partition_point(|(v, _)| cb(&data, v));
+
+        self.table.rows.insert(index, (data, self.row));
     }
 }
 
