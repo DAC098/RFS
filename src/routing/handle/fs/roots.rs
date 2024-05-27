@@ -1,7 +1,7 @@
 use rfs_lib::ids;
 use rfs_lib::query::{Limit, Offset};
 use rfs_api::fs::{RootMin, ItemMin};
-use axum::extract::{Path, Query, State};
+use axum::extract::{Query, State};
 use axum::response::IntoResponse;
 use futures::TryStreamExt;
 use serde::Deserialize;

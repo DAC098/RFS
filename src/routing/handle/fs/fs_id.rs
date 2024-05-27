@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::fmt::Write;
 use std::str::FromStr;
-use std::path::PathBuf;
 use std::io::ErrorKind as StdIoErrorKind;
 
 use rfs_lib::ids;
@@ -122,7 +121,7 @@ pub async fn post(
 
     let transaction = conn.transaction().await?;
     let id = state.ids().wait_fs_id()?;
-    let user_id = initiator.user().id().clone();
+    let user_id = initiator.user.id.clone();
     let created = chrono::Utc::now();
     let basename = json.basename;
 
@@ -139,9 +138,6 @@ pub async fn post(
         None
     };
 
-    let path;
-    let parent;
-
     if !rfs_lib::fs::basename_valid(&basename) {
         return Err(error::Error::api((
             error::ApiErrorKind::ValidationFailed,
@@ -149,31 +145,19 @@ pub async fn post(
         )));
     }
 
-    match item {
-        fs::Item::Root(root) => {
-            path = PathBuf::new();
-            parent = root.id.clone();
-        },
-        fs::Item::Directory(dir) => {
-            path = dir.path.join(&dir.basename);
-            parent = dir.id.clone();
-        },
-        fs::Item::File(_) => {
-            return Err(error::Error::api(
-                error::ApiErrorKind::InvalidType
-            ));
-        }
-    }
+    let Some(container) = item.as_container() else {
+        return Err(error::Error::api(error::ApiErrorKind::InvalidType));
+    };
+
+    let path = container.full_path();
+    let parent = container.id().clone();
 
     let storage = match &medium.type_ {
         storage::types::Type::Local(local) => {
             let mut full = local.path.join(&path);
             full.push(&basename);
 
-            tracing::debug!(
-                "new directory path: {:?}",
-                full.display()
-            );
+            tracing::debug!("new directory path: {:?}", full.display());
 
             tokio::fs::create_dir(full).await?;
 
@@ -252,7 +236,6 @@ pub async fn post(
 #[derive(Deserialize)]
 pub struct PutQuery {
     basename: Option<String>,
-    overwrite: Option<bool>,
 }
 
 #[debug_handler]
@@ -261,7 +244,7 @@ pub async fn put(
     initiator: initiator::Initiator,
     headers: HeaderMap,
     Path(PathParams { fs_id }): Path<PathParams>,
-    Query(PutQuery { basename, overwrite: _ }): Query<PutQuery>,
+    Query(PutQuery { basename }): Query<PutQuery>,
     stream: Body,
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
@@ -285,10 +268,7 @@ pub async fn put(
         return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
-    tracing::debug!(
-        "retrieved fs item: {:#?}",
-        item
-    );
+    tracing::debug!("retrieved fs item: {item:#?}");
 
     let Some(medium) = storage::Medium::retrieve(&conn, item.storage_id()).await? else {
         return Err(error::Error::api(error::ApiErrorKind::StorageNotFound));
@@ -303,13 +283,13 @@ pub async fn put(
         return Err(error::Error::api(error::ApiErrorKind::NoContentType));
     };
 
-    let rtn = if !item.is_file() {
+    let rtn = if let Some(container) = item.as_container() {
         let id = state.ids().wait_fs_id()?;
-        let user_id = initiator.user().id().clone();
+        let user_id = initiator.user.id.clone();
         let size: u64;
         let hash: blake3::Hash;
-        let path: PathBuf;
-        let parent;
+        let path = container.full_path();
+        let parent = container.id().clone();
 
         let basename = if let Some(value) = basename {
             value
@@ -329,31 +309,14 @@ pub async fn put(
             )));
         }
 
-        if let Some(_id) = fs::name_check(&transaction, item.id(), &basename).await? {
+        if let Some(_id) = fs::name_check(&transaction, &parent, &basename).await? {
             return Err(error::Error::api(error::ApiErrorKind::AlreadyExists));
-        }
-
-        match item {
-            fs::Item::Root(root) => {
-                path = PathBuf::new();
-                parent = root.id.clone();
-            },
-            fs::Item::Directory(dir) => {
-                path = dir.path.join(&dir.basename);
-                parent = dir.id.clone();
-            },
-            fs::Item::File(_) => unreachable!()
         }
 
         let storage = match &medium.type_ {
             storage::types::Type::Local(local) => {
                 let mut full = local.path.join(&path);
                 full.push(&basename);
-
-                tracing::debug!(
-                    "new file path: {:?}",
-                    full.display()
-                );
 
                 if full.try_exists()? {
                     return Err(error::Error::api((
@@ -616,16 +579,14 @@ pub async fn delete(
     };
 
     match item {
-        fs::Item::Root(root) => {
-            return Err(error::Error::api(
-                error::ApiErrorKind::NotPermitted
-            ));
+        fs::Item::Root(_root) => {
+            return Err(error::Error::api(error::ApiErrorKind::NotPermitted));
         },
         fs::Item::Directory(dir) => {
-            delete_dir(&state, &mut conn, &initiator, medium, dir).await?;
+            delete_dir(&mut conn, medium, dir).await?;
         },
         fs::Item::File(file) => {
-            delete_file(&state, &mut conn, &initiator, medium ,file).await?;
+            delete_file(&mut conn, medium ,file).await?;
         }
     }
 
@@ -633,9 +594,7 @@ pub async fn delete(
 }
 
 async fn delete_file(
-    state: &ArcShared,
     conn: &mut impl GenericClient,
-    initiator: &initiator::Initiator,
     medium: storage::Medium,
     file: fs::File,
 ) -> error::Result<()> {
@@ -660,9 +619,7 @@ async fn delete_file(
 }
 
 async fn delete_dir(
-    state: &ArcShared,
     conn: &mut impl GenericClient,
-    initiator: &initiator::Initiator,
     medium: storage::Medium,
     directory: fs::Directory,
 ) -> error::Result<()> {
