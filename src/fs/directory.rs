@@ -3,40 +3,47 @@ use std::path::PathBuf;
 use rfs_lib::ids;
 use chrono::{DateTime, Utc};
 
-use crate::storage;
 use crate::tags;
 
-use super::traits;
+use super::{traits, backend};
 
 #[derive(Debug)]
 pub struct Directory {
     pub id: ids::FSId,
     pub user_id: ids::UserId,
-    pub storage: storage::fs::Storage,
+    pub storage_id: ids::StorageId,
+    pub backend: backend::Node,
     pub parent: ids::FSId,
     pub basename: String,
     pub path: PathBuf,
     pub tags: tags::TagMap,
     pub comment: Option<String>,
-    pub created: chrono::DateTime<chrono::Utc>,
-    pub updated: Option<chrono::DateTime<chrono::Utc>>,
-    pub deleted: Option<chrono::DateTime<chrono::Utc>>,
+    pub created: DateTime<Utc>,
+    pub updated: Option<DateTime<Utc>>,
+    pub deleted: Option<DateTime<Utc>>,
 }
 
 impl Directory {
     pub fn into_schema(self) -> rfs_api::fs::Directory {
+        self.into()
+    }
+}
+
+impl From<Directory> for rfs_api::fs::Directory {
+    fn from(dir: Directory) -> Self {
         rfs_api::fs::Directory {
-            id: self.id,
-            user_id: self.user_id,
-            storage: self.storage.into_schema(),
-            parent: self.parent,
-            basename: self.basename,
-            path: self.path,
-            tags: self.tags,
-            comment: self.comment,
-            created: self.created,
-            updated: self.updated,
-            deleted: self.deleted,
+            id: dir.id,
+            user_id: dir.user_id,
+            storage_id: dir.storage_id,
+            backend: dir.backend.into(),
+            parent: dir.parent,
+            basename: dir.basename,
+            path: dir.path,
+            tags: dir.tags,
+            comment: dir.comment,
+            created: dir.created,
+            updated: dir.updated,
+            deleted: dir.deleted,
         }
     }
 }

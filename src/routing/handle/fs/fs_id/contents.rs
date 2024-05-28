@@ -71,6 +71,7 @@ pub async fn get(
             "\
             select fs.id, \
                    fs.user_id, \
+                   fs.storage_id, \
                    fs.parent, \
                    fs.basename, \
                    fs.fs_type, \
@@ -96,6 +97,7 @@ pub async fn get(
             "\
             select fs.id, \
                    fs.user_id, \
+                   fs.storage_id, \
                    fs.parent, \
                    fs.basename, \
                    fs.fs_type, \
@@ -126,32 +128,35 @@ pub async fn get(
                 ItemMin::Root(RootMin {
                     id: row.get(0),
                     user_id: row.get(1),
-                    created: row.get(9),
-                    updated: row.get(10),
+                    storage_id: row.get(2),
+                    created: row.get(10),
+                    updated: row.get(11),
                 })
             }
             fs::consts::FILE_TYPE => {
                 ItemMin::File(FileMin {
                     id: row.get(0),
                     user_id: row.get(1),
-                    parent: row.get(2),
-                    basename: row.get(3),
-                    path: sql::pathbuf_from_sql(row.get(5)),
-                    size: sql::u64_from_sql(row.get(6)),
-                    mime: sql::mime_from_sql(row.get(7), row.get(8)),
-                    created: row.get(9),
-                    updated: row.get(10),
+                    storage_id: row.get(2),
+                    parent: row.get(3),
+                    basename: row.get(4),
+                    path: sql::pathbuf_from_sql(row.get(6)),
+                    size: sql::u64_from_sql(row.get(7)),
+                    mime: sql::mime_from_sql(row.get(8), row.get(9)),
+                    created: row.get(10),
+                    updated: row.get(11),
                 })
             }
             fs::consts::DIR_TYPE => {
                 ItemMin::Directory(DirectoryMin {
                     id: row.get(0),
                     user_id: row.get(1),
-                    parent: row.get(2),
-                    basename: row.get(3),
-                    path: sql::pathbuf_from_sql(row.get(5)),
-                    created: row.get(9),
-                    updated: row.get(10),
+                    storage_id: row.get(2),
+                    parent: row.get(3),
+                    basename: row.get(4),
+                    path: sql::pathbuf_from_sql(row.get(6)),
+                    created: row.get(10),
+                    updated: row.get(11),
                 })
             }
             _ => {

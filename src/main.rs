@@ -18,7 +18,7 @@ mod user;
 mod sec;
 mod state;
 mod tags;
-mod storage;
+//mod storage;
 mod routing;
 mod config;
 
@@ -178,15 +178,15 @@ async fn init() -> error::Result<()> {
                 .delete(routing::handle::sec::roles::role_id::groups::delete)
         )
         .route(
-            "/storage",
-            get(routing::handle::storage::get)
-                .post(routing::handle::storage::post)
+            "/fs/storage",
+            get(routing::handle::fs::storage::get)
+                .post(routing::handle::fs::storage::post)
         )
         .route(
-            "/storage/:storage_id",
-            get(routing::handle::storage::storage_id::get)
-                .put(routing::handle::storage::storage_id::put)
-                .delete(routing::handle::storage::storage_id::delete)
+            "/fs/storage/:storage_id",
+            get(routing::handle::fs::storage::storage_id::get)
+                .put(routing::handle::fs::storage::storage_id::put)
+                .delete(routing::handle::fs::storage::storage_id::delete)
         )
         .route(
             "/fs/roots",

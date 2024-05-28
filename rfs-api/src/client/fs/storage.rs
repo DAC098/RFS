@@ -5,12 +5,12 @@ use rfs_lib::ids;
 use crate::client::error::RequestError;
 use crate::client::ApiClient;
 use crate::{Payload, ApiError, ApiErrorKind, Tags};
-use crate::fs::storage::{
+use crate::fs::{
     CreateStorage as CreateStorageBody,
-    CreateStorageType,
     UpdateStorage as UpdateStorageBody,
-    StorageItem,
-    StorageListItem,
+    Storage,
+    StorageMin,
+    backend,
 };
 
 pub struct QueryStorage {}
@@ -20,8 +20,8 @@ impl QueryStorage {
         QueryStorage {}
     }
 
-    pub fn send(self, client: &ApiClient) -> Result<Payload<Vec<StorageListItem>>, RequestError> {
-        let res = client.get("/storage").send()?;
+    pub fn send(self, client: &ApiClient) -> Result<Payload<Vec<StorageMin>>, RequestError> {
+        let res = client.get("/fs/storage").send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(res.json()?),
@@ -39,8 +39,8 @@ impl RetrieveStorage {
         RetrieveStorage { id }
     }
 
-    pub fn send(self, client: &ApiClient) -> Result<Option<Payload<StorageItem>>, RequestError> {
-        let res = client.get(format!("/storage/{}", self.id.id())).send()?;
+    pub fn send(self, client: &ApiClient) -> Result<Option<Payload<Storage>>, RequestError> {
+        let res = client.get(format!("/fs/storage/{}", self.id.id())).send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(res.json()?),
@@ -71,7 +71,7 @@ impl CreateStorage {
         CreateStorage {
             body: CreateStorageBody {
                 name: name.into(),
-                type_: CreateStorageType::Local {
+                backend: backend::CreateConfig::Local {
                     path: path.into()
                 },
                 tags: Tags::new()
@@ -108,8 +108,8 @@ impl CreateStorage {
         self
     }
 
-    pub fn send(self, client: &ApiClient) -> Result<Payload<StorageItem>, RequestError> {
-        let res = client.post("/storage")
+    pub fn send(self, client: &ApiClient) -> Result<Payload<Storage>, RequestError> {
+        let res = client.post("/fs/storage")
             .json(&self.body)
             .send()?;
 
@@ -131,7 +131,7 @@ impl UpdateStorage {
             id,
             body: UpdateStorageBody {
                 name: None,
-                type_: None,
+                backend: None,
                 tags: None
             }
         }
@@ -182,8 +182,8 @@ impl UpdateStorage {
         self
     }
 
-    pub fn send(self, client: &ApiClient) -> Result<Payload<StorageItem>, RequestError> {
-        let res = client.put(format!("/storage/{}", self.id.id()))
+    pub fn send(self, client: &ApiClient) -> Result<Payload<Storage>, RequestError> {
+        let res = client.put(format!("/fs/storage/{}", self.id.id()))
             .json(&self.body)
             .send()?;
 
@@ -204,7 +204,7 @@ impl DeleteStorage {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
-        let res = client.delete(format!("/storage/{}", self.id.id())).send()?;
+        let res = client.delete(format!("/fs/storage/{}", self.id.id())).send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(()),

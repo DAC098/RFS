@@ -3,16 +3,16 @@ use std::path::PathBuf;
 use rfs_lib::ids;
 use chrono::{DateTime, Utc};
 
-use crate::storage;
 use crate::tags;
 
-use super::traits;
+use super::{traits, backend};
 
 #[derive(Debug)]
 pub struct Root {
     pub id: ids::FSId,
     pub user_id: ids::UserId,
-    pub storage: storage::fs::Storage,
+    pub storage_id: ids::StorageId,
+    pub backend: backend::Node,
     pub tags: tags::TagMap,
     pub comment: Option<String>,
     pub created: DateTime<Utc>,
@@ -22,15 +22,22 @@ pub struct Root {
 
 impl Root {
     pub fn into_schema(self) -> rfs_api::fs::Root {
+        self.into()
+    }
+}
+
+impl From<Root> for rfs_api::fs::Root {
+    fn from(root: Root) -> Self {
         rfs_api::fs::Root {
-            id: self.id,
-            user_id: self.user_id,
-            storage: self.storage.into_schema(),
-            tags: self.tags,
-            comment: self.comment,
-            created: self.created,
-            updated: self.updated,
-            deleted: self.deleted,
+            id: root.id,
+            user_id: root.user_id,
+            storage_id: root.storage_id,
+            backend: root.backend.into(),
+            tags: root.tags,
+            comment: root.comment,
+            created: root.created,
+            updated: root.updated,
+            deleted: root.deleted,
         }
     }
 }

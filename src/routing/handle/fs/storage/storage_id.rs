@@ -1,7 +1,8 @@
 use std::fmt::Write;
 
 use rfs_lib::ids;
-use rfs_api::fs::storage::{UpdateStorage, UpdateStorageType};
+use rfs_api::fs::UpdateStorage;
+use rfs_api::fs::backend::UpdateConfig;
 
 use axum::http::StatusCode;
 use axum::extract::{Path, State};
@@ -13,8 +14,8 @@ use crate::state::ArcShared;
 use crate::sec::authn::initiator;
 use crate::sec::authz::permission;
 use crate::sql;
-use crate::storage;
 use crate::tags;
+use crate::fs;
 
 #[derive(Deserialize)]
 pub struct PathParams {
@@ -37,22 +38,19 @@ pub async fn get(
         return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
-    let Some(medium) = storage::Medium::retrieve(
-        &conn,
-        &storage_id
-    ).await? else {
+    let Some(storage) = fs::Storage::retrieve(&conn, &storage_id).await? else {
         return Err(error::Error::api(error::ApiErrorKind::StorageNotFound));
     };
 
-    if medium.deleted.is_some() {
+    if storage.deleted.is_some() {
         return Err(error::Error::api(error::ApiErrorKind::StorageNotFound));
     }
 
-    if medium.user_id != *initiator.user().id() {
+    if storage.user_id != initiator.user.id {
         return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
-    Ok(rfs_api::Payload::new(medium.into_schema()))
+    Ok(rfs_api::Payload::new(storage.into_schema()))
 }
 
 pub async fn put(
@@ -72,18 +70,15 @@ pub async fn put(
         return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
-    let Some(mut medium) = storage::Medium::retrieve(
-        &conn,
-        &storage_id
-    ).await? else {
+    let Some(mut storage) = fs::Storage::retrieve(&conn, &storage_id).await? else {
         return Err(error::Error::api(error::ApiErrorKind::StorageNotFound));
     };
 
-    if medium.deleted.is_some() {
+    if storage.deleted.is_some() {
         return Err(error::Error::api(error::ApiErrorKind::StorageNotFound));
     }
 
-    if medium.user_id != *initiator.user().id() {
+    if storage.user_id != initiator.user.id {
         return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
@@ -93,7 +88,7 @@ pub async fn put(
 
     let transaction = conn.transaction().await?;
 
-    if json.name.is_some() || json.type_.is_some() {
+    if json.name.is_some() || json.backend.is_some() {
         let updated = chrono::Utc::now();
         let mut update_query = String::from("update storage set updated = $2");
         let mut update_params = sql::ParamsVec::with_capacity(2);
@@ -101,14 +96,14 @@ pub async fn put(
         update_params.push(&updated);
 
         if let Some(name) = json.name {
-            if !rfs_lib::storage::name_valid(&name) {
+            if !rfs_lib::fs::storage::name_valid(&name) {
                 return Err(error::Error::api((
                     error::ApiErrorKind::ValidationFailed,
                     error::Detail::with_key("name")
                 )));
             };
 
-            if let Some(found_id) = storage::name_check(&transaction, &initiator.user.id, &name).await? {
+            if let Some(found_id) = fs::Storage::name_check(&transaction, &name).await? {
                 if found_id != storage_id {
                     return Err(error::Error::api((
                         error::ApiErrorKind::AlreadyExists,
@@ -117,18 +112,18 @@ pub async fn put(
                 }
             }
 
-            medium.name = name;
+            storage.name = name;
 
             write!(
                 &mut update_query,
                 "name = ${} ",
-                sql::push_param(&mut update_params, &medium.name)
+                sql::push_param(&mut update_params, &storage.name)
             ).unwrap();
         }
 
-        if let Some(type_) = &json.type_ {
-            match type_ {
-                UpdateStorageType::Local {..} => {}
+        if let Some(backend) = &json.backend {
+            match backend {
+                UpdateConfig::Local {..} => {}
             }
         }
 
@@ -146,12 +141,12 @@ pub async fn put(
             &tags
         ).await?;
 
-        medium.tags = tags;
+        storage.tags = tags;
     }
 
     transaction.commit().await?;
 
-    Ok(rfs_api::Payload::new(medium.into_schema()))
+    Ok(rfs_api::Payload::new(storage.into_schema()))
 }
 
 pub async fn delete(
@@ -170,14 +165,11 @@ pub async fn delete(
         return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
-    let Some(medium) = storage::Medium::retrieve(
-        &conn,
-        &storage_id
-    ).await? else {
+    let Some(storage) = fs::Storage::retrieve(&conn, &storage_id).await? else {
         return Err(error::Error::api(error::ApiErrorKind::StorageNotFound));
     };
 
-    if medium.user_id != initiator.user.id {
+    if storage.user_id != initiator.user.id {
         return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 

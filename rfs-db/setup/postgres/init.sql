@@ -94,7 +94,7 @@ create table storage (
 
     name varchar not null,
 
-    s_data jsonb not null,
+    backend jsonb not null,
 
     created timestamp with time zone not null,
     updated timestamp with time zone,
@@ -115,6 +115,7 @@ create table fs (
     id bigint not null primary key,
 
     user_id bigint not null references users(id),
+    storage_id bigint not null references storage(id),
     parent bigint references fs(id),
 
     basename varchar,
@@ -130,7 +131,7 @@ create table fs (
 
     comment varchar,
 
-    s_data jsonb not null,
+    backend jsonb not null,
 
     created timestamp with time zone not null,
     updated timestamp with time zone,

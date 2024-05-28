@@ -1,5 +1,7 @@
 use crate::validation::check_control_leading_trailing;
 
+pub mod storage;
+
 pub const MAX_BASENAME_CHARS: usize = 512;
 pub const MAX_COMMENT_CHARS: usize = 1024;
 

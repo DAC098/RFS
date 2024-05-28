@@ -8,7 +8,6 @@ pub mod history;
 pub mod users;
 pub mod sec;
 pub mod tags;
-pub mod storage;
 pub mod fs;
 
 pub mod query;

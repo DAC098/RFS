@@ -20,6 +20,8 @@ pub use directory::Directory;
 pub mod file;
 pub use file::File;
 
+pub mod backend;
+
 pub async fn name_check<N>(
     conn: &impl GenericClient,
     parent: &ids::FSId,
@@ -51,51 +53,48 @@ impl Item {
         let fs_type = row.get(4);
 
         let item = match fs_type {
-            consts::ROOT_TYPE => {
-                Item::Root(Root {
-                    id: row.get(0),
-                    user_id: row.get(1),
-                    storage: sql::de_from_sql(row.get(10)),
-                    tags,
-                    comment: row.get(11),
-                    created: row.get(12),
-                    updated: row.get(13),
-                    deleted: row.get(14)
-                })
-            },
-            consts::FILE_TYPE => {
-                Item::File(File {
-                    id: row.get(0),
-                    user_id: row.get(1),
-                    storage: sql::de_from_sql(row.get(10)),
-                    parent: row.get(2),
-                    path: sql::pathbuf_from_sql(row.get(5)),
-                    basename: row.get(3),
-                    mime: sql::mime_from_sql(row.get(7), row.get(8)),
-                    size: sql::u64_from_sql(row.get(6)),
-                    hash: sql::blake3_hash_from_sql(row.get(9)),
-                    tags,
-                    comment: row.get(11),
-                    created: row.get(12),
-                    updated: row.get(13),
-                    deleted: row.get(14),
-                })
-            },
-            consts::DIR_TYPE => {
-                Item::Directory(Directory {
-                    id: row.get(0),
-                    user_id: row.get(1),
-                    storage: sql::de_from_sql(row.get(10)),
-                    parent: row.get(2),
-                    path: sql::pathbuf_from_sql(row.get(5)),
-                    basename: row.get(3),
-                    tags,
-                    comment: row.get(11),
-                    created: row.get(12),
-                    updated: row.get(13),
-                    deleted: row.get(14),
-                })
-            },
+            consts::ROOT_TYPE => Item::Root(Root {
+                id: row.get(0),
+                user_id: row.get(1),
+                storage_id: row.get(2),
+                backend: sql::de_from_sql(row.get(11)),
+                tags,
+                comment: row.get(12),
+                created: row.get(13),
+                updated: row.get(14),
+                deleted: row.get(15)
+            }),
+            consts::FILE_TYPE => Item::File(File {
+                id: row.get(0),
+                user_id: row.get(1),
+                storage_id: row.get(2),
+                backend: sql::de_from_sql(row.get(11)),
+                parent: row.get(3),
+                path: sql::pathbuf_from_sql(row.get(6)),
+                basename: row.get(4),
+                mime: sql::mime_from_sql(row.get(8), row.get(9)),
+                size: sql::u64_from_sql(row.get(7)),
+                hash: sql::blake3_hash_from_sql(row.get(10)),
+                tags,
+                comment: row.get(12),
+                created: row.get(13),
+                updated: row.get(14),
+                deleted: row.get(15),
+            }),
+            consts::DIR_TYPE => Item::Directory(Directory {
+                id: row.get(0),
+                user_id: row.get(1),
+                storage_id: row.get(2),
+                backend: sql::de_from_sql(row.get(11)),
+                parent: row.get(3),
+                path: sql::pathbuf_from_sql(row.get(6)),
+                basename: row.get(4),
+                tags,
+                comment: row.get(12),
+                created: row.get(13),
+                updated: row.get(14),
+                deleted: row.get(15),
+            }),
             _ => {
                 panic!("unexpected fs_type when retrieving fs Item. type: {}", fs_type);
             }
@@ -114,6 +113,7 @@ impl Item {
             "\
             select fs.id, \
                    fs.user_id, \
+                   fs.storage_id, \
                    fs.parent, \
                    fs.basename, \
                    fs.fs_type, \
@@ -166,9 +166,9 @@ impl Item {
 
     pub fn storage_id(&self) -> &ids::StorageId {
         match self {
-            Self::Root(root) => root.storage.id(),
-            Self::Directory(dir) => dir.storage.id(),
-            Self::File(file) => file.storage.id(),
+            Self::Root(root) => &root.storage_id,
+            Self::Directory(dir) => &dir.storage_id,
+            Self::File(file) => &file.storage_id,
         }
     }
 
@@ -200,11 +200,7 @@ impl Item {
     }
 
     pub fn into_schema(self) -> rfs_api::fs::Item {
-        match self {
-            Self::Root(root) => rfs_api::fs::Item::Root(root.into_schema()),
-            Self::Directory(dir) => rfs_api::fs::Item::Directory(dir.into_schema()),
-            Self::File(file) => rfs_api::fs::Item::File(file.into_schema()),
-        }
+        self.into()
     }
 }
 
@@ -265,5 +261,108 @@ impl From<Directory> for Item {
 impl From<File> for Item {
     fn from(file: File) -> Self {
         Item::File(file)
+    }
+}
+
+impl From<Item> for rfs_api::fs::Item {
+    fn from(item: Item) -> Self {
+        match item {
+            Item::Root(root) => rfs_api::fs::Item::Root(root.into()),
+            Item::Directory(dir) => rfs_api::fs::Item::Directory(dir.into()),
+            Item::File(file) => rfs_api::fs::Item::File(file.into()),
+        }
+    }
+}
+
+pub struct Storage {
+    pub id: ids::StorageId,
+    pub name: String,
+    pub user_id: ids::UserId,
+    pub backend: backend::Config,
+    pub tags: tags::TagMap,
+    pub created: DateTime<Utc>,
+    pub updated: Option<DateTime<Utc>>,
+    pub deleted: Option<DateTime<Utc>>,
+}
+
+impl Storage {
+    pub async fn name_check<N>(
+        conn: &impl GenericClient,
+        name: N
+    ) -> Result<Option<ids::StorageId>, PgError>
+    where
+        N: AsRef<str>
+    {
+        if let Some(row) = conn.query_opt(
+            "select id from storage where name = $1",
+            &[&name.as_ref()]
+        ).await? {
+            Ok(row.get(0))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub async fn retrieve(
+        conn: &impl GenericClient,
+        id: &ids::StorageId,
+    ) -> Result<Option<Self>, PgError> {
+        let record_params: sql::ParamsVec = vec![id];
+
+        let record_query = conn.query_opt(
+            "\
+            select storage.id, \
+                   storage.user_id, \
+                   storage.name, \
+                   storage.backend, \
+                   storage.created, \
+                   storage.updated, \
+                   storage.deleted \
+            from storage \
+            where storage.id = $1",
+            record_params.as_slice()
+        );
+        let tags_query = tags::get_tags(
+            conn,
+            "storage_tags",
+            "storage_id",
+            id
+        );
+
+        match tokio::try_join!(record_query, tags_query) {
+            Ok((Some(row), tags)) => {
+                Ok(Some(Storage {
+                    id: row.get(0),
+                    name: row.get(2),
+                    user_id: row.get(1),
+                    backend: sql::de_from_sql(row.get(3)),
+                    tags,
+                    created: row.get(4),
+                    updated: row.get(5),
+                    deleted: row.get(6),
+                }))
+            },
+            Ok((None, _)) => Ok(None),
+            Err(err) => Err(err)
+        }
+    }
+
+    pub fn into_schema(self) -> rfs_api::fs::Storage {
+        self.into()
+    }
+}
+
+impl From<Storage> for rfs_api::fs::Storage {
+    fn from(storage: Storage) -> Self {
+        rfs_api::fs::Storage {
+            id: storage.id,
+            name: storage.name,
+            user_id: storage.user_id,
+            backend: storage.backend.into(),
+            tags: storage.tags,
+            created: storage.created,
+            updated: storage.updated,
+            deleted: storage.deleted,
+        }
     }
 }

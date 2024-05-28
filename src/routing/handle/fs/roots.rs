@@ -49,6 +49,7 @@ pub async fn get(
             "\
             select fs.id, \
                    fs.user_id, \
+                   fs.storage_id, \
                    fs.created, \
                    fs.updated \
             from fs \
@@ -69,6 +70,7 @@ pub async fn get(
             "\
             select fs.id, \
                    fs.user_id, \
+                   fs.storage_id, \
                    fs.created, \
                    fs.updated \
             from fs \
@@ -89,8 +91,9 @@ pub async fn get(
         let item = ItemMin::Root(RootMin {
             id: row.get(0),
             user_id: row.get(1),
-            created: row.get(2),
-            updated: row.get(3),
+            storage_id: row.get(2),
+            created: row.get(3),
+            updated: row.get(4),
         });
 
         list.push(item);

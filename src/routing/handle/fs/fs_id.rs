@@ -19,7 +19,6 @@ use crate::state::ArcShared;
 use crate::sec::authn::initiator;
 use crate::sec::authz::permission;
 use crate::sql;
-use crate::storage;
 use crate::fs;
 use crate::tags;
 
@@ -115,13 +114,14 @@ pub async fn post(
         return Err(error::Error::api(error::ApiErrorKind::FileNotFound));
     };
 
-    let Some(medium) = storage::Medium::retrieve(&conn, item.storage_id()).await? else {
+    let Some(storage) = fs::Storage::retrieve(&conn, item.storage_id()).await? else {
         return Err(error::Error::api(error::ApiErrorKind::StorageNotFound));
     };
 
     let transaction = conn.transaction().await?;
     let id = state.ids().wait_fs_id()?;
     let user_id = initiator.user.id.clone();
+    let storage_id = storage.id.clone();
     let created = chrono::Utc::now();
     let basename = json.basename;
 
@@ -152,30 +152,33 @@ pub async fn post(
     let path = container.full_path();
     let parent = container.id().clone();
 
-    let storage = match &medium.type_ {
-        storage::types::Type::Local(local) => {
+    let backend = match &storage.backend {
+        fs::backend::Config::Local(local) => {
             let mut full = local.path.join(&path);
             full.push(&basename);
 
             tracing::debug!("new directory path: {:?}", full.display());
 
-            tokio::fs::create_dir(full).await?;
+            tokio::fs::create_dir(&full).await?;
 
-            storage::fs::Storage::Local(storage::fs::Local {
-                id: medium.id.clone()
+            fs::backend::Node::Local(fs::backend::NodeLocal {
+                path: full.strip_prefix(&local.path)
+                    .unwrap()
+                    .to_owned()
             })
         }
     };
 
     {
         let pg_path = path.to_str().unwrap();
-        let pg_storage = sql::ser_to_sql(&storage);
+        let pg_backend = sql::ser_to_sql(&backend);
 
         let _ = transaction.execute(
             "\
             insert into fs(\
                 id, \
                 user_id, \
+                storage_id, \
                 parent, \
                 basename, \
                 fs_type, \
@@ -184,15 +187,16 @@ pub async fn post(
                 comment, \
                 created\
             ) values \
-            ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+            ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
             &[
                 &id,
                 &user_id,
+                &storage_id,
                 &parent,
                 &basename,
                 &fs::consts::DIR_TYPE,
                 &pg_path,
-                &pg_storage,
+                &pg_backend,
                 &comment,
                 &created
             ]
@@ -219,7 +223,8 @@ pub async fn post(
     let rtn = fs::Item::Directory(fs::Directory {
         id,
         user_id,
-        storage,
+        storage_id,
+        backend,
         parent,
         basename,
         path,
@@ -270,7 +275,7 @@ pub async fn put(
 
     tracing::debug!("retrieved fs item: {item:#?}");
 
-    let Some(medium) = storage::Medium::retrieve(&conn, item.storage_id()).await? else {
+    let Some(storage) = fs::Storage::retrieve(&conn, item.storage_id()).await? else {
         return Err(error::Error::api(error::ApiErrorKind::StorageNotFound));
     };
 
@@ -286,6 +291,7 @@ pub async fn put(
     let rtn = if let Some(container) = item.as_container() {
         let id = state.ids().wait_fs_id()?;
         let user_id = initiator.user.id.clone();
+        let storage_id = storage.id.clone();
         let size: u64;
         let hash: blake3::Hash;
         let path = container.full_path();
@@ -313,8 +319,8 @@ pub async fn put(
             return Err(error::Error::api(error::ApiErrorKind::AlreadyExists));
         }
 
-        let storage = match &medium.type_ {
-            storage::types::Type::Local(local) => {
+        let backend = match &storage.backend {
+            fs::backend::Config::Local(local) => {
                 let mut full = local.path.join(&path);
                 full.push(&basename);
 
@@ -329,22 +335,24 @@ pub async fn put(
                 let file = tokio::fs::OpenOptions::new()
                     .write(true)
                     .create_new(true)
-                    .open(full)
+                    .open(&full)
                     .await?;
                 let mut writer = BufWriter::new(file);
 
                 size = stream_to_writer(stream.into_data_stream(), &mut hasher, &mut writer).await?;
                 hash = hasher.finalize();
 
-                storage::fs::Storage::Local(storage::fs::Local {
-                    id: medium.id.clone()
+                fs::backend::Node::Local(fs::backend::NodeLocal {
+                    path: full.strip_prefix(&local.path)
+                        .unwrap()
+                        .to_owned()
                 })
             }
         };
 
         {
             let pg_path = path.to_str().unwrap();
-            let pg_storage = sql::ser_to_sql(&storage);
+            let pg_backend = sql::ser_to_sql(&backend);
             let pg_mime_type = mime.type_().as_str();
             let pg_mime_subtype = mime.subtype().as_str();
             let pg_hash = hash.as_bytes().as_slice();
@@ -358,6 +366,7 @@ pub async fn put(
                 insert into fs(\
                     id, \
                     user_id, \
+                    storage_id, \
                     parent, \
                     basename, \
                     fs_type, \
@@ -369,17 +378,18 @@ pub async fn put(
                     mime_subtype, \
                     created\
                 ) values \
-                ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+                ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
                 &[
                     &id,
                     &user_id,
+                    &storage_id,
                     &parent,
                     &basename,
                     &fs::consts::FILE_TYPE,
                     &pg_path,
                     &pg_size,
                     &pg_hash,
-                    &pg_storage,
+                    &pg_backend,
                     &pg_mime_type,
                     &pg_mime_subtype,
                     &created
@@ -390,7 +400,8 @@ pub async fn put(
         fs::Item::File(fs::File {
             id,
             user_id,
-            storage,
+            storage_id,
+            backend,
             parent,
             basename,
             path,
@@ -412,8 +423,8 @@ pub async fn put(
             return Err(error::Error::api(error::ApiErrorKind::MimeMismatch));
         }
 
-        match &medium.type_ {
-            storage::types::Type::Local(local) => {
+        match &storage.backend {
+            fs::backend::Config::Local(local) => {
                 let mut full = local.path.join(&file.path);
                 full.push(&file.basename);
 
@@ -429,8 +440,8 @@ pub async fn put(
                 let mut writer = BufWriter::new(file);
 
                 size = stream_to_writer(
-                    stream.into_data_stream(), 
-                    &mut hasher, 
+                    stream.into_data_stream(),
+                    &mut hasher,
                     &mut writer
                 ).await?;
                 hash = hasher.finalize();
@@ -574,7 +585,7 @@ pub async fn delete(
         return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
-    let Some(medium) = storage::Medium::retrieve(&conn, item.storage_id()).await? else {
+    let Some(medium) = fs::Storage::retrieve(&conn, item.storage_id()).await? else {
         return Err(error::Error::api(error::ApiErrorKind::StorageNotFound));
     };
 
@@ -595,7 +606,7 @@ pub async fn delete(
 
 async fn delete_file(
     conn: &mut impl GenericClient,
-    medium: storage::Medium,
+    storage: fs::Storage,
     file: fs::File,
 ) -> error::Result<()> {
     let transaction = conn.transaction().await?;
@@ -605,8 +616,8 @@ async fn delete_file(
         &[&file.id]
     ).await?;
 
-    match medium.type_ {
-        storage::types::Type::Local(local) => {
+    match storage.backend {
+        fs::backend::Config::Local(local) => {
             let full_path = local.path.join(file.path.join(file.basename));
 
             tokio::fs::remove_file(&full_path).await?;
@@ -620,7 +631,7 @@ async fn delete_file(
 
 async fn delete_dir(
     conn: &mut impl GenericClient,
-    medium: storage::Medium,
+    storage: fs::Storage,
     directory: fs::Directory,
 ) -> error::Result<()> {
     let transaction = conn.transaction().await?;
@@ -684,8 +695,8 @@ async fn delete_dir(
             continue;
         }
 
-        let full_path = match &medium.type_ {
-            storage::types::Type::Local(local) => {
+        let full_path = match &storage.backend {
+            fs::backend::Config::Local(local) => {
                 local.path.join(fs_path.join(basename))
             }
         };
