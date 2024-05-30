@@ -19,6 +19,7 @@ pub struct Root {
     pub user_id: ids::UserId,
     #[serde(with = "string_id")]
     pub storage_id: ids::StorageId,
+    pub basename: String,
     pub backend: backend::Node,
     pub tags: Tags,
     pub comment: Option<String>,
@@ -35,6 +36,7 @@ pub struct RootMin {
     pub user_id: ids::UserId,
     #[serde(with = "string_id")]
     pub storage_id: ids::StorageId,
+    pub basename: String,
     pub created: DateTime<Utc>,
     pub updated: Option<DateTime<Utc>>,
 }

@@ -54,18 +54,14 @@ pub async fn get(
         return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
-    let parent = match item {
-        fs::Item::Root(root) => root.id,
-        fs::Item::Directory(dir) => dir.id,
-        fs::Item::File(_) => {
-            return Err(error::Error::api(error::ApiErrorKind::NotDirectory));
-        }
+    let Some(container) = item.as_container() else {
+        return Err(error::Error::api(error::ApiErrorKind::NotDirectory));
     };
 
     let mut pagination = rfs_api::Pagination::from(&limit);
 
     let result = if let Some(last_id) = last_id {
-        let params: sql::ParamsVec = vec![&parent, &last_id, &limit];
+        let params: sql::ParamsVec = vec![container.id(), &last_id, &limit];
 
         conn.query_raw(
             "\
@@ -91,7 +87,7 @@ pub async fn get(
         pagination.set_offset(offset);
 
         let offset_num = limit.sql_offset(offset);
-        let params: sql::ParamsVec = vec![&parent, &limit, &offset_num];
+        let params: sql::ParamsVec = vec![container.id(), &limit, &offset_num];
 
         conn.query_raw(
             "\
@@ -121,7 +117,7 @@ pub async fn get(
     let mut list = Vec::with_capacity(limit as usize);
 
     while let Some(row) = result.try_next().await? {
-        let fs_type = row.get(4);
+        let fs_type = row.get(5);
 
         let item = match fs_type {
             fs::consts::ROOT_TYPE => {
@@ -129,6 +125,7 @@ pub async fn get(
                     id: row.get(0),
                     user_id: row.get(1),
                     storage_id: row.get(2),
+                    basename: row.get(4),
                     created: row.get(10),
                     updated: row.get(11),
                 })

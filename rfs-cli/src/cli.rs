@@ -7,7 +7,6 @@ use clap::{Parser, Subcommand, Args};
 use crate::error::{self, Context};
 use crate::input;
 
-mod storage;
 mod fs;
 mod user;
 mod auth;
@@ -141,9 +140,6 @@ enum BaseCmds {
     /// pings the server for activity
     Ping,
 
-    /// interacts with storage mediums on a server
-    Storage(storage::StorageArgs),
-
     /// interacts with fs items on a server
     Fs(fs::FsArgs),
 
@@ -162,7 +158,6 @@ fn handle(client: &mut ApiClient, command: BaseCmds) -> error::Result {
     match command {
         BaseCmds::Connect => connect(client),
         BaseCmds::Disconnect => disconnect(client),
-        BaseCmds::Storage(given) => storage::handle(client, given),
         BaseCmds::Fs(given) => fs::handle(client, given),
         BaseCmds::Users(given) => user::handle(client, given),
         BaseCmds::Auth(given) => auth::handle(client, given),

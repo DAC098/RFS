@@ -4,7 +4,7 @@ use std::default::Default;
 use std::iter::Iterator;
 
 use chrono::{DateTime, Utc, Local, SecondsFormat};
-use clap::ValueEnum;
+use clap::{Args, ValueEnum};
 
 #[derive(Debug)]
 pub struct SizeType {
@@ -508,5 +508,105 @@ impl<T, const N: usize> TextTable<T, N> {
         let mut stdout = std::io::stdout();
 
         self.write(&mut stdout, options)
+    }
+}
+
+#[derive(Debug, Args)]
+pub struct OutputOptions {
+    /// specifies the format for the file size output
+    #[arg(long, default_value_t)]
+    pub size_format: BaseSize,
+
+    /// specifies the format for the timestamp output
+    #[arg(long, default_value_t)]
+    pub ts_format: DateFormat,
+}
+
+pub fn write_fs_file<O>(output: &mut O, file: &rfs_api::fs::File, options: &OutputOptions) -> std::io::Result<()>
+where
+    O: std::io::Write
+{
+    write!(
+        output,
+        "file {} {}/{} {}\n",
+        file.id.id(),
+        file.path.display(),
+        file.basename,
+        bytes_to_unit(file.size, &options.size_format)
+    )?;
+    write!(output, "parent: {}\n", file.parent.id())?;
+    write!(output, "created: {}\n", datetime_to_string(&file.created, &options.ts_format))?;
+
+    if let Some(updated) = file.updated {
+        write!(output, "updated: {}\n", datetime_to_string(&updated, &options.ts_format))?;
+    }
+
+    write!(output, "mime: {}\n", file.mime)?;
+    write!(output, "hash: {}\n", HexString::new(&file.hash))?;
+
+    if !file.tags.is_empty() {
+        write!(output, "{}", WriteTags::new(&file.tags))?;
+    }
+
+    if let Some(comment) = &file.comment {
+        write!(output, "comment: {comment}\n")?;
+    }
+
+    Ok(())
+}
+
+pub fn write_fs_root<O>(output: &mut O, root: &rfs_api::fs::Root, options: &OutputOptions) -> std::io::Result<()>
+where
+    O: std::io::Write
+{
+    write!(output, "root {} {}\n", root.id.id(), root.basename)?;
+    write!(output, "created: {}\n", datetime_to_string(&root.created, &options.ts_format))?;
+
+    if let Some(updated) = root.updated {
+        write!(output, "updated: {}\n", datetime_to_string(&updated, &options.ts_format))?;
+    }
+
+    if !root.tags.is_empty() {
+        write!(output, "{}", WriteTags::new(&root.tags))?;
+    }
+
+    if let Some(comment) = &root.comment {
+        write!(output, "comment: {comment}\n")?;
+    }
+
+    Ok(())
+}
+
+pub fn write_fs_dir<O>(output: &mut O, dir: &rfs_api::fs::Directory, options: &OutputOptions) -> std::io::Result<()>
+where
+    O: std::io::Write
+{
+    write!(output, "directory {} {}/{}\n", dir.id.id(), dir.path.display(), dir.basename)?;
+    write!(output, "parent: {}\n", dir.parent.id())?;
+    write!(output, "created: {}\n", datetime_to_string(&dir.created, &options.ts_format))?;
+
+    if let Some(updated) = dir.updated {
+        write!(output, "updated: {}\n", datetime_to_string(&updated, &options.ts_format))?;
+    }
+
+    if !dir.tags.is_empty() {
+        write!(output, "{}", WriteTags::new(&dir.tags))?;
+    }
+
+    if let Some(comment) = &dir.comment {
+        write!(output, "comment: {comment}\n")?;
+    }
+
+    Ok(())
+}
+
+pub fn write_fs_item<O>(output: &mut O, item: &rfs_api::fs::Item, options: &OutputOptions) -> std::io::Result<()>
+where
+    O: std::io::Write
+{
+    match item {
+        rfs_api::fs::Item::Root(root) => write_fs_root(output, &root, options),
+        rfs_api::fs::Item::Directory(dir) => write_fs_dir(output, &dir, options),
+        rfs_api::fs::Item::File(file) => write_fs_file(output, &file, options),
     }
 }

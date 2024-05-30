@@ -12,7 +12,7 @@ use clap::Args;
 
 use crate::error::{self, Context};
 use crate::util;
-use crate::formatting::{self, TextTable, Column, Float, PRETTY_OPTIONS};
+use crate::formatting::{self, OutputOptions, TextTable, Column, Float, PRETTY_OPTIONS};
 
 #[derive(Debug, Args)]
 pub struct GetArgs {
@@ -32,13 +32,8 @@ pub struct GetArgs {
     #[arg(long)]
     contents: bool,
 
-    /// specifies the format for the file size output
-    #[arg(long, default_value_t)]
-    size_format: formatting::BaseSize,
-
-    /// specifies the format for the timestamp output
-    #[arg(long, default_value_t)]
-    ts_format: formatting::DateFormat,
+    #[command(flatten)]
+    output_options: OutputOptions
 }
 
 fn sort_item(a: &ItemMin, b: &ItemMin) -> bool {
@@ -79,8 +74,7 @@ fn sort_item(a: &ItemMin, b: &ItemMin) -> bool {
 
 fn retrieve_id(client: &ApiClient, id: ids::FSId, args: GetArgs) -> error::Result {
     let mut ignore_contents = false;
-    let size_format = args.size_format;
-    let ts_format = args.ts_format;
+    let mut stdout = std::io::stdout();
 
     let result = RetrieveItem::id(id.clone())
         .send(client)
@@ -90,65 +84,18 @@ fn retrieve_id(client: &ApiClient, id: ids::FSId, args: GetArgs) -> error::Resul
 
     match result {
         Item::Root(root) => {
-            println!("root {}", root.id.id());
-            println!("created: {}", formatting::datetime_to_string(&root.created, &ts_format));
-
-            if let Some(updated) = root.updated {
-                println!("updated: {}", formatting::datetime_to_string(&updated, &ts_format));
-            }
-
-            if !root.tags.is_empty() {
-                print!("{}", formatting::WriteTags::new(&root.tags));
-            }
-
-            if let Some(comment) = root.comment {
-                println!("comment: {comment}");
-            }
+            formatting::write_fs_root(&mut stdout, &root, &args.output_options)
+                .context("failed to output to stdout")?;
         }
         Item::Directory(dir) => {
-            println!("directory {} {}/{}", dir.id.id(), dir.path.display(), dir.basename);
-            println!("parent: {}", dir.parent.id());
-            println!("created: {}", formatting::datetime_to_string(&dir.created, &ts_format));
-
-            if let Some(updated) = dir.updated {
-                println!("updated: {}", formatting::datetime_to_string(&updated, &ts_format));
-            }
-
-            if !dir.tags.is_empty() {
-                print!("{}", formatting::WriteTags::new(&dir.tags));
-            }
-
-            if let Some(comment) = dir.comment {
-                println!("comment: {comment}");
-            }
+            formatting::write_fs_dir(&mut stdout, &dir, &args.output_options)
+                .context("failed to output to stdout")?;
         }
         Item::File(file) => {
             ignore_contents = true;
 
-            println!(
-                "file {} {}/{} {}",
-                file.id.id(),
-                file.path.display(),
-                file.basename,
-                formatting::bytes_to_unit(file.size, &size_format)
-            );
-            println!("parent: {}", file.parent.id());
-            println!("created: {}", formatting::datetime_to_string(&file.created, &ts_format));
-
-            if let Some(updated) = file.updated {
-                println!("updated: {}", formatting::datetime_to_string(&updated, &ts_format));
-            }
-
-            println!("mime: {}", file.mime);
-            println!("hash: {}", formatting::HexString::new(&file.hash));
-
-            if !file.tags.is_empty() {
-                print!("{}", formatting::WriteTags::new(&file.tags));
-            }
-
-            if let Some(comment) = file.comment {
-                println!("comment: {comment}");
-            }
+            formatting::write_fs_file(&mut stdout, &file, &args.output_options)
+                .context("failed to output to stdout")?;
         }
     }
 
@@ -157,6 +104,7 @@ fn retrieve_id(client: &ApiClient, id: ids::FSId, args: GetArgs) -> error::Resul
         let mut table = TextTable::with_columns([
             Column::builder("type").build(),
             Column::builder("id").float(Float::Right).build(),
+            Column::builder("storage id").float(Float::Right).build(),
             Column::builder("size").float(Float::Right).build(),
             Column::builder("name").build(),
             Column::builder("mod").float(Float::Right).build(),
@@ -172,24 +120,28 @@ fn retrieve_id(client: &ApiClient, id: ids::FSId, args: GetArgs) -> error::Resul
 
                     row.set_col(0, "root");
                     row.set_col(1, root.id.id());
-                    row.set_col(4, formatting::datetime_to_string(&time, &ts_format));
+                    row.set_col(2, root.storage_id.id());
+                    row.set_col(4, root.basename.clone());
+                    row.set_col(5, formatting::datetime_to_string(&time, &args.output_options.ts_format));
                 }
                 ItemMin::Directory(dir) => {
                     let time = dir.updated.as_ref().unwrap_or(&dir.created);
 
                     row.set_col(0, "dir");
                     row.set_col(1, dir.id.id());
-                    row.set_col(3, dir.basename.clone());
-                    row.set_col(4, formatting::datetime_to_string(&time, &ts_format));
+                    row.set_col(2, dir.storage_id.id());
+                    row.set_col(4, dir.basename.clone());
+                    row.set_col(5, formatting::datetime_to_string(&time, &args.output_options.ts_format));
                 }
                 ItemMin::File(file) => {
                     let time = file.updated.as_ref().unwrap_or(&file.created);
 
                     row.set_col(0, "file");
                     row.set_col(1, file.id.id());
-                    row.set_col(2, formatting::bytes_to_unit(file.size, &size_format));
-                    row.set_col(3, file.basename.clone());
-                    row.set_col(4, formatting::datetime_to_string(&time, &ts_format));
+                    row.set_col(2, file.storage_id.id());
+                    row.set_col(3, formatting::bytes_to_unit(file.size, &args.output_options.size_format));
+                    row.set_col(4, file.basename.clone());
+                    row.set_col(5, formatting::datetime_to_string(&time, &args.output_options.ts_format));
                 }
             }
 
@@ -199,7 +151,7 @@ fn retrieve_id(client: &ApiClient, id: ids::FSId, args: GetArgs) -> error::Resul
         if table.is_empty() {
             println!("no contents");
         } else {
-            table.print(&PRETTY_OPTIONS)
+            table.write(&mut stdout, &PRETTY_OPTIONS)
                 .context("failed to output results to stdout")?;
         }
     }
@@ -208,7 +160,6 @@ fn retrieve_id(client: &ApiClient, id: ids::FSId, args: GetArgs) -> error::Resul
 }
 
 fn retrieve_roots(client: &ApiClient, args: GetArgs) -> error::Result {
-    let ts_format = args.ts_format;
     let mut builder = RetrieveRoots::new();
     let mut table = TextTable::with_columns([
         Column::builder("id").float(Float::Right).build(),
@@ -225,7 +176,8 @@ fn retrieve_roots(client: &ApiClient, args: GetArgs) -> error::Result {
                 let time = root.updated.as_ref().unwrap_or(&root.created);
 
                 row.set_col(0, root.id.id());
-                row.set_col(2, formatting::datetime_to_string(&time, &ts_format));
+                row.set_col(1, root.basename.clone());
+                row.set_col(2, formatting::datetime_to_string(&time, &args.output_options.ts_format));
             }
             ItemMin::Directory(_dir) => {
                 println!("unexpected fs item in result");

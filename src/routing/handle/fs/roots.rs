@@ -50,6 +50,7 @@ pub async fn get(
             select fs.id, \
                    fs.user_id, \
                    fs.storage_id, \
+                   fs.basename, \
                    fs.created, \
                    fs.updated \
             from fs \
@@ -71,6 +72,7 @@ pub async fn get(
             select fs.id, \
                    fs.user_id, \
                    fs.storage_id, \
+                   fs.basename, \
                    fs.created, \
                    fs.updated \
             from fs \
@@ -92,8 +94,9 @@ pub async fn get(
             id: row.get(0),
             user_id: row.get(1),
             storage_id: row.get(2),
-            created: row.get(3),
-            updated: row.get(4),
+            basename: row.get(3),
+            created: row.get(4),
+            updated: row.get(5),
         });
 
         list.push(item);

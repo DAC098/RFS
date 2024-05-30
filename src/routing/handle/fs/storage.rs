@@ -169,9 +169,17 @@ pub async fn post(
 
         transaction.execute(
             "\
-            insert into fs (id, user_id, storage_id, fs_type, backend, created) values \
-            ($1, $2, $3, $4, $5, $6)",
-            &[&id, &initiator.user.id, &storage.id, &fs::consts::ROOT_TYPE, &pg_backend, &created]
+            insert into fs (id, user_id, storage_id, basename, fs_type, backend, created) values \
+            ($1, $2, $3, $4, $5, $6, $7)",
+            &[
+                &id,
+                &initiator.user.id,
+                &storage.id,
+                &storage.name,
+                &fs::consts::ROOT_TYPE,
+                &pg_backend,
+                &created
+            ]
         ).await?;
     }
 

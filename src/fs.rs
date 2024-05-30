@@ -50,13 +50,14 @@ impl Item {
         row: tokio_postgres::Row,
         tags: tags::TagMap
     ) -> Result<Item, PgError> {
-        let fs_type = row.get(4);
+        let fs_type = row.get(5);
 
         let item = match fs_type {
             consts::ROOT_TYPE => Item::Root(Root {
                 id: row.get(0),
                 user_id: row.get(1),
                 storage_id: row.get(2),
+                basename: row.get(4),
                 backend: sql::de_from_sql(row.get(11)),
                 tags,
                 comment: row.get(12),
@@ -122,7 +123,7 @@ impl Item {
                    fs.mime_type, \
                    fs.mime_subtype, \
                    fs.hash, \
-                   fs.s_data, \
+                   fs.backend, \
                    fs.comment, \
                    fs.created, \
                    fs.updated, \

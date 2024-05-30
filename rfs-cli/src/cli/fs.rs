@@ -14,8 +14,10 @@ use clap::{Subcommand, Args};
 
 use crate::error::{self, Context};
 use crate::util;
+use crate::formatting::{self, OutputOptions};
 
 mod get;
+mod storage;
 
 #[derive(Debug, Args)]
 pub struct FsArgs {
@@ -39,6 +41,9 @@ enum FsCmds {
 
     /// deletes the desired fs item
     Delete(DeleteArgs),
+
+    /// interacts with storage mediums on a server
+    Storage(storage::StorageArgs),
 }
 
 pub fn handle(client: &ApiClient, args: FsArgs) -> error::Result {
@@ -48,6 +53,7 @@ pub fn handle(client: &ApiClient, args: FsArgs) -> error::Result {
         FsCmds::Update(given) => update(client, given),
         FsCmds::Upload(given) => upload(client, given),
         FsCmds::Delete(given) => delete(client, given),
+        FsCmds::Storage(given) => storage::handle(client, given),
     }
 }
 
@@ -128,6 +134,9 @@ struct CreateArgs {
     #[arg(short, long)]
     comment: Option<String>,
 
+    #[command(flatten)]
+    output_options: OutputOptions,
+
     #[command(subcommand)]
     create_type: CreateType,
 }
@@ -145,6 +154,7 @@ enum CreateType {
 fn create(client: &ApiClient, args: CreateArgs) -> error::Result {
     match args.create_type {
         CreateType::Dir { basename } => {
+            let mut stdout = std::io::stdout();
             let mut builder = CreateDir::basename(args.parent, basename);
 
             if !args.tags.is_empty() {
@@ -159,7 +169,8 @@ fn create(client: &ApiClient, args: CreateArgs) -> error::Result {
                 .context("failed to create directory")?
                 .into_payload();
 
-            println!("{:?}", result);
+            formatting::write_fs_item(&mut stdout, &result, &args.output_options)
+                .context("failed to output to stdout")?;
         }
     }
 
@@ -181,7 +192,10 @@ struct UpdateArgs {
 
     /// removes the comment of the given fs item
     #[arg(long, conflicts_with("comment"))]
-    drop_comment: bool
+    drop_comment: bool,
+
+    #[command(flatten)]
+    output_options: OutputOptions,
 }
 
 fn update(client: &ApiClient, args: UpdateArgs) -> error::Result {
@@ -220,7 +234,10 @@ fn update(client: &ApiClient, args: UpdateArgs) -> error::Result {
         .context("failed to update fs item")?
         .into_payload();
 
-    println!("{:#?}", result);
+    let mut stdout = std::io::stdout();
+
+    formatting::write_fs_item(&mut stdout, &result, &args.output_options)
+        .context("failed to output to stdout")?;
 
     Ok(())
 }
@@ -230,6 +247,9 @@ struct UploadArgs {
     /// path of the file to upload
     #[arg(long)]
     path: PathBuf,
+
+    #[command(flatten)]
+    output_options: OutputOptions,
 
     #[command(subcommand)]
     upload_type: UploadType
@@ -326,7 +346,10 @@ fn upload(client: &ApiClient, args: UploadArgs) -> error::Result {
                 .context("failed to upload file")?
                 .into_payload();
 
-            println!("{:#?}", result);
+            let mut stdout = std::io::stdout();
+
+            formatting::write_fs_item(&mut stdout, &result, &args.output_options)
+                .context("failed to output to stdout")?;
         },
         UploadType::Existing { id, mime, fallback } => {
             let mut builder = SendReadable::update(id, file);
@@ -348,7 +371,10 @@ fn upload(client: &ApiClient, args: UploadArgs) -> error::Result {
                 .context("failed to upload file")?
                 .into_payload();
 
-            println!("{:#?}", result);
+            let mut stdout = std::io::stdout();
+
+            formatting::write_fs_item(&mut stdout, &result, &args.output_options)
+                .context("failed to output to stdout")?;
         },
     }
 
