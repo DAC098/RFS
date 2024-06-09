@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use rfs_lib::ids;
 use chrono::{DateTime, Utc};
 
@@ -15,7 +13,7 @@ pub struct Directory {
     pub backend: backend::Node,
     pub parent: ids::FSId,
     pub basename: String,
-    pub path: PathBuf,
+    pub path: String,
     pub tags: tags::TagMap,
     pub comment: Option<String>,
     pub created: DateTime<Utc>,
@@ -61,8 +59,12 @@ impl traits::Common for Directory {
         &self.user_id
     }
 
-    fn full_path(&self) -> PathBuf {
-        self.path.join(&self.basename)
+    fn storage_id(&self) -> &ids::FSId {
+        &self.storage_id
+    }
+
+    fn full_path(&self) -> String {
+        format!("{}/{}", self.path, self.basename)
     }
 
     fn created(&self) -> &DateTime<Utc> {

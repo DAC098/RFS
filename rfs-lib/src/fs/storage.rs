@@ -1,9 +1,7 @@
-use crate::validation::check_control_whitespace;
-
 pub const MAX_NAME_CHARS: usize = 128;
 
-pub fn name_valid(given: &String) -> bool {
-    !given.is_empty() && check_control_whitespace(&given, Some(MAX_NAME_CHARS))
+pub fn name_valid(given: &str) -> bool {
+    crate::fs::valid_pathname(given, 1, MAX_NAME_CHARS, false)
 }
 
 #[cfg(test)]
@@ -14,17 +12,20 @@ mod test {
     #[test]
     fn name_validation() {
         let valid = [
-            String::from("i_am_a_valid_name"),
-            String::from("i_am_also_a_valid_name_😈"),
+            "i_am_a_valid_name",
+            "i_am_also_a_valid_name_😈",
         ];
 
         for test in valid {
             assert!(name_valid(&test), "valid string failed {:?}", test);
         }
 
+        let max_len = string_to_len(MAX_NAME_CHARS + 1);
+
         let invalid = [
-            String::new(),
-            string_to_len(MAX_NAME_CHARS + 1)
+            "",
+            max_len.as_str(),
+            "i have spaces",
         ];
 
         for test in invalid {

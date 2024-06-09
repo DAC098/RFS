@@ -14,7 +14,6 @@ pub fn value_valid(given: &String) -> bool {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::string_to_len;
 
     #[test]
     fn key_validation() {

@@ -21,6 +21,14 @@ pub enum Node {
     Local(NodeLocal)
 }
 
+impl Node {
+    pub fn as_local(&self) -> Option<&NodeLocal> {
+        match &self {
+            Node::Local(local) => Some(&local),
+        }
+    }
+}
+
 impl From<Node> for rfs_api::fs::backend::Node {
     fn from(node: Node) -> Self {
         match node {

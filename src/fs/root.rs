@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use rfs_lib::ids;
 use chrono::{DateTime, Utc};
 
@@ -57,8 +55,12 @@ impl traits::Common for Root {
         &self.user_id
     }
 
-    fn full_path(&self) -> PathBuf {
-        PathBuf::new()
+    fn storage_id(&self) -> &ids::StorageId {
+        &self.storage_id
+    }
+
+    fn full_path(&self) -> String {
+        self.basename.clone()
     }
 
     fn created(&self) -> &DateTime<Utc> {

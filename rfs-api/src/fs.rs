@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use rfs_lib::ids;
 use rfs_lib::serde::mime_str;
 
@@ -52,7 +50,7 @@ pub struct File {
     #[serde(with = "string_id")]
     pub parent: ids::FSId,
     pub basename: String,
-    pub path: PathBuf,
+    pub path: String,
     pub size: u64,
     #[serde(with = "mime_str")]
     pub mime: mime::Mime,
@@ -76,7 +74,7 @@ pub struct FileMin {
     #[serde(with = "string_id")]
     pub parent: ids::FSId,
     pub basename: String,
-    pub path: PathBuf,
+    pub path: String,
     pub size: u64,
     #[serde(with = "mime_str")]
     pub mime: mime::Mime,
@@ -120,7 +118,7 @@ pub struct Directory {
     #[serde(with = "string_id")]
     pub parent: ids::FSId,
     pub basename: String,
-    pub path: PathBuf,
+    pub path: String,
     pub tags: Tags,
     pub comment: Option<String>,
     pub backend: backend::Node,
@@ -140,7 +138,7 @@ pub struct DirectoryMin {
     #[serde(with = "string_id")]
     pub parent: ids::FSId,
     pub basename: String,
-    pub path: PathBuf,
+    pub path: String,
     pub created: DateTime<Utc>,
     pub updated: Option<DateTime<Utc>>,
 }

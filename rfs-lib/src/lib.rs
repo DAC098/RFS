@@ -12,6 +12,7 @@ pub mod fs;
 
 pub mod query;
 
+#[cfg(test)]
 pub fn string_to_len_char(length: usize, ch: char) -> String {
     let mut rtn = String::with_capacity(length);
 
@@ -22,6 +23,7 @@ pub fn string_to_len_char(length: usize, ch: char) -> String {
     rtn
 }
 
+#[cfg(test)]
 pub fn string_to_len(length: usize) -> String {
     string_to_len_char(length, 'a')
 }

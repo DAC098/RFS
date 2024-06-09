@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::str::FromStr;
 use std::fmt::Debug;
 
@@ -10,7 +9,6 @@ use tokio_postgres::types::{self, ToSql};
 
 pub type PgJson<T> = types::Json<T>;
 
-pub type ParamsValue<'a> = &'a (dyn ToSql + Sync);
 pub type ParamsVec<'a> = Vec<&'a (dyn ToSql + Sync)>;
 pub type ParamsArray<'a, const N: usize> = [&'a (dyn ToSql + Sync); N];
 
@@ -20,10 +18,6 @@ where
 {
     params.push(v);
     params.len()
-}
-
-pub fn pathbuf_from_sql(value: &str) -> PathBuf {
-    PathBuf::from(value)
 }
 
 pub fn mime_from_sql(type_: &str, subtype: &str) -> mime::Mime {

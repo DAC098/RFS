@@ -137,7 +137,7 @@ pub async fn get(
                     storage_id: row.get(2),
                     parent: row.get(3),
                     basename: row.get(4),
-                    path: sql::pathbuf_from_sql(row.get(6)),
+                    path: row.get(6),
                     size: sql::u64_from_sql(row.get(7)),
                     mime: sql::mime_from_sql(row.get(8), row.get(9)),
                     created: row.get(10),
@@ -151,7 +151,7 @@ pub async fn get(
                     storage_id: row.get(2),
                     parent: row.get(3),
                     basename: row.get(4),
-                    path: sql::pathbuf_from_sql(row.get(6)),
+                    path: row.get(6),
                     created: row.get(10),
                     updated: row.get(11),
                 })

@@ -530,7 +530,7 @@ where
         output,
         "file {} {}/{} {}\n",
         file.id.id(),
-        file.path.display(),
+        file.path,
         file.basename,
         bytes_to_unit(file.size, &options.size_format)
     )?;
@@ -581,7 +581,7 @@ pub fn write_fs_dir<O>(output: &mut O, dir: &rfs_api::fs::Directory, options: &O
 where
     O: std::io::Write
 {
-    write!(output, "directory {} {}/{}\n", dir.id.id(), dir.path.display(), dir.basename)?;
+    write!(output, "directory {} {}/{}\n", dir.id.id(), dir.path, dir.basename)?;
     write!(output, "parent: {}\n", dir.parent.id())?;
     write!(output, "created: {}\n", datetime_to_string(&dir.created, &options.ts_format))?;
 

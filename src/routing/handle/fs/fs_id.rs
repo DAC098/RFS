@@ -9,7 +9,6 @@ use axum::debug_handler;
 use axum::http::{StatusCode, HeaderMap};
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, Query, State};
-use axum::response::IntoResponse;
 use futures::{Stream, StreamExt, TryStreamExt};
 use deadpool_postgres::GenericClient;
 use serde::Deserialize;
@@ -60,6 +59,31 @@ where
     Ok(size)
 }
 
+async fn fetch_item(
+    conn: &impl GenericClient,
+    id: &ids::FSId,
+    initiator: &initiator::Initiator,
+) -> error::Result<fs::Item> {
+    let item = fs::Item::retrieve(conn, id)
+        .await?
+        .ok_or(error::Error::api(error::ApiErrorKind::FileNotFound))?;
+
+    if *item.user_id() != initiator.user.id {
+        Err(error::Error::api(error::ApiErrorKind::PermissionDenied))
+    } else {
+        Ok(item)
+    }
+}
+
+async fn fetch_storage(
+    conn: &impl GenericClient,
+    id: &ids::StorageId
+) -> error::Result<fs::Storage> {
+    fs::Storage::retrieve(conn, id)
+        .await?
+        .ok_or(error::Error::api(error::ApiErrorKind::StorageNotFound))
+}
+
 #[derive(Deserialize)]
 pub struct PathParams {
     fs_id: ids::FSId,
@@ -69,7 +93,7 @@ pub async fn get(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
     Path(PathParams { fs_id }): Path<PathParams>,
-) -> error::Result<impl IntoResponse> {
+) -> error::Result<rfs_api::Payload<rfs_api::fs::Item>> {
     let conn = state.pool().get().await?;
 
     if !permission::has_ability(
@@ -81,15 +105,7 @@ pub async fn get(
         return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
-    let Some(item) = fs::Item::retrieve(&conn,&fs_id).await? else {
-        return Err(error::Error::api(error::ApiErrorKind::FileNotFound));
-    };
-
-    if *item.user_id() != initiator.user.id {
-        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
-    }
-
-    Ok(rfs_api::Payload::new(item.into_schema()))
+    Ok(rfs_api::Payload::new(fetch_item(&conn, &fs_id, &initiator).await?.into()))
 }
 
 #[debug_handler]
@@ -98,7 +114,7 @@ pub async fn post(
     initiator: initiator::Initiator,
     Path(PathParams { fs_id }): Path<PathParams>,
     axum::Json(json): axum::Json<rfs_api::fs::CreateDir>,
-) -> error::Result<impl IntoResponse> {
+) -> error::Result<(StatusCode, rfs_api::Payload<rfs_api::fs::Item>)> {
     let mut conn = state.pool().get().await?;
 
     if !permission::has_ability(
@@ -110,13 +126,8 @@ pub async fn post(
         return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
-    let Some(item) = fs::Item::retrieve(&conn, &fs_id).await? else {
-        return Err(error::Error::api(error::ApiErrorKind::FileNotFound));
-    };
-
-    let Some(storage) = fs::Storage::retrieve(&conn, item.storage_id()).await? else {
-        return Err(error::Error::api(error::ApiErrorKind::StorageNotFound));
-    };
+    let item = fetch_item(&conn, &fs_id, &initiator).await?;
+    let storage = fetch_storage(&conn, item.storage_id()).await?;
 
     let transaction = conn.transaction().await?;
     let id = state.ids().wait_fs_id()?;
@@ -145,16 +156,21 @@ pub async fn post(
         )));
     }
 
-    let Some(container) = item.as_container() else {
+    let Ok((parent, path, container_backend)) = item.try_into_parent_parts() else {
         return Err(error::Error::api(error::ApiErrorKind::InvalidType));
     };
 
-    let path = container.full_path();
-    let parent = container.id().clone();
+    if fs::Item::name_check(&transaction, &parent, &basename).await?.is_some() {
+        return Err(error::Error::api(error::ApiErrorKind::AlreadyExists));
+    }
 
     let backend = match &storage.backend {
-        fs::backend::Config::Local(local) => {
-            let mut full = local.path.join(&path);
+        fs::backend::Config::Local(storage_local) => {
+            let Some(container_local) = container_backend.as_local() else {
+                return Err(error::Error::new().context("backend miss-match when creating directory"));
+            };
+
+            let mut full = storage_local.path.join(&container_local.path);
             full.push(&basename);
 
             tracing::debug!("new directory path: {:?}", full.display());
@@ -162,15 +178,16 @@ pub async fn post(
             tokio::fs::create_dir(&full).await?;
 
             fs::backend::Node::Local(fs::backend::NodeLocal {
-                path: full.strip_prefix(&local.path)
+                path: full.strip_prefix(&storage_local.path)
                     .unwrap()
                     .to_owned()
             })
         }
     };
 
+    tracing::debug!("directory backend: {backend:#?}");
+
     {
-        let pg_path = path.to_str().unwrap();
         let pg_backend = sql::ser_to_sql(&backend);
 
         let _ = transaction.execute(
@@ -195,7 +212,7 @@ pub async fn post(
                 &parent,
                 &basename,
                 &fs::consts::DIR_TYPE,
-                &pg_path,
+                &path,
                 &pg_backend,
                 &comment,
                 &created
@@ -235,7 +252,7 @@ pub async fn post(
         deleted: None
     });
 
-    Ok((StatusCode::CREATED, rfs_api::Payload::new(rtn.into_schema())))
+    Ok((StatusCode::CREATED, rfs_api::Payload::new(rtn.into())))
 }
 
 #[derive(Deserialize)]
@@ -251,7 +268,7 @@ pub async fn put(
     Path(PathParams { fs_id }): Path<PathParams>,
     Query(PutQuery { basename }): Query<PutQuery>,
     stream: Body,
-) -> error::Result<impl IntoResponse> {
+) -> error::Result<rfs_api::Payload<rfs_api::fs::Item>> {
     let mut conn = state.pool().get().await?;
 
     if !permission::has_ability(
@@ -265,22 +282,8 @@ pub async fn put(
         ));
     }
 
-    let Some(item) = fs::Item::retrieve(&conn, &fs_id).await? else {
-        return Err(error::Error::api(error::ApiErrorKind::FileNotFound));
-    };
-
-    if item.user_id() != initiator.user().id() {
-        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
-    }
-
-    tracing::debug!("retrieved fs item: {item:#?}");
-
-    let Some(storage) = fs::Storage::retrieve(&conn, item.storage_id()).await? else {
-        return Err(error::Error::api(error::ApiErrorKind::StorageNotFound));
-    };
-
-    let transaction = conn.transaction().await?;
-    let created = chrono::Utc::now();
+    let item = fetch_item(&conn, &fs_id, &initiator).await?;
+    let storage = fetch_storage(&conn, item.storage_id()).await?;
 
     let mime = if let Some(value) = headers.get("content-type") {
         mime::Mime::from_str(value.to_str()?)?
@@ -288,194 +291,214 @@ pub async fn put(
         return Err(error::Error::api(error::ApiErrorKind::NoContentType));
     };
 
-    let rtn = if let Some(container) = item.as_container() {
-        let id = state.ids().wait_fs_id()?;
-        let user_id = initiator.user.id.clone();
-        let storage_id = storage.id.clone();
-        let size: u64;
-        let hash: blake3::Hash;
-        let path = container.full_path();
-        let parent = container.id().clone();
+    let transaction = conn.transaction().await?;
 
-        let basename = if let Some(value) = basename {
-            value
-        } else if let Some(value) = headers.get("x-basename") {
-            value.to_str()?.to_owned()
-        } else {
-            return Err(error::Error::api((
-                error::ApiErrorKind::MissingData,
-                error::Detail::with_key("basename")
-            )));
-        };
+    let rtn = match item.try_into_parent_parts() {
+        Ok((parent, path, container_backend)) => {
+            let id = state.ids().wait_fs_id()?;
+            let user_id = initiator.user.id.clone();
+            let storage_id = storage.id.clone();
+            let created = chrono::Utc::now();
 
-        if !rfs_lib::fs::basename_valid(&basename) {
-            return Err(error::Error::api((
-                error::ApiErrorKind::ValidationFailed,
-                error::Detail::with_key("basename")
-            )));
-        }
-
-        if let Some(_id) = fs::name_check(&transaction, &parent, &basename).await? {
-            return Err(error::Error::api(error::ApiErrorKind::AlreadyExists));
-        }
-
-        let backend = match &storage.backend {
-            fs::backend::Config::Local(local) => {
-                let mut full = local.path.join(&path);
-                full.push(&basename);
-
-                if full.try_exists()? {
-                    return Err(error::Error::api((
-                        error::ApiErrorKind::AlreadyExists,
-                        "an unknown file already exists in this location"
-                    )));
-                }
-
-                let mut hasher = blake3::Hasher::new();
-                let file = tokio::fs::OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .open(&full)
-                    .await?;
-                let mut writer = BufWriter::new(file);
-
-                size = stream_to_writer(stream.into_data_stream(), &mut hasher, &mut writer).await?;
-                hash = hasher.finalize();
-
-                fs::backend::Node::Local(fs::backend::NodeLocal {
-                    path: full.strip_prefix(&local.path)
-                        .unwrap()
-                        .to_owned()
-                })
-            }
-        };
-
-        {
-            let pg_path = path.to_str().unwrap();
-            let pg_backend = sql::ser_to_sql(&backend);
-            let pg_mime_type = mime.type_().as_str();
-            let pg_mime_subtype = mime.subtype().as_str();
-            let pg_hash = hash.as_bytes().as_slice();
-            let Ok(pg_size): Result<i64, _> = TryFrom::try_from(size) else {
-                return Err(error::Error::api(error::ApiErrorKind::MaxSize)
-                    .context("total bytes written exceeds i64"));
+            let basename = if let Some(value) = basename {
+                value
+            } else if let Some(value) = headers.get("x-basename") {
+                value.to_str()?.to_owned()
+            } else {
+                return Err(error::Error::api((
+                    error::ApiErrorKind::MissingData,
+                    error::Detail::with_key("basename")
+                )));
             };
 
-            let _ = transaction.execute(
-                "\
-                insert into fs(\
-                    id, \
-                    user_id, \
-                    storage_id, \
-                    parent, \
-                    basename, \
-                    fs_type, \
-                    fs_path, \
-                    fs_size, \
-                    hash, \
-                    backend, \
-                    mime_type, \
-                    mime_subtype, \
-                    created\
-                ) values \
-                ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
-                &[
-                    &id,
-                    &user_id,
-                    &storage_id,
-                    &parent,
-                    &basename,
-                    &fs::consts::FILE_TYPE,
-                    &pg_path,
-                    &pg_size,
-                    &pg_hash,
-                    &pg_backend,
-                    &pg_mime_type,
-                    &pg_mime_subtype,
-                    &created
-                ]
-            ).await?;
-        }
+            if !rfs_lib::fs::basename_valid(&basename) {
+                return Err(error::Error::api((
+                    error::ApiErrorKind::ValidationFailed,
+                    error::Detail::with_key("basename")
+                )));
+            }
 
-        fs::Item::File(fs::File {
-            id,
-            user_id,
-            storage_id,
-            backend,
-            parent,
-            basename,
-            path,
-            mime,
-            size,
-            hash,
-            tags: Default::default(),
-            comment: None,
-            created,
-            updated: None,
-            deleted: None,
-        })
-    } else {
-        let mut file = item.into_file();
-        let size: u64;
-        let hash: blake3::Hash;
+            if fs::Item::name_check(&transaction, &parent, &basename).await?.is_some() {
+                return Err(error::Error::api(error::ApiErrorKind::AlreadyExists));
+            }
 
-        if mime != file.mime {
-            return Err(error::Error::api(error::ApiErrorKind::MimeMismatch));
-        }
+            let size: u64;
+            let hash: blake3::Hash;
 
-        match &storage.backend {
-            fs::backend::Config::Local(local) => {
-                let mut full = local.path.join(&file.path);
-                full.push(&file.basename);
+            let backend = match &storage.backend {
+                fs::backend::Config::Local(storage_backend) => {
+                    let Some(container_local) = container_backend.as_local() else {
+                        return Err(error::Error::new().context("backend miss-match when creating file"));
+                    };
 
-                if !full.try_exists()? {
-                    return Err(error::Error::api(error::ApiErrorKind::FileNotFound));
+                    let mut full = storage_backend.path.join(&container_local.path);
+                    full.push(&basename);
+
+                    tracing::debug!("file create path: {}", full.display());
+
+                    if full.try_exists()? {
+                        return Err(error::Error::api((
+                            error::ApiErrorKind::AlreadyExists,
+                            "an unknown file already exists in this location"
+                        )));
+                    }
+
+                    let mut hasher = blake3::Hasher::new();
+                    let file = tokio::fs::OpenOptions::new()
+                        .write(true)
+                        .create_new(true)
+                        .open(&full)
+                        .await?;
+                    let mut writer = BufWriter::new(file);
+
+                    size = stream_to_writer(stream.into_data_stream(), &mut hasher, &mut writer).await?;
+                    hash = hasher.finalize();
+
+                    fs::backend::Node::Local(fs::backend::NodeLocal {
+                        path: full.strip_prefix(&storage_backend.path)
+                            .unwrap()
+                            .to_owned()
+                    })
                 }
+            };
 
-                let mut hasher = blake3::Hasher::new();
-                let file = tokio::fs::OpenOptions::new()
-                    .write(true)
-                    .open(full)
-                    .await?;
-                let mut writer = BufWriter::new(file);
+            tracing::debug!("file backend: {backend:#?}");
 
-                size = stream_to_writer(
-                    stream.into_data_stream(),
-                    &mut hasher,
-                    &mut writer
+            {
+                let pg_backend = sql::ser_to_sql(&backend);
+                let pg_mime_type = mime.type_().as_str();
+                let pg_mime_subtype = mime.subtype().as_str();
+                let pg_hash = hash.as_bytes().as_slice();
+                let Ok(pg_size): Result<i64, _> = TryFrom::try_from(size) else {
+                    return Err(error::Error::api(error::ApiErrorKind::MaxSize)
+                        .context("total bytes written exceeds i64"));
+                };
+
+                let _ = transaction.execute(
+                    "\
+                    insert into fs(\
+                        id, \
+                        user_id, \
+                        storage_id, \
+                        parent, \
+                        basename, \
+                        fs_type, \
+                        fs_path, \
+                        fs_size, \
+                        hash, \
+                        backend, \
+                        mime_type, \
+                        mime_subtype, \
+                        created\
+                    ) values \
+                    ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
+                    &[
+                        &id,
+                        &user_id,
+                        &storage_id,
+                        &parent,
+                        &basename,
+                        &fs::consts::FILE_TYPE,
+                        &path,
+                        &pg_size,
+                        &pg_hash,
+                        &pg_backend,
+                        &pg_mime_type,
+                        &pg_mime_subtype,
+                        &created
+                    ]
                 ).await?;
-                hash = hasher.finalize();
             }
-        };
 
-        {
-            let pg_hash = hash.as_bytes().as_slice();
-            let Ok(pg_size): Result<i64, _> = TryFrom::try_from(size) else {
-                return Err(error::Error::api(error::ApiErrorKind::MaxSize)
-                    .context("total bytes written exceeds i64"));
+            fs::Item::File(fs::File {
+                id,
+                user_id,
+                storage_id,
+                backend,
+                parent,
+                basename,
+                path,
+                mime,
+                size,
+                hash,
+                tags: Default::default(),
+                comment: None,
+                created,
+                updated: None,
+                deleted: None,
+            })
+        }
+        Err(item) => {
+            let mut file = item.into_file();
+            let size: u64;
+            let hash: blake3::Hash;
+            let updated = chrono::Utc::now();
+
+            if mime != file.mime {
+                return Err(error::Error::api(error::ApiErrorKind::MimeMismatch));
+            }
+
+            match &storage.backend {
+                fs::backend::Config::Local(storage_backend) => {
+                    let full = {
+                        let Some(file_backend) = file.backend.as_local() else {
+                            return Err(error::Error::new().context("backend miss-match when updating file"));
+                        };
+
+                        storage_backend.path.join(&file_backend.path)
+                    };
+
+                    if !full.try_exists()? {
+                        return Err(error::Error::api(error::ApiErrorKind::FileNotFound));
+                    }
+
+                    tracing::debug!("file update path: {}", full.display());
+
+                    let mut hasher = blake3::Hasher::new();
+                    let file = tokio::fs::OpenOptions::new()
+                        .write(true)
+                        .open(full)
+                        .await?;
+                    let mut writer = BufWriter::new(file);
+
+                    size = stream_to_writer(
+                        stream.into_data_stream(),
+                        &mut hasher,
+                        &mut writer
+                    ).await?;
+                    hash = hasher.finalize();
+                }
             };
 
-            let _ = transaction.execute(
-                "\
-                update fs \
-                set fs_size = $2, \
-                    hash = $3, \
-                    updated = $4 \
-                where fs.id = $1",
-                &[&file.id, &pg_size, &pg_hash, &created]
-            ).await?;
+            {
+                let pg_hash = hash.as_bytes().as_slice();
+                let Ok(pg_size): Result<i64, _> = TryFrom::try_from(size) else {
+                    return Err(error::Error::api(error::ApiErrorKind::MaxSize)
+                        .context("total bytes written exceeds i64"));
+                };
+
+                let _ = transaction.execute(
+                    "\
+                    update fs \
+                    set fs_size = $2, \
+                        hash = $3, \
+                        updated = $4 \
+                    where fs.id = $1",
+                    &[&file.id, &pg_size, &pg_hash, &updated]
+                ).await?;
+            }
+
+            file.updated = Some(updated);
+            file.size = size;
+            file.hash = hash;
+
+            fs::Item::File(file)
         }
-
-        file.updated = Some(created);
-        file.size = size;
-        file.hash = hash;
-
-        fs::Item::File(file)
     };
 
     transaction.commit().await?;
 
-    Ok(rfs_api::Payload::new(rtn.into_schema()))
+    Ok(rfs_api::Payload::new(rtn.into()))
 }
 
 pub async fn patch(
@@ -483,7 +506,7 @@ pub async fn patch(
     initiator: initiator::Initiator,
     Path(PathParams { fs_id }): Path<PathParams>,
     axum::Json(json): axum::Json<rfs_api::fs::UpdateMetadata>,
-) -> error::Result<impl IntoResponse> {
+) -> error::Result<rfs_api::Payload<rfs_api::fs::Item>> {
     let mut conn = state.pool().get().await?;
 
     if !permission::has_ability(
@@ -495,20 +518,11 @@ pub async fn patch(
         return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
-    let Some(mut item) = fs::Item::retrieve(
-        &conn,
-        &fs_id
-    ).await? else {
-        return Err(error::Error::api(error::ApiErrorKind::FileNotFound));
-    };
-
-    if item.user_id() != initiator.user().id() {
-        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
-    }
-
     if !json.has_work() {
         return Err(error::Error::api(error::ApiErrorKind::NoWork));
     }
+
+    let mut item = fetch_item(&conn, &fs_id, &initiator).await?;
 
     let transaction = conn.transaction().await?;
 
@@ -558,14 +572,14 @@ pub async fn patch(
 
     transaction.commit().await?;
 
-    Ok(rfs_api::Payload::new(item.into_schema()))
+    Ok(rfs_api::Payload::new(item.into()))
 }
 
 pub async fn delete(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
     Path(PathParams { fs_id }): Path<PathParams>,
-) -> error::Result<impl IntoResponse> {
+) -> error::Result<StatusCode> {
     let mut conn = state.pool().get().await?;
 
     if !permission::has_ability(
@@ -577,27 +591,18 @@ pub async fn delete(
         return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
-    let Some(item) = fs::Item::retrieve(&conn, &fs_id).await? else {
-        return Err(error::Error::api(error::ApiErrorKind::FileNotFound));
-    };
-
-    if *item.user_id() != initiator.user.id {
-        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
-    }
-
-    let Some(medium) = fs::Storage::retrieve(&conn, item.storage_id()).await? else {
-        return Err(error::Error::api(error::ApiErrorKind::StorageNotFound));
-    };
+    let item = fetch_item(&conn, &fs_id, &initiator).await?;
+    let storage = fetch_storage(&conn, item.storage_id()).await?;
 
     match item {
         fs::Item::Root(_root) => {
             return Err(error::Error::api(error::ApiErrorKind::NotPermitted));
         },
         fs::Item::Directory(dir) => {
-            delete_dir(&mut conn, medium, dir).await?;
+            delete_dir(&mut conn, storage, dir).await?;
         },
         fs::Item::File(file) => {
-            delete_file(&mut conn, medium ,file).await?;
+            delete_file(&mut conn, storage, file).await?;
         }
     }
 
@@ -618,7 +623,11 @@ async fn delete_file(
 
     match storage.backend {
         fs::backend::Config::Local(local) => {
-            let full_path = local.path.join(file.path.join(file.basename));
+            let Some(node_local) = file.backend.as_local() else {
+                return Err(error::Error::new().context("backend miss-match when deleting file"));
+            };
+
+            let full_path = local.path.join(&node_local.path);
 
             tokio::fs::remove_file(&full_path).await?;
         }
@@ -641,9 +650,8 @@ async fn delete_dir(
         with recursive dir_tree as (\
             select fs_root.id, \
                    fs_root.parent, \
-                   fs_root.basename, \
                    fs_root.fs_type, \
-                   fs_root.fs_path, \
+                   fs_root.backend, \
                    1 as level, \
                    fs_root.hash \
             from fs fs_root \
@@ -651,9 +659,8 @@ async fn delete_dir(
             union \
             select fs_contents.id, \
                    fs_contents.parent, \
-                   fs_contents.basename, \
                    fs_contents.fs_type, \
-                   fs_contents.fs_path, \
+                   fs_contents.backend, \
                    dir_tree.level + 1 as level, \
                    fs_contents.hash \
             from fs fs_contents \
@@ -677,80 +684,76 @@ async fn delete_dir(
 
     while let Some(row) = results.try_next().await? {
         let id: ids::FSId = row.get(0);
-        let parent: Option<ids::FSId> = row.get(1);
-        let basename: String = row.get(2);
-        let fs_type: fs::consts::FS_TYPE = row.get(3);
-        let fs_path = sql::pathbuf_from_sql(row.get(4));
-        let level: i32 = row.get(5);
+        let parent: ids::FSId = row.get(1);
+        let fs_type: fs::consts::FsType = row.get(2);
+        let backend: fs::backend::Node = sql::de_from_sql(row.get(3));
+        let level: i32 = row.get(4);
 
         if skip_parents.contains(&id) {
             tracing::debug!("skipping fs item. id: {}", id.id());
 
             skipped.push(id);
-
-            if let Some(parent) = parent {
-                skip_parents.insert(parent);
-            }
+            skip_parents.insert(parent);
 
             continue;
         }
 
-        let full_path = match &storage.backend {
+        match &storage.backend {
             fs::backend::Config::Local(local) => {
-                local.path.join(fs_path.join(basename))
-            }
-        };
+                let Some(node_local) = backend.as_local() else {
+                    tracing::error!("failed to delete item. backend miss-match. id: {}", id.id());
 
-        tracing::debug!("deleting id: {}\ndepth: {level}\npath: {}", id.id(), full_path.display());
-
-        match fs_type {
-            fs::consts::FILE_TYPE => {
-                if let Err(err) = tokio::fs::remove_file(&full_path).await {
-                    match err.kind() {
-                        StdIoErrorKind::NotFound => {
-                            deleted.push(id);
-                        }
-                        _ => {
-                            tracing::error!("failed to delete file. id: {} path: {} {err}", id.id(), full_path.display());
-
-                            failed.push(id);
-
-                            if let Some(parent) = parent {
-                                skip_parents.insert(parent);
-                            }
-                        }
-                    }
-                } else {
-                    deleted.push(id);
-                }
-            }
-            fs::consts::DIR_TYPE => {
-                if let Err(err) = tokio::fs::remove_dir(&full_path).await {
-                    match err.kind() {
-                        StdIoErrorKind::NotFound => {
-                            deleted.push(id);
-                        }
-                        _ => {
-                            tracing::error!("failed to delete directory. id: {} path: {} {err}", id.id(), full_path.display());
-
-                            failed.push(id);
-
-                            if let Some(parent) = parent {
-                                skip_parents.insert(parent);
-                            }
-                        }
-                    }
-                } else {
-                    deleted.push(id);
-                }
-            }
-            _ => {
-                tracing::debug!("unhandled file type. id: {} type: {fs_type}", id.id());
-
-                skipped.push(id);
-
-                if let Some(parent) = parent {
+                    failed.push(id);
                     skip_parents.insert(parent);
+
+                    continue;
+                };
+
+                let full_path = local.path.join(&node_local.path);
+
+                tracing::debug!("deleting id: {}\ndepth: {level}\npath: {}", id.id(), full_path.display());
+
+                match fs_type {
+                    fs::consts::FILE_TYPE => {
+                        if let Err(err) = tokio::fs::remove_file(&full_path).await {
+                            match err.kind() {
+                                StdIoErrorKind::NotFound => {
+                                    deleted.push(id);
+                                }
+                                _ => {
+                                    tracing::error!("failed to delete file. id: {} path: {} {err}", id.id(), full_path.display());
+
+                                    failed.push(id);
+                                    skip_parents.insert(parent);
+                                }
+                            }
+                        } else {
+                            deleted.push(id);
+                        }
+                    }
+                    fs::consts::DIR_TYPE => {
+                        if let Err(err) = tokio::fs::remove_dir(&full_path).await {
+                            match err.kind() {
+                                StdIoErrorKind::NotFound => {
+                                    deleted.push(id);
+                                }
+                                _ => {
+                                    tracing::error!("failed to delete directory. id: {} path: {} {err}", id.id(), full_path.display());
+
+                                    failed.push(id);
+                                    skip_parents.insert(parent);
+                                }
+                            }
+                        } else {
+                            deleted.push(id);
+                        }
+                    }
+                    _ => {
+                        tracing::debug!("unhandled file type. id: {} type: {fs_type}", id.id());
+
+                        skipped.push(id);
+                        skip_parents.insert(parent);
+                    }
                 }
             }
         }

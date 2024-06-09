@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use rfs_lib::ids;
 use deadpool_postgres::GenericClient;
 use tokio_postgres::Error as PgError;
@@ -10,6 +8,8 @@ use crate::sql;
 
 pub mod consts;
 pub mod traits;
+
+use traits::Common;
 
 pub mod root;
 pub use root::Root;
@@ -22,22 +22,6 @@ pub use file::File;
 
 pub mod backend;
 
-pub async fn name_check<N>(
-    conn: &impl GenericClient,
-    parent: &ids::FSId,
-    name: N
-) -> Result<Option<ids::FSId>, tokio_postgres::Error>
-where
-    N: AsRef<str>
-{
-    let check = conn.query_opt(
-        "select id from fs where parent = $1 and basename = $2",
-        &[parent, &name.as_ref()]
-    ).await?;
-
-    Ok(check.map(|row| row.get(0)))
-}
-
 #[derive(Debug)]
 pub enum Item {
     Root(Root),
@@ -46,6 +30,21 @@ pub enum Item {
 }
 
 impl Item {
+    pub async fn name_check(
+        conn: &impl GenericClient,
+        parent: &ids::FSId,
+        name: &str
+    ) -> Result<Option<ids::FSId>, tokio_postgres::Error> {
+        if let Some(row) = conn.query_opt(
+            "select id from fs where parent = $1 and basename = $2",
+            &[parent, &name]
+        ).await? {
+            Ok(Some(row.get(0)))
+        } else {
+            Ok(None)
+        }
+    }
+
     fn query_to_item(
         row: tokio_postgres::Row,
         tags: tags::TagMap
@@ -71,7 +70,7 @@ impl Item {
                 storage_id: row.get(2),
                 backend: sql::de_from_sql(row.get(11)),
                 parent: row.get(3),
-                path: sql::pathbuf_from_sql(row.get(6)),
+                path: row.get(6),
                 basename: row.get(4),
                 mime: sql::mime_from_sql(row.get(8), row.get(9)),
                 size: sql::u64_from_sql(row.get(7)),
@@ -88,7 +87,7 @@ impl Item {
                 storage_id: row.get(2),
                 backend: sql::de_from_sql(row.get(11)),
                 parent: row.get(3),
-                path: sql::pathbuf_from_sql(row.get(6)),
+                path: row.get(6),
                 basename: row.get(4),
                 tags,
                 comment: row.get(12),
@@ -189,6 +188,22 @@ impl Item {
         }
     }
 
+    pub fn try_into_parent_parts(self) -> Result<(ids::FSId, String, backend::Node), Self> {
+        match self {
+            Self::Root(root) => {
+                let full_path = root.full_path();
+
+                Ok((root.id, full_path, root.backend))
+            }
+            Self::Directory(dir) => {
+                let full_path = dir.full_path();
+
+                Ok((dir.id, full_path, dir.backend))
+            }
+            Self::File(file) => Err(Item::File(file))
+        }
+    }
+
     pub fn try_into_file(self) -> Option<File> {
         match self {
             Self::File(file) => Some(file),
@@ -205,7 +220,7 @@ impl Item {
     }
 }
 
-impl traits::Common for Item {
+impl Common for Item {
     fn id(&self) -> &ids::FSId {
         Item::id(self)
     }
@@ -222,7 +237,11 @@ impl traits::Common for Item {
         Item::user_id(self)
     }
 
-    fn full_path(&self) -> PathBuf {
+    fn storage_id(&self) -> &ids::StorageId {
+        Item::storage_id(self)
+    }
+
+    fn full_path(&self) -> String {
         match self {
             Self::Root(root) => root.full_path(),
             Self::Directory(dir) => dir.full_path(),

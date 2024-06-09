@@ -1,6 +1,6 @@
-pub type FS_TYPE = i16;
+pub type FsType = i16;
 
-pub const ROOT_TYPE: FS_TYPE = 0;
-pub const FILE_TYPE: FS_TYPE = 1;
-pub const DIR_TYPE: FS_TYPE = 2;
+pub const ROOT_TYPE: FsType = 0;
+pub const FILE_TYPE: FsType = 1;
+pub const DIR_TYPE: FsType = 2;
 

@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use rfs_lib::ids;
 use chrono::{DateTime, Utc};
 
@@ -13,7 +11,7 @@ pub struct File {
     pub user_id: ids::UserId,
     pub storage_id: ids::StorageId,
     pub parent: ids::FSId,
-    pub path: PathBuf,
+    pub path: String,
     pub basename: String,
     pub mime: mime::Mime,
     pub size: u64,
@@ -67,8 +65,12 @@ impl traits::Common for File {
         &self.user_id
     }
 
-    fn full_path(&self) -> PathBuf {
-        self.path.join(&self.basename)
+    fn storage_id(&self) -> &ids::StorageId {
+        &self.storage_id
+    }
+
+    fn full_path(&self) -> String {
+        format!("{}/{}", self.path, self.basename)
     }
 
     fn created(&self) -> &DateTime<Utc> {
