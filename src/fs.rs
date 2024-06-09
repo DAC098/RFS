@@ -284,6 +284,17 @@ impl From<File> for Item {
     }
 }
 
+impl TryFrom<Item> for File {
+    type Error = Item;
+
+    fn try_from(item: Item) -> Result<Self, Self::Error> {
+        match item {
+            Item::File(file) => Ok(file),
+            _ => Err(item)
+        }
+    }
+}
+
 impl From<Item> for rfs_api::fs::Item {
     fn from(item: Item) -> Self {
         match item {
@@ -385,4 +396,34 @@ impl From<Storage> for rfs_api::fs::Storage {
             deleted: storage.deleted,
         }
     }
+}
+
+// ----------------------------------------------------------------------------
+
+use crate::sec::authn::initiator::Initiator;
+use crate::net;
+
+pub async fn fetch_item(
+    conn: &impl GenericClient,
+    id: &ids::FSId,
+    initiator: &Initiator
+) -> net::error::Result<Item> {
+    let item = Item::retrieve(conn, id)
+        .await?
+        .ok_or(net::error::Error::api(net::error::ApiErrorKind::FileNotFound))?;
+
+    if *item.user_id() != initiator.user.id {
+        Err(net::error::Error::api(net::error::ApiErrorKind::PermissionDenied))
+    } else {
+        Ok(item)
+    }
+}
+
+pub async fn fetch_storage(
+    conn: &impl GenericClient,
+    id: &ids::StorageId
+) -> net::error::Result<Storage> {
+    Storage::retrieve(conn, id)
+        .await?
+        .ok_or(net::error::Error::api(net::error::ApiErrorKind::StorageNotFound))
 }

@@ -22,6 +22,7 @@ use crate::fs;
 use crate::tags;
 
 pub mod contents;
+pub mod dl;
 
 async fn stream_to_writer<S, E, W>(
     mut stream: S,
@@ -59,31 +60,6 @@ where
     Ok(size)
 }
 
-async fn fetch_item(
-    conn: &impl GenericClient,
-    id: &ids::FSId,
-    initiator: &initiator::Initiator,
-) -> error::Result<fs::Item> {
-    let item = fs::Item::retrieve(conn, id)
-        .await?
-        .ok_or(error::Error::api(error::ApiErrorKind::FileNotFound))?;
-
-    if *item.user_id() != initiator.user.id {
-        Err(error::Error::api(error::ApiErrorKind::PermissionDenied))
-    } else {
-        Ok(item)
-    }
-}
-
-async fn fetch_storage(
-    conn: &impl GenericClient,
-    id: &ids::StorageId
-) -> error::Result<fs::Storage> {
-    fs::Storage::retrieve(conn, id)
-        .await?
-        .ok_or(error::Error::api(error::ApiErrorKind::StorageNotFound))
-}
-
 #[derive(Deserialize)]
 pub struct PathParams {
     fs_id: ids::FSId,
@@ -105,7 +81,7 @@ pub async fn get(
         return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
-    Ok(rfs_api::Payload::new(fetch_item(&conn, &fs_id, &initiator).await?.into()))
+    Ok(rfs_api::Payload::new(fs::fetch_item(&conn, &fs_id, &initiator).await?.into()))
 }
 
 #[debug_handler]
@@ -126,8 +102,8 @@ pub async fn post(
         return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
-    let item = fetch_item(&conn, &fs_id, &initiator).await?;
-    let storage = fetch_storage(&conn, item.storage_id()).await?;
+    let item = fs::fetch_item(&conn, &fs_id, &initiator).await?;
+    let storage = fs::fetch_storage(&conn, item.storage_id()).await?;
 
     let transaction = conn.transaction().await?;
     let id = state.ids().wait_fs_id()?;
@@ -164,12 +140,8 @@ pub async fn post(
         return Err(error::Error::api(error::ApiErrorKind::AlreadyExists));
     }
 
-    let backend = match &storage.backend {
-        fs::backend::Config::Local(storage_local) => {
-            let Some(container_local) = container_backend.as_local() else {
-                return Err(error::Error::new().context("backend miss-match when creating directory"));
-            };
-
+    let backend = match fs::backend::Pair::match_up(&storage.backend, &container_backend)? {
+        fs::backend::Pair::Local((storage_local, container_local)) => {
             let mut full = storage_local.path.join(&container_local.path);
             full.push(&basename);
 
@@ -282,8 +254,8 @@ pub async fn put(
         ));
     }
 
-    let item = fetch_item(&conn, &fs_id, &initiator).await?;
-    let storage = fetch_storage(&conn, item.storage_id()).await?;
+    let item = fs::fetch_item(&conn, &fs_id, &initiator).await?;
+    let storage = fs::fetch_storage(&conn, item.storage_id()).await?;
 
     let mime = if let Some(value) = headers.get("content-type") {
         mime::Mime::from_str(value.to_str()?)?
@@ -325,13 +297,9 @@ pub async fn put(
             let size: u64;
             let hash: blake3::Hash;
 
-            let backend = match &storage.backend {
-                fs::backend::Config::Local(storage_backend) => {
-                    let Some(container_local) = container_backend.as_local() else {
-                        return Err(error::Error::new().context("backend miss-match when creating file"));
-                    };
-
-                    let mut full = storage_backend.path.join(&container_local.path);
+            let backend = match fs::backend::Pair::match_up(&storage.backend, &container_backend)? {
+                fs::backend::Pair::Local((local, node_local)) => {
+                    let mut full = local.path.join(&node_local.path);
                     full.push(&basename);
 
                     tracing::debug!("file create path: {}", full.display());
@@ -355,7 +323,7 @@ pub async fn put(
                     hash = hasher.finalize();
 
                     fs::backend::Node::Local(fs::backend::NodeLocal {
-                        path: full.strip_prefix(&storage_backend.path)
+                        path: full.strip_prefix(&local.path)
                             .unwrap()
                             .to_owned()
                     })
@@ -522,7 +490,7 @@ pub async fn patch(
         return Err(error::Error::api(error::ApiErrorKind::NoWork));
     }
 
-    let mut item = fetch_item(&conn, &fs_id, &initiator).await?;
+    let mut item = fs::fetch_item(&conn, &fs_id, &initiator).await?;
 
     let transaction = conn.transaction().await?;
 
@@ -591,8 +559,8 @@ pub async fn delete(
         return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
-    let item = fetch_item(&conn, &fs_id, &initiator).await?;
-    let storage = fetch_storage(&conn, item.storage_id()).await?;
+    let item = fs::fetch_item(&conn, &fs_id, &initiator).await?;
+    let storage = fs::fetch_storage(&conn, item.storage_id()).await?;
 
     match item {
         fs::Item::Root(_root) => {
@@ -621,12 +589,8 @@ async fn delete_file(
         &[&file.id]
     ).await?;
 
-    match storage.backend {
-        fs::backend::Config::Local(local) => {
-            let Some(node_local) = file.backend.as_local() else {
-                return Err(error::Error::new().context("backend miss-match when deleting file"));
-            };
-
+    match fs::backend::Pair::match_up(&storage.backend, &file.backend)? {
+        fs::backend::Pair::Local((local, node_local)) => {
             let full_path = local.path.join(&node_local.path);
 
             tokio::fs::remove_file(&full_path).await?;
@@ -698,17 +662,17 @@ async fn delete_dir(
             continue;
         }
 
-        match &storage.backend {
-            fs::backend::Config::Local(local) => {
-                let Some(node_local) = backend.as_local() else {
-                    tracing::error!("failed to delete item. backend miss-match. id: {}", id.id());
+        let Ok(pair) = fs::backend::Pair::match_up(&storage.backend, &backend) else {
+            tracing::error!("failed to delete item. backend miss-match. id: {}", id.id());
 
-                    failed.push(id);
-                    skip_parents.insert(parent);
+            failed.push(id);
+            skip_parents.insert(parent);
 
-                    continue;
-                };
+            continue;
+        };
 
+        match pair {
+            fs::backend::Pair::Local((local, node_local)) => {
                 let full_path = local.path.join(&node_local.path);
 
                 tracing::debug!("deleting id: {}\ndepth: {level}\npath: {}", id.id(), full_path.display());

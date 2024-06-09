@@ -205,8 +205,8 @@ async fn init() -> error::Result<()> {
             get(routing::handle::fs::fs_id::contents::get)
         )
         .route(
-            "/fs/:fs_id/data",
-            get(routing::okay)
+            "/fs/:fs_id/dl",
+            get(routing::handle::fs::fs_id::dl::get)
         )
         .route(
             "/user",

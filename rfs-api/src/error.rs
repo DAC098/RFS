@@ -57,6 +57,7 @@ pub enum ApiErrorKind {
     InvalidType,
     NoContentType,
     MimeMismatch,
+    NotFile,
 
     // users
 
@@ -108,6 +109,7 @@ impl From<&ApiErrorKind> for StatusCode {
             ApiErrorKind::InvalidType |
             ApiErrorKind::NoContentType |
             ApiErrorKind::MimeMismatch |
+            ApiErrorKind::NotFile |
             ApiErrorKind::InvalidTags |
             ApiErrorKind::NoWork |
             ApiErrorKind::NoOp |
