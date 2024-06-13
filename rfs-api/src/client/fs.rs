@@ -1,5 +1,6 @@
 use rfs_lib::ids;
 use reqwest::blocking::Body;
+use reqwest::blocking::Response;
 
 use crate::client::error::RequestError;
 use crate::client::{ApiClient, iterate};
@@ -227,6 +228,26 @@ impl iterate::Pageable for RetrieveContents {
     #[inline]
     fn send(&self, client: &ApiClient) -> Result<Payload<Vec<Self::Item>>, RequestError> {
         self.send(client)
+    }
+}
+
+pub struct DownloadItem {
+    id: ids::FSId
+}
+
+impl DownloadItem {
+    pub fn id(id: ids::FSId) -> Self {
+        DownloadItem { id }
+    }
+
+    pub fn send(&self, client: &ApiClient) -> Result<Response, RequestError> {
+        let res = client.get(format!("/fs/{}/dl", self.id.id()))
+            .send()?;
+
+        match res.status() {
+            reqwest::StatusCode::OK => Ok(res),
+            _ => Err(RequestError::Api(res.json()?))
+        }
     }
 }
 

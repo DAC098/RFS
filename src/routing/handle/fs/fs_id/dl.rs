@@ -43,8 +43,10 @@ pub async fn get(
 
     let builder = Response::builder()
         .status(StatusCode::OK)
+        .header("content-disposition", format!("attachment; filename=\"{}\"", file.basename))
         .header("content-type", file.mime.to_string())
-        .header("content-length", file.size);
+        .header("content-length", file.size)
+        .header("x-checksum", format!("blake3:{}", file.hash.to_hex()));
 
     match fs::backend::Pair::match_up(&storage.backend, &file.backend)? {
         fs::backend::Pair::Local((local, node_local)) => {

@@ -17,6 +17,7 @@ use crate::util;
 use crate::formatting::{self, OutputOptions};
 
 mod get;
+mod download;
 mod storage;
 
 #[derive(Debug, Args)]
@@ -29,6 +30,9 @@ pub struct FsArgs {
 enum FsCmds {
     /// retrieves the desired fs item
     Get(get::GetArgs),
+
+    /// downloads the desired fs item
+    Download(download::DownloadArgs),
 
     /// creates a new fs item
     Create(CreateArgs),
@@ -49,6 +53,7 @@ enum FsCmds {
 pub fn handle(client: &ApiClient, args: FsArgs) -> error::Result {
     match args.command {
         FsCmds::Get(given) => get::get(client, given),
+        FsCmds::Download(given) => download::download(client, given),
         FsCmds::Create(given) => create(client, given),
         FsCmds::Update(given) => update(client, given),
         FsCmds::Upload(given) => upload(client, given),

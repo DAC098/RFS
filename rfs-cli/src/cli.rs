@@ -250,7 +250,7 @@ fn hash(mut args: HashArgs) -> error::Result {
 
     let hash = hasher.finalize();
 
-    println!("{}", hash.to_hex());
+    println!("{hash}");
 
     Ok(())
 }

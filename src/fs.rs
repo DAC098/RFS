@@ -406,7 +406,7 @@ use crate::net;
 pub async fn fetch_item(
     conn: &impl GenericClient,
     id: &ids::FSId,
-    initiator: &Initiator
+    initiator: &Initiator,
 ) -> net::error::Result<Item> {
     let item = Item::retrieve(conn, id)
         .await?
@@ -418,6 +418,28 @@ pub async fn fetch_item(
         Ok(item)
     }
 }
+
+/*
+pub async fn fetch_item_tmp(
+    conn: &impl GenericClient,
+    id: &ids::FSId,
+    initiator: Option<&Initiator>,
+) -> net::error::Result<Item> {
+    let item = Item::retrieve(conn, id)
+        .await?
+        .ok_or(net::error::Error::api(net::error::ApiErrorKind::FileNotFound))?;
+
+    if let Some(initiator) = initiator {
+        if *item.user_id() != initiator.user.id {
+            Err(net::error::Error::api(net::error::ApiErrorKind::PermissionDenied))
+        } else {
+            Ok(item)
+        }
+    } else {
+        Ok(item)
+    }
+}
+*/
 
 pub async fn fetch_storage(
     conn: &impl GenericClient,

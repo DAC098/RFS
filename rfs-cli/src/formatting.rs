@@ -7,76 +7,76 @@ use chrono::{DateTime, Utc, Local, SecondsFormat};
 use clap::{Args, ValueEnum};
 
 #[derive(Debug)]
-pub struct SizeType {
-    value: u64,
-    unit: &'static str,
+pub struct SizeType<T = u64> {
+    pub value: T,
+    pub unit: &'static str,
 }
 
-pub const KIBIBYTE: u64 = 1024;
-pub const MEBIBYTE: u64 = KIBIBYTE * 1024;
-pub const GIBIBYTE: u64 = MEBIBYTE * 1024;
-pub const TEBIBYTE: u64 = GIBIBYTE * 1024;
-pub const PEBIBYTE: u64 = TEBIBYTE * 1024;
-pub const EXBIBYTE: u64 = PEBIBYTE * 1024;
+pub const KIBI: u64 = 1024;
+pub const MEBI: u64 = KIBI * 1024;
+pub const GIBI: u64 = MEBI * 1024;
+pub const TEBI: u64 = GIBI * 1024;
+pub const PEBI: u64 = TEBI * 1024;
+pub const EXBI: u64 = PEBI * 1024;
 
 pub const BASE_2_SIZE: [SizeType; 6] = [
     SizeType {
-        value: EXBIBYTE,
-        unit: "EiB",
+        value: EXBI,
+        unit: "Ei",
     },
     SizeType {
-        value: PEBIBYTE,
-        unit: "PiB",
+        value: PEBI,
+        unit: "Pi",
     },
     SizeType {
-        value: TEBIBYTE,
-        unit: "TiB",
+        value: TEBI,
+        unit: "Ti",
     },
     SizeType {
-        value: GIBIBYTE,
-        unit: "GiB",
+        value: GIBI,
+        unit: "Gi",
     },
     SizeType {
-        value: MEBIBYTE,
-        unit: "MiB",
+        value: MEBI,
+        unit: "Mi",
     },
     SizeType {
-        value: KIBIBYTE,
-        unit: "KiB",
+        value: KIBI,
+        unit: "Ki",
     },
 ];
 
-pub const KILOBYTE: u64 = 1000;
-pub const MEGABYTE: u64 = KILOBYTE * 1000;
-pub const GIGABYTE: u64 = MEGABYTE * 1000;
-pub const TERABYTE: u64 = GIGABYTE * 1000;
-pub const PETABYTE: u64 = TERABYTE * 1000;
-pub const EXABYTE: u64 = TERABYTE * 1000;
+pub const KILO: u64 = 1000;
+pub const MEGA: u64 = KILO * 1000;
+pub const GIGA: u64 = MEGA * 1000;
+pub const TERA: u64 = GIGA * 1000;
+pub const PETA: u64 = TERA * 1000;
+pub const EXA: u64 = TERA * 1000;
 
 pub const BASE_10_SIZE: [SizeType; 6] = [
     SizeType {
-        value: EXABYTE,
-        unit: "EB",
+        value: EXA,
+        unit: "E",
     },
     SizeType {
-        value: PETABYTE,
-        unit: "PB",
+        value: PETA,
+        unit: "P",
     },
     SizeType {
-        value: TERABYTE,
-        unit: "TB",
+        value: TERA,
+        unit: "T",
     },
     SizeType {
-        value: GIGABYTE,
-        unit: "GB",
+        value: GIGA,
+        unit: "G",
     },
     SizeType {
-        value: MEGABYTE,
-        unit: "MB",
+        value: MEGA,
+        unit: "M",
     },
     SizeType {
-        value: KILOBYTE,
-        unit: "KB",
+        value: KILO,
+        unit: "K",
     },
 ];
 
@@ -103,12 +103,12 @@ impl Display for BaseSize {
     }
 }
 
-pub fn bytes_to_unit(size: u64, base: &BaseSize) -> String {
+pub fn value_to_unit(size: u64, base: &BaseSize, suffix: &str) -> String {
     let list = match base {
         BaseSize::Base2 => BASE_2_SIZE,
         BaseSize::Base10 => BASE_10_SIZE,
         BaseSize::Raw => {
-            return format!("{size}");
+            return format!("{size}{suffix}");
         }
     };
 
@@ -121,14 +121,18 @@ pub fn bytes_to_unit(size: u64, base: &BaseSize) -> String {
             }
 
             if size % base.value == 0 {
-                return format!("{output_size}{}", base.unit);
+                return format!("{output_size}{}{suffix}", base.unit);
             } else {
-                return format!("~{output_size}{}", base.unit);
+                return format!("~{output_size}{}{suffix}", base.unit);
             }
         }
     }
 
-    format!("{size}B")
+    format!("{size}{suffix}")
+}
+
+pub fn bytes_to_unit(size: u64, base: &BaseSize) -> String {
+    value_to_unit(size, base, "B")
 }
 
 pub struct WriteTags<'a> {
