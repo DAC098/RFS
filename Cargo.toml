@@ -140,6 +140,7 @@ mime = { workspace = true }
 url = { workspace = true }
 
 axum = { version = "0.7.3", features = ["macros", "query"] }
+axum-server = { version = "0.6" }
 
 handlebars = { version = "4.3.7" }
 

@@ -197,6 +197,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "axum-server"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c1ad46c3ec4e12f4a4b6835e173ba21c25e484c9d02b49770bf006ce5367c036"
+dependencies = [
+ "bytes",
+ "futures-util",
+ "http 1.0.0",
+ "http-body 1.0.0",
+ "http-body-util",
+ "hyper 1.1.0",
+ "hyper-util",
+ "pin-project-lite",
+ "tokio",
+ "tower",
+ "tower-service",
+]
+
+[[package]]
 name = "backtrace"
 version = "0.3.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1637,6 +1656,7 @@ name = "rfs"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "axum-server",
  "base64",
  "bincode",
  "blake3",

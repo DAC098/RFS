@@ -41,19 +41,24 @@ impl Error {
         self.src = Some(src.into());
         self
     }
-
-    pub fn into_parts(self) -> (String, Option<String>, Option<BoxDynError>) {
-        (self.kind, self.msg, self.src)
-    }
 }
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(msg) = self.msg.as_ref() {
-            write!(f, "{}", msg)?;
+        match (&self.kind, self.msg.as_ref(), self.src.as_ref()) {
+            (kind, Some(msg), Some(err)) => {
+                write!(f, "{kind}: {msg}\n{err}")
+            },
+            (kind, Some(msg), None) => {
+                write!(f, "{kind}: {msg}")
+            },
+            (kind, None, Some(err)) => {
+                write!(f, "{kind}: {err}")
+            },
+            (kind, None, None) => {
+                write!(f, "{kind}")
+            }
         }
-
-        Ok(())
     }
 }
 

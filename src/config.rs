@@ -3,11 +3,9 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::net::{SocketAddr, IpAddr};
 
-
 use clap::Parser;
 
 use crate::error;
-
 
 pub mod shape;
 
@@ -130,8 +128,6 @@ impl Db {
 }
 
 pub mod sec {
-    
-
     use crate::error;
     use super::shape;
 
@@ -221,12 +217,23 @@ pub mod sec {
 pub use sec::Sec;
 
 #[derive(Debug)]
+pub struct ListenerTls {
+    pub key: PathBuf,
+    pub cert: PathBuf,
+}
+
+#[derive(Debug)]
+pub struct Listener {
+    pub addr: SocketAddr,
+    pub tls: Option<ListenerTls>,
+}
+
+#[derive(Debug)]
 pub struct Settings {
     pub id: i64,
     pub data: PathBuf,
     pub master_key: String,
-    pub ip: String,
-    pub port: u16,
+    pub listeners: HashMap<String, Listener>,
     pub templates: Templates,
     pub assets: Assets,
     pub sec: Sec,
@@ -241,13 +248,37 @@ impl Settings {
             id: 1,
             data: cwd.join("data"),
             master_key: "rfs_master_key_secret".into(),
-            ip: "0.0.0.0".into(),
-            port: 8000,
+            listeners: HashMap::new(),
             templates: Templates::try_default()?,
             assets: Assets::try_default()?,
             sec: Sec::try_default()?,
             db: Db::try_default()?,
         })
+    }
+
+    fn parse_addr(value: String) -> error::Result<SocketAddr> {
+        match SocketAddr::from_str(&value) {
+            Ok(addr) => Ok(addr),
+            Err(_err) => match IpAddr::from_str(&value) {
+                Ok(ip) => Ok(SocketAddr::from((ip, 8000))),
+                Err(_err) => {
+                    Err(error::Error::new()
+                        .kind("InvalidConfig")
+                        .message(format!("failed to parse addr/ip from Listener")))
+                }
+            }
+        }
+    }
+
+    fn convert_tls(tls: Option<shape::ListenerTls>) -> error::Result<Option<ListenerTls>> {
+        if let Some(tls) = tls {
+            Ok(Some(ListenerTls {
+                key: tls.key,
+                cert: tls.cert,
+            }))
+        } else {
+            Ok(None)
+        }
     }
 
     fn merge(&mut self, settings: shape::Settings) -> error::Result<()> {
@@ -263,12 +294,21 @@ impl Settings {
             self.master_key = master_key;
         }
 
-        if let Some(ip) = settings.ip {
-            self.ip = ip;
-        }
+        if let Some(listeners) = settings.listeners {
+            for (key, value) in listeners {
+                if let Some(existing) = self.listeners.get_mut(&key) {
+                    existing.addr = Settings::parse_addr(value.addr)?;
 
-        if let Some(port) = settings.port {
-            self.port = port;
+                    if let Some(tls) = Settings::convert_tls(value.tls)? {
+                        existing.tls = Some(tls);
+                    }
+                } else {
+                    self.listeners.insert(key, Listener {
+                        addr: Settings::parse_addr(value.addr)?,
+                        tls: Settings::convert_tls(value.tls)?
+                    });
+                }
+            }
         }
 
         if let Some(templates) = settings.templates {
@@ -288,12 +328,6 @@ impl Settings {
         }
 
         Ok(())
-    }
-
-    pub fn listen_socket(&self) -> SocketAddr {
-        let ip = IpAddr::from_str(&self.ip).unwrap();
-
-        SocketAddr::new(ip, self.port)
     }
 }
 

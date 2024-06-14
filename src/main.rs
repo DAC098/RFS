@@ -1,12 +1,13 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-
 use axum::Router;
 use axum::error_handling::HandleErrorLayer;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{FmtSubscriber, EnvFilter};
+use futures::StreamExt;
+use futures::stream::FuturesUnordered;
 
 mod error;
 mod time;
@@ -47,40 +48,7 @@ fn main() {
     );
 
     if let Err(err) = rt.block_on(init()) {
-        match err.into_parts() {
-            (kind, Some(msg), Some(err)) => {
-                tracing::event!(
-                    tracing::Level::ERROR,
-                    "{}: {}\n{}",
-                    kind,
-                    msg,
-                    err
-                );
-            },
-            (kind, Some(msg), None) => {
-                tracing::event!(
-                    tracing::Level::ERROR,
-                    "{}: {}",
-                    kind,
-                    msg
-                );
-            },
-            (kind, None, Some(err)) => {
-                tracing::event!(
-                    tracing::Level::ERROR,
-                    "{}: {}",
-                    kind,
-                    err
-                );
-            },
-            (kind, None, None) => {
-                tracing::event!(
-                    tracing::Level::ERROR,
-                    "{}",
-                    kind
-                );
-            }
-        }
+        tracing::error!("{err}");
     }
 }
 
@@ -261,32 +229,42 @@ async fn init() -> error::Result<()> {
         )
         .with_state(Arc::new(state));
 
-    let listener = tokio::net::TcpListener::bind(config.settings.listen_socket())
-        .await
-        .map_err(|err| error::Error::new()
-            .message("failed to bind to socket address")
-            .source(err))?;
+    let mut all_futs = FuturesUnordered::new();
 
-    {
-        let local_addr = listener.local_addr()
-            .map_err(|err| error::Error::new()
-                .message("failed to retrieve tcp listener address")
-                .source(err))?;
+    for (key, listener) in config.settings.listeners {
+        let instance_router = router.clone();
 
-        tracing::info!(
-            addr = %local_addr,
-            "tcp socket listening"
-        );
+        all_futs.push(tokio::spawn(async move {
+            let tcp_listener = match std::net::TcpListener::bind(listener.addr) {
+                Ok(l) => l,
+                Err(err) => {
+                    tracing::error!("\"{key}\" failed to bind to socket address: {err}");
+
+                    return;
+                }
+            };
+
+            match tcp_listener.local_addr() {
+                Ok(addr) => {
+                    tracing::info!("\"{key}\" tcp socket listener: {addr}");
+                }
+                Err(err) => {
+                    tracing::error!("\"{key}\" failed to retrieve tcp listener address: {err}");
+                }
+            }
+
+            let fut = axum_server::from_tcp(tcp_listener)
+                .serve(instance_router.into_make_service());
+
+            if let Err(err) = fut.await {
+                tracing::error!("\"{key}\" server error: {err}");
+            }
+        }));
     }
 
-    let serve = axum::serve(listener, router);
-
-    if let Err(err) = serve.await {
-        Err(error::Error::new()
-            .message("server error")
-            .source(err))
-    } else {
-        Ok(())
+    while let Some(_) = all_futs.next().await {
     }
+
+    Ok(())
 }
 

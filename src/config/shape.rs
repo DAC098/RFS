@@ -1,4 +1,4 @@
-use std::net::IpAddr;
+use std::net::{SocketAddr, IpAddr};
 use std::path::{Path, PathBuf};
 use std::collections::HashMap;
 use std::io::ErrorKind;
@@ -59,6 +59,18 @@ pub mod sec {
     }
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ListenerTls {
+    pub key: PathBuf,
+    pub cert: PathBuf,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Listener {
+    pub addr: String,
+    pub tls: Option<ListenerTls>,
+}
+
 pub use sec::Sec;
 
 #[derive(Debug, Deserialize)]
@@ -67,8 +79,7 @@ pub struct Settings {
     pub data: Option<PathBuf>,
     pub master_key: Option<String>,
 
-    pub ip: Option<String>,
-    pub port: Option<u16>,
+    pub listeners: Option<HashMap<String, Listener>>,
 
     pub templates: Option<Templates>,
     pub assets: Option<Assets>,
@@ -151,13 +162,36 @@ pub fn from_file(settings_path: &PathBuf) -> error::Result<Settings> {
 }
 
 pub fn validate(settings_path: &PathBuf, mut settings: Settings) -> error::Result<Settings> {
-    settings.ip = if let Some(ip) = settings.ip {
-        IpAddr::from_str(&ip)
-            .map_err(|e| error::Error::from(e)
-                .kind("InvalidConfig")
-                .message(format!("config.ip is not a valid ip address")))?;
+    settings.listeners = if let Some(listeners) = settings.listeners {
+        let mut verified = HashMap::with_capacity(listeners.len());
 
-        Some(ip)
+        for (key, mut value) in listeners {
+            let name = format!("config.listeners.\"{key}\".addr");
+
+            if let Err(_err) = SocketAddr::from_str(&value.addr) {
+                if let Err(_err) = IpAddr::from_str(&value.addr) {
+                    return Err(error::Error::new()
+                        .kind("InvalidConfig")
+                        .message(format!("{name} is not a valid addr/ip address")));
+                }
+            }
+
+            value.tls = if let Some(mut tls) = value.tls {
+                let key_name = format!("config.listeners.\"{key}\".tls.key");
+                let cert_name = format!("config.listeners.\"{key}\".tls.cert");
+
+                tls.key = resolve_path(tls.key, &settings_path, &key_name)?;
+                tls.cert = resolve_path(tls.cert, &settings_path, &cert_name)?;
+
+                Some(tls)
+            } else {
+                None
+            };
+
+            verified.insert(key, value);
+        }
+
+        Some(verified)
     } else {
         None
     };
