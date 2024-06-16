@@ -10,28 +10,28 @@ use crate::net::cookie::{SameSite, SetCookie};
 
 pub mod token;
 
+#[derive(Debug)]
 pub enum AuthMethod {
-    None,
     Password
 }
 
 impl AuthMethod {
     fn from_i16(v: i16) -> Option<Self> {
         match v {
-            0 => Some(AuthMethod::None),
-            1 => Some(AuthMethod::Password),
+            0 => Some(AuthMethod::Password),
             _ => None
         }
     }
 
     fn as_i16(&self) -> i16 {
         match self {
-            AuthMethod::None => 0,
-            AuthMethod::Password => 1,
+            AuthMethod::Password => 0,
         }
     }
 }
 
+
+#[derive(Debug)]
 pub enum VerifyMethod {
     None,
     Totp
@@ -54,24 +54,19 @@ impl VerifyMethod {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
 pub enum BuilderError {
+    #[error("ran out of token attempts")]
     TokenAttempts,
+
+    #[error("date time value overflowed")]
     UtcOverflow,
 
-    Pg(PgError),
-    Rand(rand::Error),
-}
+    #[error(transparent)]
+    Pg(#[from] PgError),
 
-impl From<PgError> for BuilderError {
-    fn from(err: PgError) -> Self {
-        BuilderError::Pg(err)
-    }
-}
-
-impl From<rand::Error> for BuilderError {
-    fn from(err: rand::Error) -> Self {
-        BuilderError::Rand(err)
-    }
+    #[error(transparent)]
+    Rand(#[from] rand::Error),
 }
 
 impl From<token::UniqueError> for BuilderError {
@@ -98,13 +93,13 @@ impl From<BuilderError> for NetError {
 
 pub struct SessionBuilder {
     user_id: ids::UserId,
-    auth_method: Option<AuthMethod>,
+    auth_method: AuthMethod,
     verify_method: Option<VerifyMethod>
 }
 
 impl SessionBuilder {
     pub fn auth_method(&mut self, method: AuthMethod) -> &mut Self {
-        self.auth_method = Some(method);
+        self.auth_method = method;
         self
     }
 
@@ -114,12 +109,12 @@ impl SessionBuilder {
     }
 
     pub async fn build(self, conn: &impl GenericClient) -> Result<Session, BuilderError> {
-        let authenticated;
-        let verified;
         let user_id = self.user_id;
         let dropped = false;
         let issued_on = Utc::now();
         let duration = chrono::Duration::days(7);
+        let authenticated = false;
+        let auth_method = self.auth_method;
 
         let Some(token) = token::SessionToken::unique(conn, 10).await? else {
             return Err(BuilderError::TokenAttempts);
@@ -129,25 +124,10 @@ impl SessionBuilder {
             return Err(BuilderError::UtcOverflow);
         };
 
-        let auth_method = if let Some(method) = self.auth_method {
-            authenticated = matches!(method, AuthMethod::None);
-            method
+        let (verified, verify_method) = if let Some(method) = self.verify_method {
+            (matches!(method, VerifyMethod::None), method)
         } else {
-            authenticated = true;
-            AuthMethod::None
-        };
-
-        let verify_method = if matches!(auth_method, AuthMethod::None) {
-            verified = true;
-            VerifyMethod::None
-        } else {
-            if let Some(method) = self.verify_method {
-                verified = matches!(method, VerifyMethod::None);
-                method
-            } else {
-                verified = true;
-                VerifyMethod::None
-            }
+            (true, VerifyMethod::None)
         };
 
         {
@@ -196,7 +176,7 @@ impl SessionBuilder {
     }
 }
 
-
+#[derive(Debug)]
 pub struct Session {
     pub token: token::SessionToken,
     pub user_id: ids::UserId,
@@ -213,13 +193,13 @@ impl Session {
     pub fn builder(user_id: ids::UserId) -> SessionBuilder {
         SessionBuilder {
             user_id,
-            auth_method: None,
+            auth_method: AuthMethod::Password,
             verify_method: None,
         }
     }
 
     pub async fn retrieve_token(
-        conn: &impl GenericClient, 
+        conn: &impl GenericClient,
         token: &token::SessionToken
     ) -> Result<Option<Session>, PgError> {
         if let Some(row) = conn.query_opt(
@@ -329,11 +309,18 @@ where
     URL_SAFE.encode(joined)
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum DecodeError {
+    #[error("provided session string is invalid")]
     InvalidString,
+
+    #[error("provided session string is an invalid length")]
     InvalidLength,
+
+    #[error("provided session string is an invalid hash")]
     InvalidHash,
+
+    #[error("RwLock is poisoned")]
     KeysPoisoned,
 }
 

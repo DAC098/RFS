@@ -39,7 +39,7 @@ pub async fn post(
             AuthMethod::Password => {
                 if !rfs_lib::sec::authn::password_valid(&given) {
                     return Err(error::Error::api(error::ApiErrorKind::InvalidPassword));
-                };
+                }
 
                 let Some(user_password) = password::Password::retrieve(
                     &transaction,
@@ -55,9 +55,6 @@ pub async fn post(
 
                 session.authenticated = true;
             },
-            _ => {
-                return Err(error::Error::api(error::ApiErrorKind::InvalidAuthMethod));
-            }
         }
     }
 

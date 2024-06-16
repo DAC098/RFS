@@ -1,8 +1,5 @@
 use rfs_api::client::ApiClient;
-use rfs_api::client::auth::password::{
-    UpdatePassword,
-    RemovePassword,
-};
+use rfs_api::client::auth::password::UpdatePassword;
 
 use clap::{Subcommand, Args};
 
@@ -18,15 +15,11 @@ pub struct PasswordArgs {
 enum PasswordCmds {
     /// updates the current password to a new one
     Update,
-
-    /// removes the current password
-    Remove,
 }
 
 pub fn handle(client: &ApiClient, args: PasswordArgs) -> error::Result {
     match args.command {
         PasswordCmds::Update => update(client),
-        PasswordCmds::Remove => remove(client),
     }
 }
 
@@ -57,17 +50,6 @@ fn update(client: &ApiClient) -> error::Result {
 
     builder.send(client)
         .context("failed to update password")?;
-
-    Ok(())
-}
-
-fn remove(client: &ApiClient) -> error::Result {
-    let prompt = "password: ";
-    let current = rpassword::prompt_password(&prompt)?;
-
-    RemovePassword::remove(current)
-        .send(client)
-        .context("failed to remove current password")?;
 
     Ok(())
 }

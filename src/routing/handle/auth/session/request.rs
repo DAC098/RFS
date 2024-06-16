@@ -3,7 +3,7 @@ use axum::http::{StatusCode, HeaderMap};
 use axum::extract::State;
 use axum::response::IntoResponse;
 
-use crate::net::error;
+use crate::net::error::{self, Context};
 use crate::state::ArcShared;
 use crate::user;
 use crate::sec::authn::{session, Authenticate, Verify};
@@ -48,46 +48,36 @@ pub async fn post(
     let mut builder = session::Session::builder(user.id().clone());
     let transaction = conn.transaction().await?;
 
-    if let Some(auth_method) = Authenticate::retrieve_primary(&transaction, user.id()).await? {
-        let payload = match auth_method {
-            Authenticate::Password(_) => {
-                builder.auth_method(session::AuthMethod::Password);
+    let auth_method = Authenticate::retrieve_primary(&transaction, user.id())
+        .await?
+        .context("missing authentication method for user")?;
 
-                rfs_api::Payload::new(rfs_api::auth::session::RequestedAuth::Password)
-            }
-        };
+    let payload = match auth_method {
+        Authenticate::Password(_) => {
+            builder.auth_method(session::AuthMethod::Password);
 
-        if let Some(verify_method) = Verify::retrieve_primary(&transaction, user.id()).await? {
-            match verify_method {
-                Verify::Totp(_) => {
-                    builder.verify_method(session::VerifyMethod::Totp);
-                }
+            rfs_api::Payload::new(rfs_api::auth::session::RequestedAuth::Password)
+        }
+    };
+
+    if let Some(verify_method) = Verify::retrieve_primary(&transaction, user.id()).await? {
+        match verify_method {
+            Verify::Totp(_) => {
+                builder.verify_method(session::VerifyMethod::Totp);
             }
         }
-
-        let session = builder.build(&transaction).await?;
-
-        transaction.commit().await?;
-
-        let session_cookie = session::create_session_cookie(state.auth(), &session)
-            .ok_or(error::Error::new().source("session keys rwlock poisoned"))?;
-
-        Ok((
-            StatusCode::OK,
-            session_cookie,
-            payload,
-        ).into_response())
-    } else {
-        let session = builder.build(&transaction).await?;
-
-        transaction.commit().await?;
-
-        let session_cookie = session::create_session_cookie(state.auth(), &session)
-            .ok_or(error::Error::new().source("session keys rwlock poisoned"))?;
-
-        Ok((
-            StatusCode::NO_CONTENT,
-            session_cookie
-        ).into_response())
     }
+
+    let session = builder.build(&transaction).await?;
+
+    transaction.commit().await?;
+
+    let session_cookie = session::create_session_cookie(state.auth(), &session)
+        .ok_or(error::Error::new().source("session keys rwlock poisoned"))?;
+
+    Ok((
+        StatusCode::OK,
+        session_cookie,
+        payload,
+    ).into_response())
 }

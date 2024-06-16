@@ -120,7 +120,19 @@ struct CreateArgs {
 }
 
 fn create(client: &ApiClient, args: CreateArgs) -> error::Result<()> {
-    let mut builder = CreateUser::username(args.username);
+    let password = rpassword::prompt_password("new password: ")?;
+
+    loop {
+        let confirm = rpassword::prompt_password("confirm password: ")?;
+
+        if confirm != password {
+            println!("confirm password does not match");
+        } else {
+            break;
+        }
+    }
+
+    let mut builder = CreateUser::username(args.username, password);
 
     if let Some(email) = args.email {
         builder.email(email);

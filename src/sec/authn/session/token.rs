@@ -6,21 +6,13 @@ use crate::net::error;
 
 pub const SESSION_ID_BYTES: usize = 48;
 
+#[derive(Debug, thiserror::Error)]
 pub enum UniqueError {
-    Rand(rand::Error),
-    Pg(PgError),
-}
+    #[error(transparent)]
+    Rand(#[from] rand::Error),
 
-impl From<PgError> for UniqueError {
-    fn from(err: PgError) -> Self {
-        UniqueError::Pg(err)
-    }
-}
-
-impl From<rand::Error> for UniqueError {
-    fn from(err: rand::Error) -> Self {
-        UniqueError::Rand(err)
-    }
+    #[error(transparent)]
+    Pg(#[from] PgError),
 }
 
 impl From<UniqueError> for error::Error {

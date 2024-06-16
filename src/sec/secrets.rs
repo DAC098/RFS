@@ -49,10 +49,6 @@ impl Key {
         &self.data
     }
 
-    pub fn data_slice(&self) -> &[u8] {
-        &self.data.as_slice()
-    }
-
     pub fn created(&self) -> &Duration {
         &self.created
     }

@@ -138,13 +138,15 @@ pub struct CreateUser {
 }
 
 impl CreateUser {
-    pub fn username<U>(username: U) -> Self
+    pub fn username<U, P>(username: U, password: P) -> Self
     where
-        U: Into<String>
+        U: Into<String>,
+        P: Into<String>
     {
         CreateUser {
             body: CreateUserBody {
                 username: username.into(),
+                password: password.into(),
                 email: None
             }
         }

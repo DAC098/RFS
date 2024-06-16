@@ -15,6 +15,7 @@ use crate::user;
 use super::session;
 
 // not sure what to call this
+#[derive(Debug)]
 pub enum Mechanism {
     Session(session::Session),
 }
@@ -31,43 +32,39 @@ impl Initiator {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
 pub enum LookupError {
-    InvalidString,
-    InvalidLength,
-    InvalidHash,
+    #[error("session was not found")]
     SessionNotFound,
+
+    #[error("session has expired")]
     SessionExpired(session::Session),
+
+    #[error("session is unauthenticated")]
     SessionUnauthenticated(session::Session),
+
+    #[error("session is unverified")]
     SessionUnverified(session::Session),
 
+    #[error("user was not found")]
     UserNotFound(Mechanism),
 
+    #[error("no authentication mechanism was found")]
     MechanismNotFound,
 
-    KeysPoisoned,
+    #[error(transparent)]
+    SessionDecode(#[from] session::DecodeError),
 
-    Database(tokio_postgres::Error),
-    HeaderToStr(axum::http::header::ToStrError),
-}
+    #[error(transparent)]
+    Database(#[from] tokio_postgres::Error),
 
-impl From<tokio_postgres::Error> for LookupError {
-    fn from(e: tokio_postgres::Error) -> Self {
-        LookupError::Database(e)
-    }
-}
-
-impl From<axum::http::header::ToStrError> for LookupError {
-    fn from(e: axum::http::header::ToStrError) -> Self {
-        LookupError::HeaderToStr(e)
-    }
+    #[error(transparent)]
+    HeaderToStr(#[from] axum::http::header::ToStrError),
 }
 
 impl From<LookupError> for error::Error {
     fn from(e: LookupError) -> Self {
         match e {
-            LookupError::InvalidString |
-            LookupError::InvalidLength |
-            LookupError::InvalidHash => error::Error::api(error::ApiErrorKind::InvalidSession),
             LookupError::SessionNotFound => error::Error::api(error::ApiErrorKind::SessionNotFound),
             LookupError::SessionExpired(_session) => error::Error::api(error::ApiErrorKind::SessionExpired),
             LookupError::SessionUnauthenticated(_session) => error::Error::api(error::ApiErrorKind::SessionUnauthenticated),
@@ -77,11 +74,15 @@ impl From<LookupError> for error::Error {
 
             LookupError::MechanismNotFound => error::Error::api(error::ApiErrorKind::MechanismNotFound),
 
-            LookupError::KeysPoisoned => error::Error::new()
-                .source("session keys rwlock poisoned"),
-
             LookupError::Database(e) => e.into(),
             LookupError::HeaderToStr(e) => e.into(),
+
+            LookupError::SessionDecode(err) => match err {
+                session::DecodeError::InvalidString |
+                session::DecodeError::InvalidLength |
+                session::DecodeError::InvalidHash => error::Error::api(error::ApiErrorKind::InvalidSession),
+                err => error::Error::new().source(err)
+            }
         }
     }
 }
@@ -94,17 +95,7 @@ pub async fn lookup_session_id<S>(
 where
     S: AsRef<[u8]>
 {
-    let (token, _hash) = match session::decode_base64(auth, session_id) {
-        Ok(p) => p,
-        Err(err) => {
-            return Err(match err {
-                session::DecodeError::InvalidString => LookupError::InvalidString,
-                session::DecodeError::InvalidLength => LookupError::InvalidLength,
-                session::DecodeError::InvalidHash => LookupError::InvalidHash,
-                session::DecodeError::KeysPoisoned => LookupError::KeysPoisoned,
-            })
-        }
-    };
+    let (token, _hash) = session::decode_base64(auth, session_id)?;
 
     if let Some(session) = session::Session::retrieve_token(conn, &token).await? {
         let now = chrono::Utc::now();

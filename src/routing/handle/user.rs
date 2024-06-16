@@ -1,5 +1,6 @@
 use rfs_lib::ids::UserId;
 use rfs_lib::query::{Limit, Offset};
+use rfs_api::Validator;
 
 use axum::http::StatusCode;
 use axum::extract::{State, Query};
@@ -9,7 +10,7 @@ use serde::Deserialize;
 
 use crate::net::error;
 use crate::state::ArcShared;
-use crate::sec::authn::initiator;
+use crate::sec::authn::{initiator, password};
 use crate::sec::authz::permission;
 use crate::sql;
 use crate::user;
@@ -113,25 +114,15 @@ pub async fn post(
         return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
     }
 
+    json.validate()?;
+
     let id = state.ids().wait_user_id()?;
     let username = json.username;
 
-    if !rfs_lib::users::username_valid(&username) {
-        return Err(error::Error::api((
-            error::ApiErrorKind::ValidationFailed,
-            error::Detail::with_key("username")
-        )));
-    };
+    let transaction = conn.transaction().await?;
 
     let email = if let Some(email) = json.email {
-        if !rfs_lib::users::email_valid(&email) {
-            return Err(error::Error::api((
-                error::ApiErrorKind::ValidationFailed,
-                error::Detail::with_key("email")
-            )));
-        };
-
-        let (username_id, email_id) = user::check_username_and_email(&conn, &username, &email).await?;
+        let (username_id, email_id) = user::check_username_and_email(&transaction, &username, &email).await?;
 
         if username_id.is_some() {
             return Err(error::Error::api((
@@ -149,7 +140,7 @@ pub async fn post(
 
         Some(email)
     } else {
-        let username_id = user::check_username(&conn, &username).await?;
+        let username_id = user::check_username(&transaction, &username).await?;
 
         if username_id.is_some() {
             return Err(error::Error::api((
@@ -161,12 +152,12 @@ pub async fn post(
         None
     };
 
-    let transaction = conn.transaction().await?;
-
     transaction.execute(
         "insert into users (id, username, email) values ($1, $2, $3)",
         &[&id, &username, &email]
     ).await?;
+
+    let _ = password::Password::create(&transaction, &id, json.password, state.sec().peppers()).await?;
 
     transaction.commit().await?;
 

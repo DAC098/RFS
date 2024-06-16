@@ -119,10 +119,10 @@ impl Password {
     }
 
     pub async fn create(
-        user_id: ids::UserId,
+        conn: &impl GenericClient,
+        user_id: &ids::UserId,
         password: String,
         manager: &PeppersManager,
-        conn: &impl GenericClient,
     ) -> Result<Self, PasswordError> {
         let salt = gen_salt()?;
         let (version, encrypted) = gen_encrypted(
@@ -134,7 +134,7 @@ impl Password {
             "\
             insert into auth_password (user_id, version, hash) values \
             ($1, $2, $3)",
-            &[&user_id, &(version as i64), &encrypted]
+            &[user_id, &(version as i64), &encrypted]
         ).await?;
 
         if result != 1 {
@@ -142,7 +142,7 @@ impl Password {
         }
 
         Ok(Password {
-            user_id,
+            user_id: user_id.clone(),
             hash: encrypted,
             version,
         })
@@ -150,9 +150,9 @@ impl Password {
 
     pub async fn update(
         &mut self,
+        conn: &impl GenericClient,
         update: String,
         manager: &PeppersManager,
-        conn: &impl GenericClient,
     ) -> Result<(), PasswordError> {
         let salt = gen_salt()?;
         let (version, encrypted) = gen_encrypted(
@@ -171,19 +171,6 @@ impl Password {
 
         self.hash = encrypted;
         self.version = version;
-
-        Ok(())
-    }
-
-    pub async fn delete(&self, conn: &impl GenericClient) -> Result<(), PasswordError> {
-        let result = conn.execute(
-            "delete from auth_password where user_id = $1",
-            &[&self.user_id]
-        ).await?;
-
-        if result != 1 {
-            return Err(PasswordError::DeleteFailed);
-        }
 
         Ok(())
     }

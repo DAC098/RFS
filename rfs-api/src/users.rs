@@ -32,6 +32,8 @@ pub struct User {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateUser {
     pub username: String,
+    pub password: String,
+
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub email: Option<String>,
 }
@@ -42,6 +44,10 @@ impl Validator for CreateUser {
 
         if !rfs_lib::users::username_valid(&self.username) {
             invalid.push("username");
+        }
+
+        if !rfs_lib::sec::authn::password_valid(&self.password) {
+            invalid.push("password");
         }
 
         if let Some(email) = &self.email {

@@ -86,7 +86,6 @@ async fn init() -> error::Result<()> {
         .route(
             "/auth/password",
             post(routing::handle::auth::password::post)
-                .delete(routing::handle::auth::password::delete)
         )
         .route(
             "/auth/totp",
