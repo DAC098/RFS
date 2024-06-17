@@ -138,6 +138,7 @@ tower = { version = "0.4", features = ["timeout"] }
 tower-http = { version = "0.5.0", features = ["trace"] }
 mime = { workspace = true }
 url = { workspace = true }
+moka = { version = "0.12", features = ["sync"] }
 
 axum = { version = "0.7.3", features = ["macros", "query"] }
 axum-server = { version = "0.6" }

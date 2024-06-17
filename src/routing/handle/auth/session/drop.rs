@@ -46,6 +46,11 @@ pub async fn delete(
 
     transaction.commit().await?;
 
+    state.auth()
+        .session_info()
+        .cache()
+        .invalidate(&session.token);
+
     Ok((
         StatusCode::NO_CONTENT,
         expire_session_cookie(state.auth())

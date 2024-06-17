@@ -24,12 +24,13 @@ impl From<UniqueError> for error::Error {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct SessionToken([u8; SESSION_ID_BYTES]);
 
 impl SessionToken {
-    pub fn from_vec(mut vec: Vec<u8>) -> Self {
-        SessionToken::drain_vec(&mut vec)
+    pub fn from_vec(vec: Vec<u8>) -> Self {
+        TryFrom::try_from(vec)
+            .expect("invalid vector length for session token")
     }
 
     pub fn drain_vec(vec: &mut Vec<u8>) -> Self {
@@ -79,8 +80,18 @@ impl AsRef<[u8]> for SessionToken {
     }
 }
 
-impl From<Vec<u8>> for SessionToken {
-    fn from(vec: Vec<u8>) -> Self {
-        Self::from_vec(vec)
+#[derive(Debug, thiserror::Error)]
+#[error("data does not have the proper length")]
+pub struct InvalidLength;
+
+impl TryFrom<Vec<u8>> for SessionToken {
+    type Error = InvalidLength;
+
+    fn try_from(vec: Vec<u8>) -> Result<Self, Self::Error> {
+        if let Ok(array) = vec.try_into() {
+            Ok(SessionToken(array))
+        } else {
+            Err(InvalidLength)
+        }
     }
 }

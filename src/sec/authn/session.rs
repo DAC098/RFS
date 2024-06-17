@@ -3,14 +3,21 @@ use chrono::Utc;
 use base64::{Engine, engine::general_purpose::URL_SAFE};
 use tokio_postgres::{Error as PgError};
 use deadpool_postgres::GenericClient;
+use futures::{TryStream, StreamExt};
+use moka::sync::Cache;
 
 use crate::sec::state;
 use crate::net::error::Error as NetError;
 use crate::net::cookie::{SameSite, SetCookie};
+use crate::user::User;
+use crate::sql;
 
 pub mod token;
 
-#[derive(Debug)]
+pub type UserSession = (Session, User);
+pub type SessionCache = Cache<token::SessionToken, UserSession>;
+
+#[derive(Debug, Clone)]
 pub enum AuthMethod {
     Password
 }
@@ -31,7 +38,7 @@ impl AuthMethod {
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum VerifyMethod {
     None,
     Totp
@@ -176,7 +183,7 @@ impl SessionBuilder {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Session {
     pub token: token::SessionToken,
     pub user_id: ids::UserId,
@@ -233,6 +240,39 @@ impl Session {
         } else {
             Ok(None)
         }
+    }
+
+    pub async fn delete_user_sessions(
+        conn: &impl GenericClient,
+        id: &ids::UserId,
+        current: Option<&token::SessionToken>,
+    ) -> Result<impl TryStream<Item = Result<token::SessionToken, PgError>>, PgError> {
+        let result = if let Some(current) = current {
+            let params: sql::ParamsArray<2> = [id, &current.as_slice()];
+
+            conn.query_raw(
+                "\
+                delete from auth_session \
+                where user_id = $1 and \
+                      token != $2 \
+                returning token",
+                params
+            ).await?
+        } else {
+            let params: sql::ParamsArray<1> = [id];
+
+            conn.query_raw(
+                "\
+                delete from auth_session \
+                where user_id = $1 \
+                returning token",
+                params
+            ).await?
+        };
+
+        Ok(result.map(|row_result| row_result.map(
+            |row| token::SessionToken::from_vec(row.get(0))
+        )))
     }
 
     pub async fn update(&self, conn: &impl GenericClient) -> Result<(), PgError> {

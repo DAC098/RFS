@@ -86,11 +86,13 @@ where
     Ok((username_id, email_id))
 }
 
+#[derive(Debug, Clone)]
 pub struct UserEmail {
     pub email: String,
     pub verified: bool
 }
 
+#[derive(Debug, Clone)]
 pub struct User {
     pub id: ids::UserId,
     pub username: String,

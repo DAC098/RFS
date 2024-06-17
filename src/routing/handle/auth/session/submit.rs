@@ -9,6 +9,7 @@ use crate::state::ArcShared;
 use crate::sec::authn::{totp, password};
 use crate::sec::authn::session::{VerifyMethod, AuthMethod};
 use crate::sec::authn::initiator::{self, LookupError};
+use crate::user;
 
 pub async fn post(
     State(state): State<ArcShared>,
@@ -64,6 +65,17 @@ pub async fn post(
 
             session.update(&transaction).await?;
 
+            if let Some(user) = user::User::retrieve(&transaction, &session.user_id).await? {
+                state.auth()
+                    .session_info()
+                    .cache()
+                    .insert(session.token.clone(), (session, user));
+            } else {
+                return Err(error::Error::api(
+                    error::ApiErrorKind::UserNotFound,
+                ));
+            }
+
             transaction.commit().await?;
 
             Ok(StatusCode::NO_CONTENT.into_response())
@@ -71,15 +83,26 @@ pub async fn post(
         VerifyMethod::Totp => {
             session.update(&transaction).await?;
 
-            transaction.commit().await?;
-
             let Some(totp) = totp::Totp::retrieve(
-                &conn,
+                &transaction,
                 &session.user_id
             ).await? else {
                 return Err(error::Error::new()
                     .source("session required user totp but user totp was not found"));
             };
+
+            if let Some(user) = user::User::retrieve(&transaction, &session.user_id).await? {
+                state.auth()
+                    .session_info()
+                    .cache()
+                    .insert(session.token.clone(), (session, user));
+            } else {
+                return Err(error::Error::api(
+                    error::ApiErrorKind::UserNotFound,
+                ));
+            }
+
+            transaction.commit().await?;
 
             let verify = rfs_api::auth::session::RequestedVerify::Totp {
                 digits: *totp.digits()

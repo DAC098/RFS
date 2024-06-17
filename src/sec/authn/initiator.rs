@@ -95,11 +95,31 @@ pub async fn lookup_session_id<S>(
 where
     S: AsRef<[u8]>
 {
+    let now = chrono::Utc::now();
     let (token, _hash) = session::decode_base64(auth, session_id)?;
+    let cache = auth.session_info().cache();
 
-    if let Some(session) = session::Session::retrieve_token(conn, &token).await? {
-        let now = chrono::Utc::now();
+    if let Some((session, user)) = cache.get(&token) {
+        if session.expires < now {
+            cache.invalidate(&token);
 
+            return Err(LookupError::SessionExpired(session));
+        }
+
+        if !session.authenticated {
+            return Err(LookupError::SessionUnauthenticated(session));
+        }
+
+        if !session.verified {
+            return Err(LookupError::SessionUnverified(session));
+        }
+
+        Ok(Initiator {
+            user,
+            bot: None,
+            mechanism: Mechanism::Session(session)
+        })
+    } else if let Some(session) = session::Session::retrieve_token(conn, &token).await? {
         if session.dropped || session.expires < now {
             return Err(LookupError::SessionExpired(session));
         }
@@ -113,6 +133,8 @@ where
         }
 
         if let Some(user) = user::User::query_with_id(conn, &session.user_id).await? {
+            cache.insert(token, (session.clone(), user.clone()));
+
             Ok(Initiator {
                 user,
                 bot: None,

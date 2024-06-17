@@ -4,10 +4,12 @@ use crate::error;
 use crate::config;
 
 use super::secrets;
+use super::authn::session::SessionCache;
 
 #[derive(Debug)]
 pub struct SessionInfo {
     manager: secrets::SessionWrapper,
+    cache: SessionCache,
     domain: Option<String>,
     secure: bool,
 }
@@ -33,8 +35,14 @@ impl SessionInfo {
                 .message("failed to save new session secrets file")
                 .source(e))?;
 
+        let cache = SessionCache::builder()
+            .name("session_cache")
+            .max_capacity(1_000)
+            .build();
+
         Ok(SessionInfo {
             manager,
+            cache,
             domain: None,
             secure: config.settings.sec.session.secure
         })
@@ -42,6 +50,10 @@ impl SessionInfo {
 
     pub fn keys(&self) -> &secrets::SessionWrapper {
         &self.manager
+    }
+
+    pub fn cache(&self) -> &SessionCache {
+        &self.cache
     }
 
     pub fn domain(&self) -> Option<&String> {

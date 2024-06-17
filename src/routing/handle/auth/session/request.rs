@@ -17,6 +17,8 @@ pub async fn post(
 ) -> error::Result<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
+    json.validate()?;
+
     match initiator::lookup_header_map(state.auth(), &conn, &headers).await {
         Ok(_) => {
             return Err(error::Error::api(
@@ -31,18 +33,10 @@ pub async fn post(
         }
     }
 
-    if !rfs_lib::users::username_valid(&json.username) {
-        return Err(error::Error::api((
-            error::ApiErrorKind::ValidationFailed,
-            error::Detail::Keys(vec![String::from("username")])
-        )));
-    };
-
     let Some(user) = user::User::query_with_username(&mut conn, &json.username).await? else {
-        return Err(error::Error::api((
-            error::ApiErrorKind::NotFound,
-            error::Detail::Keys(vec![String::from("username")])
-        )));
+        return Err(error::Error::api(
+            error::ApiErrorKind::UserNotFound,
+        ));
     };
 
     let mut builder = session::Session::builder(user.id().clone());
@@ -75,9 +69,14 @@ pub async fn post(
     let session_cookie = session::create_session_cookie(state.auth(), &session)
         .ok_or(error::Error::new().source("session keys rwlock poisoned"))?;
 
+    state.auth()
+        .session_info()
+        .cache()
+        .insert(session.token.clone(), (session, user));
+
     Ok((
         StatusCode::OK,
         session_cookie,
         payload,
-    ).into_response())
+    ))
 }

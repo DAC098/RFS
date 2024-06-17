@@ -8,6 +8,7 @@ use crate::state::ArcShared;
 use crate::sec::authn::totp;
 use crate::sec::authn::initiator::{self, LookupError};
 use crate::sec::authn::session::VerifyMethod;
+use crate::user;
 
 pub async fn post(
     State(state): State<ArcShared>,
@@ -83,6 +84,17 @@ pub async fn post(
     session.verified = true;
 
     session.update(&transaction).await?;
+
+    if let Some(user) = user::User::retrieve(&transaction, &session.user_id).await? {
+        state.auth()
+            .session_info()
+            .cache()
+            .insert(session.token.clone(), (session, user));
+    } else {
+        return Err(error::Error::api(
+            error::ApiErrorKind::UserNotFound,
+        ));
+    }
 
     transaction.commit().await?;
 

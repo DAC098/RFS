@@ -6,11 +6,12 @@ use rfs_api::Validator;
 use axum::http::StatusCode;
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
+use futures::TryStreamExt;
 use serde::Deserialize;
 
 use crate::net::error;
 use crate::state::ArcShared;
-use crate::sec::authn::initiator;
+use crate::sec::authn::{session, initiator};
 use crate::sec::authz::permission;
 use crate::sql;
 use crate::user;
@@ -179,7 +180,7 @@ pub async fn delete(
     initiator: initiator::Initiator,
     Path(PathParams { user_id }): Path<PathParams>,
 ) -> error::Result<impl IntoResponse> {
-    let conn = state.pool().get().await?;
+    let mut conn = state.pool().get().await?;
 
     if !permission::has_ability(
         &conn,
@@ -196,6 +197,21 @@ pub async fn delete(
 
     if user.id == user_id {
         return Err(error::Error::api(error::ApiErrorKind::NoOp));
+    }
+
+    let transaction = conn.transaction().await?;
+
+    let cache = state.auth().session_info().cache();
+    let session_tokens = session::Session::delete_user_sessions(
+        &transaction,
+        &user.id,
+        None,
+    ).await?;
+
+    futures::pin_mut!(session_tokens);
+
+    while let Some(token) = session_tokens.try_next().await? {
+        cache.remove(&token);
     }
 
     // this will need to be decided along with the fs and storage delete update
