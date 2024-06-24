@@ -1,4 +1,4 @@
-type BoxDynError = Box<dyn std::error::Error>;
+type BoxDynError = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Debug)]
 pub struct Error {
@@ -134,3 +134,37 @@ generic_catch!("tokio_postgres::Error", tokio_postgres::Error);
 generic_catch!("snowcloud_cloud::error::Error", snowcloud_cloud::error::Error);
 generic_catch!("serde_json::Error", serde_json::Error);
 generic_catch!("serde_yaml::Error", serde_yaml::Error);
+
+use rfs_lib::context_trait;
+
+context_trait!(Error);
+
+impl<T, E> Context<T, E> for std::result::Result<T, E>
+where
+    E: Into<BoxDynError>
+{
+    fn context<C>(self, cxt: C) -> std::result::Result<T, Error>
+    where
+        C: Into<String>
+    {
+        match self {
+            Ok(v) => Ok(v),
+            Err(err) => Err(Error::new()
+                .message(cxt)
+                .source(err))
+        }
+    }
+}
+
+impl<T> Context<T, ()> for std::option::Option<T> {
+    fn context<C>(self, cxt: C) -> std::result::Result<T, Error>
+    where
+        C: Into<String>
+    {
+        match self {
+            Some(v) => Ok(v),
+            None => Err(Error::new()
+                .message(cxt))
+        }
+    }
+}

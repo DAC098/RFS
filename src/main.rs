@@ -22,6 +22,7 @@ mod tags;
 //mod storage;
 mod routing;
 mod config;
+mod jobs;
 
 fn main() {
     use tokio::runtime::Builder;
@@ -56,7 +57,10 @@ async fn init() -> error::Result<()> {
     use axum::routing::{get, post, delete};
 
     let config = config::get_config()?;
-    let state = state::Shared::from_config(&config)?;
+    let state = Arc::new(state::Shared::from_config(&config)?);
+    let mut all_futs = FuturesUnordered::new();
+
+    all_futs.extend(jobs::background(&state, config.settings.data.clone())?);
 
     let router = Router::new()
         .route(
@@ -226,9 +230,7 @@ async fn init() -> error::Result<()> {
             .layer(HandleErrorLayer::new(net::error::handle_error))
             .layer(net::layer::timeout::TimeoutLayer::new(Duration::new(90, 0)))
         )
-        .with_state(Arc::new(state));
-
-    let mut all_futs = FuturesUnordered::new();
+        .with_state(state);
 
     for (key, listener) in config.settings.listeners {
         let instance_router = router.clone();
