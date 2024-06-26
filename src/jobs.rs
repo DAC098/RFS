@@ -25,6 +25,41 @@ struct JobInfo {
     last_run: Option<DateTime<Local>>
 }
 
+impl JobInfo {
+    fn load(job_file: &PathBuf) -> error::Result<Self> {
+        let result = std::fs::OpenOptions::new()
+            .read(true)
+            .open(job_file);
+
+        match result {
+            Ok(file) => serde_json::from_reader(&file)
+                .context("failed to read jobs file"),
+            Err(err) => match err.kind() {
+                ErrorKind::NotFound => Ok(JobInfo::default()),
+                _ => Err(err.into()),
+            }
+        }
+    }
+
+    async fn save(&self, job_file: &PathBuf) -> error::Result<()> {
+        let json_buffer = serde_json::to_vec(self)
+            .context("failed to create json job info")?;
+
+        let mut file = File::options()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(job_file)
+            .await
+            .context("failed to open job file")?;
+
+        file.write_all(&json_buffer)
+            .await
+            .context("failed to write job info to file")?;
+
+        Ok(())
+    }
+}
 impl std::default::Default for JobInfo {
     fn default() -> Self {
         JobInfo {
@@ -40,14 +75,13 @@ async fn job_task<F, T>(
     state: ArcShared,
     mut upcoming: cron::OwnedScheduleIterator<Local>,
     mut job_info: JobInfo,
-    job_file: std::fs::File,
+    job_file: PathBuf,
     runner: F
 ) -> error::Result<()>
 where
     T: Future<Output = error::Result<()>>,
     F: Fn(ArcShared) -> T,
 {
-    let mut file = File::from(job_file);
     let zero_delta = TimeDelta::zero();
 
     if job_info.last_run.is_none() {
@@ -62,12 +96,7 @@ where
 
             job_info.last_run = Some(local_now);
 
-            let json_buffer = serde_json::to_vec(&job_info)
-                .context("failed to create json job info")?;
-
-            file.write_all(&json_buffer)
-                .await
-                .context("failed to write job info to file")?;
+            job_info.save(&job_file).await?;
         }
     } else {
         let Some(current) = upcoming.next() else {
@@ -91,12 +120,7 @@ where
 
                 job_info.last_run = Some(local_now);
 
-                let json_buffer = serde_json::to_vec(&job_info)
-                    .context("failed to create json job info")?;
-
-                file.write_all(&json_buffer)
-                    .await
-                    .context("failed to write job info to file")?;
+                job_info.save(&job_file).await?;
             }
         } else {
             tracing::debug!("moving upcoming iterator back one");
@@ -128,12 +152,7 @@ where
 
             job_info.last_run = Some(local_now);
 
-            let json_buffer = serde_json::to_vec(&job_info)
-                .context("failed to create json job info")?;
-
-            file.write_all(&json_buffer)
-                .await
-                .context("failed to write job info to file")?;
+            job_info.save(&job_file).await?;
         }
     }
 
@@ -179,27 +198,13 @@ where
     F: Fn(ArcShared) -> T + Send + 'static,
 {
     let local_state = Arc::clone(state);
-    let file_path = jobs_dir.join(format!("{name}.json"));
-    let file = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .open(&file_path)?;
-
-    let metadata = file.metadata()
-        .context("failed to get metadata for jobs file")?;
-
-    let info: JobInfo = if metadata.len() == 0 {
-        JobInfo::default()
-    } else {
-        serde_json::from_reader(&file)
-            .context("failed to read jobs file")?
-    };
+    let job_file = jobs_dir.join(format!("{name}.json"));
+    let job_info = JobInfo::load(&job_file)?;
 
     let schedule = cron::Schedule::from_str(crontab)
         .context("failed to parse crontab")?;
 
-    let upcoming = if let Some(last_run) = info.last_run {
+    let upcoming = if let Some(last_run) = job_info.last_run {
         schedule.after_owned(last_run)
     } else {
         schedule.upcoming_owned(Local)
@@ -212,7 +217,7 @@ where
             name = name
         );
 
-        let result = job_task(local_state, upcoming, info, file, runner)
+        let result = job_task(local_state, upcoming, job_info, job_file, runner)
             .instrument(job_span)
             .await;
 

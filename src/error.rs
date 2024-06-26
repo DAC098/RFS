@@ -97,6 +97,54 @@ impl From<deadpool_postgres::BuildError> for Error {
     }
 }
 
+impl From<deadpool_postgres::HookErrorCause> for Error {
+    fn from(err: deadpool_postgres::HookErrorCause) -> Self {
+        use deadpool_postgres::HookErrorCause;
+
+        match err {
+            HookErrorCause::Backend(e) => Self::from(e),
+            HookErrorCause::Message(msg) => Error::new()
+                .source(msg),
+            HookErrorCause::StaticMessage(msg) => Error::new()
+                .source(msg.to_owned()),
+        }
+    }
+}
+
+impl From<deadpool_postgres::HookError> for Error {
+    fn from(err: deadpool_postgres::HookError) -> Self {
+        use deadpool_postgres::HookError;
+
+        match err {
+            HookError::Continue(opt) => {
+                if let Some(cause) = opt {
+                    Self::from(cause)
+                } else {
+                    Error::new()
+                        .source("deadpool::managed::HookError::Continue with no cause")
+                }
+            },
+            HookError::Abort(cause) => {
+                Self::from(cause)
+            }
+        }
+    }
+}
+
+impl From<deadpool_postgres::PoolError> for Error {
+    fn from(err: deadpool_postgres::PoolError) -> Self {
+        use deadpool_postgres::PoolError;
+
+        match err {
+            PoolError::Backend(e) => Self::from(e),
+            PoolError::PostCreateHook(e) |
+            PoolError::PreRecycleHook(e) |
+            PoolError::PostRecycleHook(e) => Self::from(e),
+            _ => Error::new().source(err)
+        }
+    }
+}
+
 impl From<hkdf::InvalidLength> for Error {
     fn from(_err: hkdf::InvalidLength) -> Self {
         Error::new()
