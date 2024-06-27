@@ -182,6 +182,7 @@ generic_catch!("tokio_postgres::Error", tokio_postgres::Error);
 generic_catch!("snowcloud_cloud::error::Error", snowcloud_cloud::error::Error);
 generic_catch!("serde_json::Error", serde_json::Error);
 generic_catch!("serde_yaml::Error", serde_yaml::Error);
+generic_catch!("rand::Error", rand::Error);
 
 use rfs_lib::context_trait;
 

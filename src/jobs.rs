@@ -1,12 +1,10 @@
 use std::path::PathBuf;
-use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::future::Future;
 use std::io::ErrorKind;
 
 use chrono::{DateTime, Local, TimeDelta};
-use futures::future::{Abortable, AbortHandle, Aborted};
 use futures::stream::FuturesUnordered;
 use tracing::Instrument;
 use tokio::task::JoinHandle;
@@ -18,14 +16,13 @@ use crate::state::ArcShared;
 use crate::error::{self, Context};
 
 mod session;
-mod password;
 
 #[derive(Debug, Serialize, Deserialize)]
-struct JobInfo {
+struct JobResults {
     last_run: Option<DateTime<Local>>
 }
 
-impl JobInfo {
+impl JobResults {
     fn load(job_file: &PathBuf) -> error::Result<Self> {
         let result = std::fs::OpenOptions::new()
             .read(true)
@@ -35,7 +32,7 @@ impl JobInfo {
             Ok(file) => serde_json::from_reader(&file)
                 .context("failed to read jobs file"),
             Err(err) => match err.kind() {
-                ErrorKind::NotFound => Ok(JobInfo::default()),
+                ErrorKind::NotFound => Ok(JobResults::default()),
                 _ => Err(err.into()),
             }
         }
@@ -60,21 +57,20 @@ impl JobInfo {
         Ok(())
     }
 }
-impl std::default::Default for JobInfo {
+
+impl std::default::Default for JobResults {
     fn default() -> Self {
-        JobInfo {
+        JobResults {
             last_run: None
         }
     }
 }
 
-// sec  min   hour    day of month   month   day of week   year
-// 0    30    9,12,15     1,15       May-Aug  Mon,Wed,Fri  2018/2
-
 async fn job_task<F, T>(
     state: ArcShared,
-    mut upcoming: cron::OwnedScheduleIterator<Local>,
-    mut job_info: JobInfo,
+    schedule: cron::Schedule,
+    first_run: bool,
+    mut job_info: JobResults,
     job_file: PathBuf,
     runner: F
 ) -> error::Result<()>
@@ -82,9 +78,15 @@ where
     T: Future<Output = error::Result<()>>,
     F: Fn(ArcShared) -> T,
 {
+    let mut upcoming = if let Some(last_run) = job_info.last_run {
+        schedule.after_owned(last_run)
+    } else {
+        schedule.upcoming_owned(Local)
+    };
+
     let zero_delta = TimeDelta::zero();
 
-    if job_info.last_run.is_none() {
+    if first_run && job_info.last_run.is_none() {
         tracing::info!("job has never run. running job");
 
         if let Err(err) = runner(Arc::clone(&state)).await {
@@ -191,6 +193,7 @@ fn spawn_job<F, T>(
     state: &ArcShared,
     name: &'static str,
     crontab: &'static str,
+    first_run: bool,
     runner: F
 ) -> error::Result<JoinHandle<()>>
 where
@@ -199,16 +202,10 @@ where
 {
     let local_state = Arc::clone(state);
     let job_file = jobs_dir.join(format!("{name}.json"));
-    let job_info = JobInfo::load(&job_file)?;
+    let job_info = JobResults::load(&job_file)?;
 
     let schedule = cron::Schedule::from_str(crontab)
         .context("failed to parse crontab")?;
-
-    let upcoming = if let Some(last_run) = job_info.last_run {
-        schedule.after_owned(last_run)
-    } else {
-        schedule.upcoming_owned(Local)
-    };
 
     Ok(tokio::spawn(async move {
         let job_span = tracing::span!(
@@ -217,7 +214,7 @@ where
             name = name
         );
 
-        let result = job_task(local_state, upcoming, job_info, job_file, runner)
+        let result = job_task(local_state, schedule, first_run, job_info, job_file, runner)
             .instrument(job_span)
             .await;
 
@@ -227,13 +224,29 @@ where
     }))
 }
 
+// sec  min   hour    day of month   month   day of week   year
+// 0    30    9,12,15     1,15       May-Aug  Mon,Wed,Fri  2018/2
+
 pub fn background(state: &ArcShared, data: PathBuf) -> error::Result<FuturesUnordered<JoinHandle<()>>> {
     let jobs_dir = get_jobs_dir(data)?;
-    let mut waiter = FuturesUnordered::new();
+    let waiter = FuturesUnordered::new();
 
-    waiter.push(spawn_job(&jobs_dir, state, "session_cleanup", "0 0 0,12 * * * *", session::cleanup)?);
-    waiter.push(spawn_job(&jobs_dir, state, "session_rotate", "0 0 0 1,15 * * *", session::rotate)?);
-    waiter.push(spawn_job(&jobs_dir, state, "password_rotate", "0 0 0 1,15 * * *", password::rotate)?);
+    waiter.push(spawn_job(
+        &jobs_dir,
+        state,
+        "session_cleanup",
+        "0 0 0 * * * *",
+        true,
+        session::cleanup
+    )?);
+    waiter.push(spawn_job(
+        &jobs_dir,
+        state,
+        "session_rotate",
+        "0 0 0 1 * * *",
+        false,
+        session::rotate
+    )?);
 
     Ok(waiter)
 }

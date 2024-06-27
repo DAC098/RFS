@@ -1,8 +1,10 @@
 use futures::stream::TryStreamExt;
 
 use crate::state;
-use crate::error;
+use crate::error::{self, Context};
 use crate::sec::authn::session::token::SessionToken;
+use crate::sec::secrets::Key;
+use crate::time;
 
 pub async fn cleanup(state: state::ArcShared) -> error::Result<()> {
     let today = chrono::Utc::now();
@@ -39,7 +41,22 @@ pub async fn cleanup(state: state::ArcShared) -> error::Result<()> {
 }
 
 pub async fn rotate(state: state::ArcShared) -> error::Result<()> {
-    tracing::info!("rotating session keys");
+    let wrapper = state.sec().session_info().keys();
+    let data = Key::rand_key_data()?;
+    let created = time::utc_now()
+        .context("timestamp error for session key")?;
+
+    let key = Key::new(data, created);
+
+    {
+        let Ok(mut writer) = wrapper.inner().write() else {
+            return Err(error::Error::new().source("session keys rwlock poisoned"));
+        };
+
+        writer.push(key);
+    }
+
+    wrapper.save().context("failed to save session secret")?;
 
     Ok(())
 }
