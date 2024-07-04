@@ -264,7 +264,7 @@ impl Settings {
                 Err(_err) => {
                     Err(error::Error::new()
                         .kind("InvalidConfig")
-                        .message(format!("failed to parse addr/ip from Listener")))
+                        .context(format!("failed to parse addr/ip from Listener")))
                 }
             }
         }

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use handlebars::Handlebars;
 
-use crate::error;
+use crate::error::{self, Context};
 use crate::config;
 
 
@@ -10,9 +10,8 @@ fn get_registry_name<'a>(base: &PathBuf, path: &'a PathBuf, strip_ext: &str) -> 
     let stripped = path.strip_prefix(base)
         .unwrap()
         .to_str()
-        .ok_or(error::Error::new()
-            .kind("InvalidTemplateName")
-            .message(format!("template file contains invalid UTF-8 characters. path: {}", path.display())))?;
+        .kind("InvalidTemplateName")
+        .context(format!("template file contains invalid UTF-8 characters. path: {}", path.display()))?;
 
     if let Some((name, _)) = stripped.rsplit_once(strip_ext) {
         Ok(name)
@@ -32,8 +31,7 @@ fn load_template_directory(registry: &mut Handlebars<'_>, directory: &PathBuf) -
     dir_queue.push((
         directory.clone(),
         read_dir(&directory)
-            .map_err(|e| error::Error::from(e)
-                .message("failed reading root template directory"))?
+            .context("failed reading root template directory")?
     ));
 
     // breath first directory loading
@@ -47,8 +45,7 @@ fn load_template_directory(registry: &mut Handlebars<'_>, directory: &PathBuf) -
             let entry = item?;
             let entry_path = entry.path();
             let entry_type = entry.file_type()
-                .map_err(|e| error::Error::from(e)
-                    .message("failed loading file type for template file"))?;
+                .context("failed loading file type from template file")?;
 
             if entry_type.is_file() {
                 let file_name = {
@@ -78,8 +75,7 @@ fn load_template_directory(registry: &mut Handlebars<'_>, directory: &PathBuf) -
                 }
             } else if entry_type.is_dir() {
                 let entry_iter = read_dir(&entry_path)
-                    .map_err(|e| error::Error::from(e)
-                        .message("failed reading template files directory"))?;
+                    .context("failed reading template files directory")?;
 
                 dir_queue.push((entry_path, entry_iter));
             } else {

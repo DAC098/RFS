@@ -182,7 +182,7 @@ fn get_jobs_dir(data: PathBuf) -> error::Result<PathBuf> {
 
     if !metadata.is_dir() {
         Err(error::Error::new()
-            .message("jobs data directory is not a directory"))
+            .context("jobs data directory is not a directory"))
     } else {
         Ok(jobs_dir)
     }

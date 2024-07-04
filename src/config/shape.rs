@@ -6,7 +6,7 @@ use std::str::FromStr;
 
 use serde::Deserialize;
 
-use crate::error;
+use crate::error::{self, Context};
 
 #[derive(Debug, Deserialize)]
 pub struct Templates {
@@ -104,9 +104,9 @@ where
         Err(err) => match err.kind() {
             ErrorKind::NotFound => Err(error::Error::new()
                 .kind("PathNotFound")
-                .message(format!("failed to resolve the desired file path ({})", name))),
+                .context(format!("failed to resolve the desired file path ({})", name))),
             _ => Err(error::Error::from(err)
-                .message(format!("io error when attempting to resolve a file path ({})", name)))
+                .context(format!("io error when attempting to resolve a file path ({})", name)))
         }
     }
 }
@@ -121,43 +121,38 @@ where
         Err(err) => match err.kind() {
             ErrorKind::NotFound => Err(error::Error::new()
                 .kind("PathNotFound")
-                .message(format!("failed to retrieve path metadata ({})", name))),
+                .context(format!("failed to retrieve path metadata ({})", name))),
             _ => Err(error::Error::from(err)
-                .message(format!("io error when attempting to retrieve path metadata ({})", name)))
+                .context(format!("io error when attempting to retrieve path metadata ({})", name)))
         }
     }
 }
 
 pub fn from_file(settings_path: &PathBuf) -> error::Result<Settings> {
-    let Some(ext) = settings_path.extension() else {
-        return Err(error::Error::new()
-            .kind("UnknownConfigType")
-            .message("failed to retrieve the file extension of the config file"));
-    };
+    let ext = settings_path.extension()
+        .kind("UnknownConfigType")
+        .context("failed to retrieve the file extension of the config file")?;
 
     let ext = ext.to_ascii_lowercase();
     let file = std::fs::OpenOptions::new()
         .read(true)
         .open(settings_path)
-        .map_err(|e| error::Error::from(e)
-            .kind("FailedOpeningConfig")
-            .message("failed to open the specified config file"))?;
+        .kind("FailedOpeningConfig")
+        .context("failed to open the specified config file")?;
     let reader = std::io::BufReader::new(file);
 
     if ext.eq("yaml") || ext.eq("yml") {
         serde_yaml::from_reader(reader)
-            .map_err(|e| error::Error::from(e)
-                .kind("FailedParsingYaml")
-                .message("there was an error when attempting to parse the yaml config file"))
+            .kind("FailedParsingYaml")
+            .context("there was an error when attempting to parse the yaml config file")
     } else if ext.eq("json") {
         serde_json::from_reader(reader)
-            .map_err(|e| error::Error::from(e)
-                .kind("FailedParsingJson")
-                .message("there was an error when attempting to parse the json config file"))
+            .kind("FailedParsingJson")
+            .context("there was an error when attempting to parse the json config file")
     } else {
         Err(error::Error::new()
             .kind("InvalidConfigType")
-            .message("the specified config type is not yaml or json"))
+            .context("the specified config type is not yaml or json"))
     }
 }
 
@@ -172,7 +167,7 @@ pub fn validate(settings_path: &PathBuf, mut settings: Settings) -> error::Resul
                 if let Err(_err) = IpAddr::from_str(&value.addr) {
                     return Err(error::Error::new()
                         .kind("InvalidConfig")
-                        .message(format!("{name} is not a valid addr/ip address")));
+                        .context(format!("{name} is not a valid addr/ip address")));
                 }
             }
 
@@ -214,7 +209,7 @@ pub fn validate(settings_path: &PathBuf, mut settings: Settings) -> error::Resul
                 if !metadata.is_file() {
                     return Err(error::Error::new()
                         .kind("InvalidConfig")
-                        .message(format!("{} is not a file", name)));
+                        .context(format!("{} is not a file", name)));
                 }
 
                 verified.insert(key, resolved);
@@ -236,7 +231,7 @@ pub fn validate(settings_path: &PathBuf, mut settings: Settings) -> error::Resul
                 if !metadata.is_dir() {
                     return Err(error::Error::new()
                         .kind("InvalidConfig")
-                        .message(format!("{} is not a directory", name)));
+                        .context(format!("{} is not a directory", name)));
                 }
 
                 verified.insert(key, resolved);
@@ -260,7 +255,7 @@ pub fn validate(settings_path: &PathBuf, mut settings: Settings) -> error::Resul
             if !metadata.is_dir() {
                 return Err(error::Error::new()
                     .kind("InvalidConfig")
-                    .message("config.templates.directory is not a directory"));
+                    .context("config.templates.directory is not a directory"));
             }
 
             Some(resolved)

@@ -1,84 +1,131 @@
+use std::default::Default;
+use std::fmt::{Formatter, Display, Debug, Result as FmtResult};
+
 type BoxDynError = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Debug)]
-pub struct Error {
-    kind: String,
-    msg: Option<String>,
+pub struct Er<I> {
+    inner: I,
+    cxt: Option<String>,
     src: Option<BoxDynError>,
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
+impl<I> Er<I> {
+    pub fn context<C>(mut self, context: C) -> Self
+    where
+        C: Into<String>
+    {
+        self.cxt = Some(context.into());
+        self
+    }
 
-impl Error {
-    pub fn new() -> Error {
-        Error {
-            kind: String::from("Error"),
-            msg: None,
+    pub fn source<S>(mut self, source: S) -> Self
+    where
+        S: Into<BoxDynError>
+    {
+        self.src = Some(source.into());
+        self
+    }
+
+    pub fn into_parts(self) -> (I, Option<String>, Option<BoxDynError>) {
+        (self.inner, self.cxt, self.src)
+    }
+}
+
+impl<I> Default for Er<I>
+where
+    I: Default
+{
+    fn default() -> Self {
+        Er {
+            inner: Default::default(),
+            cxt: None,
             src: None,
         }
+    }
+}
+
+impl<I> Display for Er<I>
+where
+    I: Display
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match (&self.inner, &self.cxt, &self.src) {
+            (inner, Some(cxt), Some(err)) => if f.alternate() {
+                write!(f, "{}\ncxt: {}\nerr: {:#?}", inner, cxt, err)
+            } else {
+                write!(f, "{}\ncxt: {}\nerr: {:?}", inner, cxt, err)
+            },
+            (inner, Some(cxt), None) => write!(f, "{}\ncxt: {}", inner, cxt),
+            (inner, None, Some(err)) => if f.alternate() {
+                write!(f, "{}\nerr: {:#?}", inner, err)
+            } else {
+                write!(f, "{}\nerr: {:?}", inner, err)
+            },
+            (inner, None, None) => Display::fmt(inner, f)
+        }
+    }
+}
+
+impl<I> std::error::Error for Er<I>
+where
+    I: Debug + Display
+{
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.src.as_ref().map(|v| & **v as _)
+    }
+}
+
+pub struct StrError(pub String);
+
+impl Default for StrError {
+    fn default() -> Self {
+        StrError(String::from("Error"))
+    }
+}
+
+impl Display for StrError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        Display::fmt(&self.0, f)
+    }
+}
+
+impl Debug for StrError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        Debug::fmt(&self.0, f)
+    }
+}
+
+impl Er<StrError> {
+    #[inline]
+    pub fn new() -> Self {
+        Default::default()
     }
 
     pub fn kind<K>(mut self, kind: K) -> Self
     where
         K: Into<String>
     {
-        self.kind = kind.into();
-        self
-    }
-
-    pub fn message<M>(mut self, msg: M) -> Error
-    where
-        M: Into<String>
-    {
-        self.msg = Some(msg.into());
-        self
-    }
-
-    pub fn source<S>(mut self, src: S) -> Error
-    where
-        S: Into<BoxDynError>
-    {
-        self.src = Some(src.into());
+        self.inner = StrError(kind.into());
         self
     }
 }
 
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match (&self.kind, self.msg.as_ref(), self.src.as_ref()) {
-            (kind, Some(msg), Some(err)) => {
-                write!(f, "{kind}: {msg}\n{err}")
-            },
-            (kind, Some(msg), None) => {
-                write!(f, "{kind}: {msg}")
-            },
-            (kind, None, Some(err)) => {
-                write!(f, "{kind}: {err}")
-            },
-            (kind, None, None) => {
-                write!(f, "{kind}")
-            }
-        }
-    }
-}
+pub type Error = Er<StrError>;
 
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.src.as_ref().map(|v| & **v as _)
-    }
-}
+pub type Result<T> = std::result::Result<T, Error>;
 
 impl From<String> for Error {
     fn from(msg: String) -> Self {
-        Error::new()
-            .message(msg)
+        Error::default()
+            .context(msg)
     }
 }
 
 impl From<&str> for Error {
     fn from(msg: &str) -> Self {
-        Error::new()
-            .message(msg)
+        Error::default()
+            .context(msg)
     }
 }
 
@@ -87,11 +134,9 @@ impl From<deadpool_postgres::BuildError> for Error {
         use deadpool_postgres::BuildError;
 
         match err {
-            BuildError::Backend(e) => Error::new()
-                .kind("tokio_postgres::Error")
+            BuildError::Backend(e) => Error::default()
                 .source(e),
-            BuildError::NoRuntimeSpecified(string) => Error::new()
-                .kind("deadpool::managed::BuildError")
+            BuildError::NoRuntimeSpecified(string) => Error::default()
                 .source(string)
         }
     }
@@ -103,9 +148,9 @@ impl From<deadpool_postgres::HookErrorCause> for Error {
 
         match err {
             HookErrorCause::Backend(e) => Self::from(e),
-            HookErrorCause::Message(msg) => Error::new()
+            HookErrorCause::Message(msg) => Error::default()
                 .source(msg),
-            HookErrorCause::StaticMessage(msg) => Error::new()
+            HookErrorCause::StaticMessage(msg) => Error::default()
                 .source(msg.to_owned()),
         }
     }
@@ -120,8 +165,8 @@ impl From<deadpool_postgres::HookError> for Error {
                 if let Some(cause) = opt {
                     Self::from(cause)
                 } else {
-                    Error::new()
-                        .source("deadpool::managed::HookError::Continue with no cause")
+                    Error::default()
+                        .context("no error")
                 }
             },
             HookError::Abort(cause) => {
@@ -140,15 +185,14 @@ impl From<deadpool_postgres::PoolError> for Error {
             PoolError::PostCreateHook(e) |
             PoolError::PreRecycleHook(e) |
             PoolError::PostRecycleHook(e) => Self::from(e),
-            _ => Error::new().source(err)
+            _ => Error::default().source(err)
         }
     }
 }
 
 impl From<hkdf::InvalidLength> for Error {
     fn from(_err: hkdf::InvalidLength) -> Self {
-        Error::new()
-            .kind("hkdf::InvalidLength")
+        Error::default()
             .source("invalid output length when deriving key")
     }
 }
@@ -157,7 +201,7 @@ macro_rules! generic_catch {
     ($k:expr, $e:path) => {
         impl From<$e> for Error {
             fn from(err: $e) -> Self {
-                Error::new()
+                Error::default()
                     .kind($k)
                     .source(err)
             }
@@ -166,9 +210,9 @@ macro_rules! generic_catch {
     ($k:expr, $e:path, $m:expr) => {
         impl From<$e> for Error {
             fn from(err: $e) -> Self {
-                Error::new()
+                Error::default()
                     .kind($k)
-                    .message($m)
+                    .context($m)
                     .source(err)
             }
         }
@@ -184,9 +228,15 @@ generic_catch!("serde_json::Error", serde_json::Error);
 generic_catch!("serde_yaml::Error", serde_yaml::Error);
 generic_catch!("rand::Error", rand::Error);
 
-use rfs_lib::context_trait;
+pub trait Context<T, E> {
+    fn context<C>(self, cxt: C) -> std::result::Result<T, Error>
+    where
+        C: Into<String>;
 
-context_trait!(Error);
+    fn kind<K>(self, kind: K) -> std::result::Result<T, Error>
+    where
+        K: Into<String>;
+}
 
 impl<T, E> Context<T, E> for std::result::Result<T, E>
 where
@@ -198,9 +248,23 @@ where
     {
         match self {
             Ok(v) => Ok(v),
-            Err(err) => Err(Error::new()
-                .message(cxt)
+            Err(err) => Err(Error::default()
+                .context(cxt)
                 .source(err))
+        }
+    }
+
+    fn kind<K>(self, kind: K) -> std::result::Result<T, Error>
+    where
+        K: Into<String>
+    {
+        match self {
+            Ok(v) => Ok(v),
+            Err(err) => Err(Error {
+                inner: StrError(kind.into()),
+                cxt: None,
+                src: Some(err.into())
+            })
         }
     }
 }
@@ -212,8 +276,22 @@ impl<T> Context<T, ()> for std::option::Option<T> {
     {
         match self {
             Some(v) => Ok(v),
-            None => Err(Error::new()
-                .message(cxt))
+            None => Err(Error::default()
+                .context(cxt))
+        }
+    }
+
+    fn kind<K>(self, kind: K) -> std::result::Result<T, Error>
+    where
+        K: Into<String>
+    {
+        match self {
+            Some(v) => Ok(v),
+            None => Err(Error {
+                inner: StrError(kind.into()),
+                cxt: None,
+                src: None
+            })
         }
     }
 }

@@ -7,4 +7,11 @@ macro_rules! context_trait {
                 C: Into<String>;
         }
     };
+    ($e:path, $n:ident) => {
+        pub trait $n<T, E> {
+            fn context<C>(self, cxt: C) -> std::result::Result<T, $e>
+            where
+                C: Into<String>;
+        }
+    }
 }
