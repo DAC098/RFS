@@ -227,7 +227,7 @@ async fn init() -> error::Result<()> {
                 .on_request(net::layer::trace::on_request)
                 .on_response(net::layer::trace::on_response)
                 .on_failure(net::layer::trace::on_failure))
-            .layer(HandleErrorLayer::new(net::error::handle_error))
+            .layer(HandleErrorLayer::new(error::api::handle_error))
             .layer(net::layer::timeout::TimeoutLayer::new(Duration::new(90, 0)))
         )
         .with_state(state);

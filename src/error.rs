@@ -1,80 +1,11 @@
 use std::default::Default;
 use std::fmt::{Formatter, Display, Debug, Result as FmtResult};
 
-type BoxDynError = Box<dyn std::error::Error + Send + Sync>;
+mod base;
 
-#[derive(Debug)]
-pub struct Er<I> {
-    inner: I,
-    cxt: Option<String>,
-    src: Option<BoxDynError>,
-}
+use base::{Er, BoxDynError};
 
-impl<I> Er<I> {
-    pub fn context<C>(mut self, context: C) -> Self
-    where
-        C: Into<String>
-    {
-        self.cxt = Some(context.into());
-        self
-    }
-
-    pub fn source<S>(mut self, source: S) -> Self
-    where
-        S: Into<BoxDynError>
-    {
-        self.src = Some(source.into());
-        self
-    }
-
-    pub fn into_parts(self) -> (I, Option<String>, Option<BoxDynError>) {
-        (self.inner, self.cxt, self.src)
-    }
-}
-
-impl<I> Default for Er<I>
-where
-    I: Default
-{
-    fn default() -> Self {
-        Er {
-            inner: Default::default(),
-            cxt: None,
-            src: None,
-        }
-    }
-}
-
-impl<I> Display for Er<I>
-where
-    I: Display
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        match (&self.inner, &self.cxt, &self.src) {
-            (inner, Some(cxt), Some(err)) => if f.alternate() {
-                write!(f, "{}\ncxt: {}\nerr: {:#?}", inner, cxt, err)
-            } else {
-                write!(f, "{}\ncxt: {}\nerr: {:?}", inner, cxt, err)
-            },
-            (inner, Some(cxt), None) => write!(f, "{}\ncxt: {}", inner, cxt),
-            (inner, None, Some(err)) => if f.alternate() {
-                write!(f, "{}\nerr: {:#?}", inner, err)
-            } else {
-                write!(f, "{}\nerr: {:?}", inner, err)
-            },
-            (inner, None, None) => Display::fmt(inner, f)
-        }
-    }
-}
-
-impl<I> std::error::Error for Er<I>
-where
-    I: Debug + Display
-{
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.src.as_ref().map(|v| & **v as _)
-    }
-}
+pub mod api;
 
 pub struct StrError(pub String);
 
@@ -96,7 +27,10 @@ impl Debug for StrError {
     }
 }
 
-impl Er<StrError> {
+pub type Error = Er<StrError>;
+pub type Result<T> = std::result::Result<T, Error>;
+
+impl Error {
     #[inline]
     pub fn new() -> Self {
         Default::default()
@@ -110,10 +44,6 @@ impl Er<StrError> {
         self
     }
 }
-
-pub type Error = Er<StrError>;
-
-pub type Result<T> = std::result::Result<T, Error>;
 
 impl From<String> for Error {
     fn from(msg: String) -> Self {
