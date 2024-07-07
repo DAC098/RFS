@@ -11,7 +11,7 @@ use crate::sec::authn::initiator::{Initiator, Mechanism};
 use crate::sec::authn::password::Password;
 use crate::sec::authn::session;
 
-pub async fn post(
+pub async fn update(
     State(state): State<ArcShared>,
     initiator: Initiator,
     axum::Json(json): axum::Json<CreatePassword>,

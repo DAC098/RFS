@@ -6,8 +6,6 @@ use serde::Serialize;
 use crate::net::{self, error};
 use crate::state::ArcShared;
 
-pub mod session;
-pub mod password;
 pub mod totp;
 
 #[derive(Serialize)]

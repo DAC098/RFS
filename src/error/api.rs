@@ -1,32 +1,13 @@
 use axum::response::{Response, IntoResponse};
-use tracing::Level;
 
 use super::base::{Er, BoxDynError};
 
 pub use rfs_api::error::{
     Detail,
     ApiErrorKind,
-    ApiError
 };
 
-pub async fn handle_error<E>(error: E) -> Response
-where
-    E: Into<Error>
-{
-    let error = error.into();
-
-    if let Some(err) = error.src.as_ref() {
-        tracing::event!(
-            Level::ERROR,
-            "unhandled error when prcessing request: {:#?}",
-            err
-        );
-    }
-
-    error.inner.into_response()
-}
-
-pub type Error = Er<ApiError>;
+pub type Error = Er<rfs_api::error::ApiError>;
 pub type Result<T> = std::result::Result<T, Error>;
 
 impl Error {
@@ -40,12 +21,12 @@ impl Error {
 
     pub fn api<T>(value: T) -> Self
     where
-        T: Into<ApiError>
+        T: Into<rfs_api::error::ApiError>
     {
         Error {
             inner: value.into(),
             cxt: None,
-            src: None
+            src: None,
         }
     }
 
@@ -55,24 +36,57 @@ impl Error {
     }
 }
 
-impl axum::response::IntoResponse for Error {
-    fn into_response(self) -> axum::response::Response {
+impl IntoResponse for Error {
+    fn into_response(self) -> Response {
         if let Some(err) = self.src.as_ref() {
-            tracing::event!(
-                Level::ERROR,
-                "unhandled error when prcessing request: {:#?}",
-                err
-            );
+            tracing::error!("unhandled error when prcessing request: {err:#?}");
         }
 
         self.inner.into_response()
     }
 }
 
-impl From<ApiError> for Error {
-    fn from(api_err: ApiError) -> Self {
+impl From<ApiErrorKind> for Error {
+    fn from(kind: ApiErrorKind) -> Self {
         Error {
-            inner: api_err,
+            inner: kind.into(),
+            cxt: None,
+            src: None
+        }
+    }
+}
+
+impl<D> From<(ApiErrorKind, D)> for Error
+where
+    D: Into<Detail>
+{
+    fn from(tuple: (ApiErrorKind, D)) -> Self {
+        Error {
+            inner: tuple.into(),
+            cxt: None,
+            src: None,
+        }
+    }
+}
+
+impl<D, M> From<(ApiErrorKind, D, M)> for Error
+where
+    D: Into<Detail>,
+    M: Into<String>
+{
+    fn from(tuple: (ApiErrorKind, D, M)) -> Self {
+        Error {
+            inner: tuple.into(),
+            cxt: None,
+            src: None
+        }
+    }
+}
+
+impl From<rfs_api::error::ApiError> for Error {
+    fn from(err: rfs_api::error::ApiError) -> Self {
+        Error {
+            inner: err,
             cxt: None,
             src: None,
         }
@@ -256,16 +270,14 @@ impl<T> Context<T, ()> for std::option::Option<T> {
     {
         match self {
             Some(v) => Ok(v),
-            None => Err(Error::new()
-                .context(cxt))
+            None => Err(Error::new().context(cxt))
         }
     }
 
     fn kind(self, kind: ApiErrorKind) -> std::result::Result<T, Error> {
         match self {
             Some(v) => Ok(v),
-            None => Err(Error::new()
-                .kind(kind))
+            None => Err(Error::new().kind(kind))
         }
     }
 }

@@ -6,7 +6,6 @@ use serde::Serialize;
 use crate::net::{self, error};
 use crate::state::ArcShared;
 
-pub mod ping;
 pub mod auth;
 pub mod sec;
 pub mod fs;

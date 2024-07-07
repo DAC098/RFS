@@ -7,6 +7,8 @@ use base::{Er, BoxDynError};
 
 pub mod api;
 
+pub use api::{Error as ApiError, Result as ApiResult};
+
 pub struct StrError(pub String);
 
 impl Default for StrError {
