@@ -80,24 +80,6 @@ pub fn routes(state: &ArcShared) -> Router {
             get(handle::get)
         )
         .route(
-            "/auth/totp",
-            get(handle::auth::totp::get)
-                .post(handle::auth::totp::post)
-                .patch(handle::auth::totp::patch)
-                .delete(handle::auth::totp::delete)
-        )
-        .route(
-            "/auth/totp/recovery",
-            get(handle::auth::totp::recovery::get)
-                .post(handle::auth::totp::recovery::post)
-        )
-        .route(
-            "/auth/totp/recovery/:key_id",
-            get(handle::auth::totp::recovery::key_id::get)
-                .patch(handle::auth::totp::recovery::key_id::patch)
-                .delete(handle::auth::totp::recovery::key_id::delete)
-        )
-        .route(
             "/sec/secrets/password",
             get(handle::sec::secrets::password::get)
                 .post(handle::sec::secrets::password::post)

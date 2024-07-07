@@ -32,7 +32,7 @@ impl UpdatePassword {
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
         self.body.validate()?;
 
-        let url = client.info.url.join("/auth/password").unwrap();
+        let url = client.info.url.join("/api/auth/password").unwrap();
         let res = client.client.post(url)
             .json(&self.body)
             .send()?;

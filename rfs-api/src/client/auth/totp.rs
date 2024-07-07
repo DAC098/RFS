@@ -19,7 +19,7 @@ impl RetrieveTotp {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<Option<Payload<Totp>>, RequestError> {
-        let res = client.get("/auth/totp").send()?;
+        let res = client.get("/api/auth/totp").send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(Some(res.json()?)),
@@ -68,7 +68,7 @@ impl CreateTotp {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<Payload<Totp>, RequestError> {
-        let res = client.post("/auth/totp")
+        let res = client.post("/api/auth/totp")
             .json(&self.body)
             .send()?;
 
@@ -116,7 +116,7 @@ impl UpdateTotp {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<Payload<Totp>, RequestError> {
-        let res = client.patch("/auth/totp")
+        let res = client.patch("/api/auth/totp")
             .json(&self.body)
             .send()?;
 
@@ -135,7 +135,7 @@ impl DeleteTotp {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
-        let res = client.delete("/auth/totp").send()?;
+        let res = client.delete("/api/auth/totp").send()?;
 
         match res.status() {
             reqwest::StatusCode::NO_CONTENT => Ok(()),
@@ -152,7 +152,7 @@ impl RetrieveTotpRecovery {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<Payload<Vec<TotpRecovery>>, RequestError> {
-        let res = client.get("/auth/totp/recovery").send()?;
+        let res = client.get("/api/auth/totp/recovery").send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(res.json()?),
@@ -180,7 +180,7 @@ impl CreateTotpRecovery {
     pub fn send(self, client: &ApiClient) -> Result<Payload<TotpRecovery>, RequestError> {
         self.body.validate()?;
 
-        let res = client.post("/auth/totp/recovery")
+        let res = client.post("/api/auth/totp/recovery")
             .json(&self.body)
             .send()?;
 
@@ -213,7 +213,7 @@ impl RetrieveTotpRecoveryKey {
             ))));
         }
 
-        let res = client.get(format!("/auth/totp/recovery/{}", self.key)).send()?;
+        let res = client.get(format!("/api/auth/totp/recovery/{}", self.key)).send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(res.json()?),
@@ -273,7 +273,7 @@ impl UpdateTotpRecovery {
 
         self.body.validate()?;
 
-        let res = client.patch(format!("/auth/totp/recovery/{}", self.key))
+        let res = client.patch(format!("/api/auth/totp/recovery/{}", self.key))
             .json(&self.body)
             .send()?;
 
@@ -306,7 +306,7 @@ impl DeleteTotpRecovery {
             ))));
         }
 
-        let res = client.delete(format!("/auth/totp/recovery/{}", self.key)).send()?;
+        let res = client.delete(format!("/api/auth/totp/recovery/{}", self.key)).send()?;
 
         match res.status() {
             reqwest::StatusCode::NO_CONTENT => Ok(()),
