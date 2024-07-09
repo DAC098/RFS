@@ -3,8 +3,8 @@ use std::time::Duration;
 use axum::{debug_handler, Router};
 use axum::extract::State;
 use axum::error_handling::HandleErrorLayer;
-use axum::http::{Method, Uri, StatusCode};
-use axum::routing::{get, post, delete};
+use axum::http::{header, Method, Uri, StatusCode};
+use axum::routing::get;
 use axum::response::IntoResponse;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
@@ -27,17 +27,21 @@ async fn ping() -> (StatusCode, &'static str) {
     (StatusCode::OK, "pong")
 }
 
-async fn handle_error<E>(error: E) -> ApiError
+async fn handle_error<E>(error: E) -> impl IntoResponse
 where
     E: Into<ApiError>
 {
     let error = error.into();
 
     if let Some(err) = std::error::Error::source(&error) {
-        tracing::error!("unhandled error when prcessing request: {err:#?}");
+        tracing::error!("unhandled error when processing request: {err:#?}");
     }
 
-    error
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        [(header::CONTENT_TYPE, "text/plain")],
+        "internal server error"
+    )
 }
 
 #[debug_handler]
@@ -78,45 +82,6 @@ pub fn routes(state: &ArcShared) -> Router {
         .route(
             "/",
             get(handle::get)
-        )
-        .route(
-            "/sec/secrets/password",
-            get(handle::sec::secrets::password::get)
-                .post(handle::sec::secrets::password::post)
-        )
-        .route(
-            "/sec/secrets/password/:version",
-            get(handle::sec::secrets::password::version::get)
-                .delete(handle::sec::secrets::password::version::delete)
-        )
-        .route(
-            "/sec/secrets/session",
-            get(handle::sec::secrets::session::get)
-                .post(handle::sec::secrets::session::post)
-                .delete(handle::sec::secrets::session::delete)
-        )
-        .route(
-            "/sec/roles",
-            get(handle::sec::roles::get)
-                .post(handle::sec::roles::post)
-        )
-        .route(
-            "/sec/roles/:role_id",
-            get(handle::sec::roles::role_id::get)
-                .patch(handle::sec::roles::role_id::patch)
-                .delete(handle::sec::roles::role_id::delete)
-        )
-        .route(
-            "/sec/roles/:role_id/users",
-            get(handle::sec::roles::role_id::users::get)
-                .post(handle::sec::roles::role_id::users::post)
-                .delete(handle::sec::roles::role_id::users::delete)
-        )
-        .route(
-            "/sec/roles/:role_id/groups",
-            get(handle::sec::roles::role_id::groups::get)
-                .post(handle::sec::roles::role_id::groups::post)
-                .delete(handle::sec::roles::role_id::groups::delete)
         )
         .route(
             "/fs/storage",

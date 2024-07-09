@@ -3,22 +3,24 @@ use axum::error_handling::HandleErrorLayer;
 use tower::ServiceBuilder;
 
 use crate::state::ArcShared;
-use crate::error;
+use crate::error::ApiError;
+use crate::error::api::ApiErrorKind;
 
 mod auth;
+mod sec;
 
-async fn not_found() -> error::ApiError {
-    error::ApiError::from(error::api::ApiErrorKind::NotFound)
+async fn not_found() -> ApiError {
+    ApiError::from(ApiErrorKind::NotFound)
 }
 
-async fn handle_error<E>(error: E) -> error::ApiError
+async fn handle_error<E>(error: E) -> ApiError
 where
-    E: Into<error::ApiError>
+    E: Into<ApiError>
 {
     let error = error.into();
 
     if let Some(err) = std::error::Error::source(&error) {
-        tracing::error!("unhandled error when prcessing request: {err:#?}");
+        tracing::error!("unhandled error when processing request: {err:#?}");
     }
 
     error
@@ -27,6 +29,7 @@ where
 pub fn routes() -> Router<ArcShared> {
     Router::new()
         .nest("/auth", auth::routes())
+        .nest("/sec", sec::routes())
         .fallback(not_found)
         .layer(ServiceBuilder::new()
             .layer(HandleErrorLayer::new(handle_error)))

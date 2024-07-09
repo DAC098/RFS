@@ -64,7 +64,7 @@ impl QueryRoles {
     }
 
     pub fn send(&self, client: &ApiClient) -> Result<Payload<Vec<RoleListItem>>, RequestError> {
-        let mut builder = client.get("/sec/roles");
+        let mut builder = client.get("/api/sec/roles");
 
         if let Some(limit) = &self.limit {
             builder = builder.query(&[("limit", limit)]);
@@ -95,7 +95,7 @@ impl RetrieveRole {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<Option<Payload<Role>>, RequestError> {
-        let res = client.get(format!("/sec/roles/{}", self.id)).send()?;
+        let res = client.get(format!("/api/sec/roles/{}", self.id)).send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(Some(res.json()?)),
@@ -155,7 +155,7 @@ impl QueryRoleUsers {
     }
 
     pub fn send(&self, client: &ApiClient) -> Result<Option<Payload<Vec<RoleUser>>>, RequestError> {
-        let mut builder = client.get(format!("/sec/roles/{}/users", self.id));
+        let mut builder = client.get(format!("/api/sec/roles/{}/users", self.id));
 
         if let Some(limit) = &self.limit {
             builder = builder.query(&[("limit", limit)]);
@@ -227,7 +227,7 @@ impl QueryRoleGroups {
     }
 
     pub fn send(&self, client: &ApiClient) -> Result<Option<Payload<Vec<RoleGroup>>>, RequestError> {
-        let mut builder = client.get(format!("/sec/roles/{}/groups", self.id));
+        let mut builder = client.get(format!("/api/sec/roles/{}/groups", self.id));
 
         if let Some(limit) = &self.limit {
             builder = builder.query(&[("limit", limit)]);
@@ -297,7 +297,7 @@ impl CreateRole {
     pub fn send(self, client: &ApiClient) -> Result<Payload<Role>, RequestError> {
         self.body.assert_ok()?;
 
-        let res = client.post("/sec/roles")
+        let res = client.post("/api/sec/roles")
             .json(&self.body)
             .send()?;
 
@@ -364,7 +364,7 @@ impl UpdateRole {
     pub fn send(self, client: &ApiClient) -> Result<Payload<Role>, RequestError> {
         self.body.assert_ok()?;
 
-        let res = client.patch(format!("/sec/roles/{}", self.id))
+        let res = client.patch(format!("/api/sec/roles/{}", self.id))
             .json(&self.body)
             .send()?;
 
@@ -385,7 +385,7 @@ impl DeleteRole {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
-        let res = client.delete(format!("/sec/roles/{}", self.id)).send()?;
+        let res = client.delete(format!("/api/sec/roles/{}", self.id)).send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(()),
@@ -428,7 +428,7 @@ impl AddRoleUsers {
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
         self.body.assert_ok()?;
 
-        let res = client.post(format!("/sec/roles/{}/users", self.id))
+        let res = client.post(format!("/api/sec/roles/{}/users", self.id))
             .json(&self.body)
             .send()?;
 
@@ -473,7 +473,7 @@ impl DropRoleUsers {
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
         self.body.assert_ok()?;
 
-        let res = client.delete(format!("/sec/roles/{}/users", self.id))
+        let res = client.delete(format!("/api/sec/roles/{}/users", self.id))
             .json(&self.body)
             .send()?;
 
@@ -518,7 +518,7 @@ impl AddRoleGroups {
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
         self.body.assert_ok()?;
 
-        let res = client.post(format!("/sec/roles/{}/groups", self.id))
+        let res = client.post(format!("/api/sec/roles/{}/groups", self.id))
             .json(&self.body)
             .send()?;
 
@@ -563,7 +563,7 @@ impl DropRoleGroups {
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
         self.body.assert_ok()?;
 
-        let res = client.delete(format!("/sec/roles/{}/groups", self.id))
+        let res = client.delete(format!("/api/sec/roles/{}/groups", self.id))
             .json(&self.body)
             .send()?;
 

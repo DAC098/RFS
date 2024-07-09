@@ -15,7 +15,7 @@ impl QueryPasswordSecrets {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<Payload<Vec<PasswordListItem>>, RequestError> {
-        let res = client.get("/sec/secrets/password").send()?;
+        let res = client.get("/api/sec/secrets/password").send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(res.json()?),
@@ -34,7 +34,7 @@ impl RetrievePasswordSecret {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<Option<Payload<PasswordVersion>>, RequestError> {
-        let res = client.get(format!("/sec/secrets/password/{}", self.version)).send()?;
+        let res = client.get(format!("/api/sec/secrets/password/{}", self.version)).send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(Some(res.json()?)),
@@ -60,7 +60,7 @@ impl QuerySessionSecrets {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<Payload<Vec<SessionListItem>>, RequestError> {
-        let res = client.get("/sec/secrets/session").send()?;
+        let res = client.get("/api/sec/secrets/session").send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(res.json()?),
@@ -77,7 +77,7 @@ impl CreatePasswordSecret {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
-        let res = client.post("/sec/secrets/password").send()?;
+        let res = client.post("/api/sec/secrets/password").send()?;
 
         match res.status() {
             reqwest::StatusCode::NO_CONTENT => Ok(()),
@@ -94,7 +94,7 @@ impl CreateSessionSecret {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
-        let res = client.post("/sec/secrets/session").send()?;
+        let res = client.post("/api/sec/secrets/session").send()?;
 
         match res.status() {
             reqwest::StatusCode::NO_CONTENT => Ok(()),
@@ -113,7 +113,7 @@ impl DeletePasswordSecret {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
-        let res = client.delete(format!("/sec/secrets/password/{}", self.version))
+        let res = client.delete(format!("/api/sec/secrets/password/{}", self.version))
             .send()?;
 
         match res.status() {
@@ -133,7 +133,7 @@ impl DeleteSessionSecret {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
-        let res = client.delete("/sec/secrets/session")
+        let res = client.delete("/api/sec/secrets/session")
             .query(&[("amount", self.amount)])
             .send()?;
 
