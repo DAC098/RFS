@@ -59,7 +59,7 @@ impl QueryUsers {
     }
 
     pub fn send(&self, client: &ApiClient) -> Result<Payload<Vec<ListItem>>, RequestError> {
-        let mut builder = client.get("/user");
+        let mut builder = client.get("/api/user");
 
         if let Some(limit) = &self.limit {
             builder = builder.query(&[("limit", limit)]);
@@ -115,7 +115,7 @@ impl RetrieveUser {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<Option<Payload<User>>, RequestError> {
-        let res = client.get(format!("/user/{}", self.id.id())).send()?;
+        let res = client.get(format!("/api/user/{}", self.id.id())).send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(Some(res.json()?)),
@@ -163,7 +163,7 @@ impl CreateUser {
     pub fn send(self, client: &ApiClient) -> Result<Payload<User>, RequestError> {
         self.body.assert_ok()?;
 
-        let res = client.post("/user")
+        let res = client.post("/api/user")
             .json(&self.body)
             .send()?;
 
@@ -209,7 +209,7 @@ impl UpdateUser {
     pub fn send(self, client: &ApiClient) -> Result<Payload<User>, RequestError> {
         self.body.assert_ok()?;
 
-        let res = client.patch(format!("/user/{}", self.id.id()))
+        let res = client.patch(format!("/api/user/{}", self.id.id()))
             .json(&self.body)
             .send()?;
 
@@ -230,7 +230,7 @@ impl DeleteUser {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
-        let res = client.delete(format!("/user/{}", self.id.id())).send()?;
+        let res = client.delete(format!("/api/user/{}", self.id.id())).send()?;
 
         match res.status() {
             reqwest::StatusCode::NO_CONTENT => Ok(()),

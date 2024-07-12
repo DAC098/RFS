@@ -60,7 +60,7 @@ impl QueryGroups {
     }
 
     pub fn send(&self, client: &ApiClient) -> Result<Payload<Vec<ListItem>>, RequestError> {
-        let mut builder= client.get("/user/group");
+        let mut builder= client.get("/api/user/group");
 
         if let Some(limit) = &self.limit {
             builder = builder.query(&[("limit", limit)]);
@@ -148,7 +148,7 @@ impl QueryGroupUsers {
     }
 
     pub fn send(&self, client: &ApiClient) -> Result<Payload<Vec<GroupUser>>, RequestError> {
-        let mut builder = client.get(format!("/user/group/{}/users", self.id));
+        let mut builder = client.get(format!("/api/user/group/{}/users", self.id));
 
         if let Some(limit) = &self.limit {
             builder = builder.query(&[("limit", limit)]);
@@ -204,7 +204,7 @@ impl RetrieveGroup {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<Option<Payload<Group>>, RequestError> {
-        let res = client.get(format!("/user/group/{}", self.id)).send()?;
+        let res = client.get(format!("/api/user/group/{}", self.id)).send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(Some(res.json()?)),
@@ -241,7 +241,7 @@ impl CreateGroup {
     pub fn send(self, client: &ApiClient) -> Result<Payload<Group>, RequestError> {
         self.body.assert_ok()?;
 
-        let res = client.post("/user/group")
+        let res = client.post("/api/user/group")
             .json(&self.body)
             .send()?;
 
@@ -294,7 +294,7 @@ impl DeleteGroup {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<Payload<Group>, RequestError> {
-        let res = client.delete(format!("/user/group/{}", self.id)).send()?;
+        let res = client.delete(format!("/api/user/group/{}", self.id)).send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(res.json()?),
@@ -335,7 +335,7 @@ impl AddUsers {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
-        let res = client.post(format!("/user/group/{}/users", self.id))
+        let res = client.post(format!("/api/user/group/{}/users", self.id))
             .json(&self.body)
             .send()?;
 
@@ -378,7 +378,7 @@ impl DropUsers {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
-        let res = client.delete(format!("/user/group/{}/users", self.id))
+        let res = client.delete(format!("/api/user/group/{}/users", self.id))
             .json(&self.body)
             .send()?;
 

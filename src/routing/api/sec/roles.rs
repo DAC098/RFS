@@ -2,7 +2,6 @@ use std::collections::HashSet;
 use std::fmt::Write;
 
 use rfs_lib::ids;
-use rfs_lib::query::{Limit, Offset};
 
 use axum::http::StatusCode;
 use axum::extract::{Path, State, Query};
@@ -16,17 +15,7 @@ use crate::state::ArcShared;
 use crate::sec::authn::initiator;
 use crate::sec::authz::permission::{self, Role, Permission, Ability, Scope};
 use crate::sql;
-
-#[derive(Deserialize)]
-pub struct PaginationQuery<T> {
-    #[serde(default)]
-    limit: Limit,
-
-    #[serde(default)]
-    offset: Offset,
-
-    last_id: Option<T>,
-}
+use crate::routing::query::PaginationQuery;
 
 pub async fn retrieve(
     State(state): State<ArcShared>,

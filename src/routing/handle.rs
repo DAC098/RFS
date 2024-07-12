@@ -6,9 +6,7 @@ use serde::Serialize;
 use crate::net::{self, error};
 use crate::state::ArcShared;
 
-pub mod sec;
 pub mod fs;
-pub mod user;
 
 #[derive(Serialize)]
 pub struct RootContext {}

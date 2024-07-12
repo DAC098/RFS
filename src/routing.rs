@@ -14,6 +14,8 @@ use crate::error::api::ApiErrorKind;
 use crate::net;
 use crate::state::ArcShared;
 
+mod query;
+
 mod api;
 
 mod layer;
@@ -113,45 +115,6 @@ pub fn routes(state: &ArcShared) -> Router {
         .route(
             "/fs/:fs_id/dl",
             get(handle::fs::fs_id::dl::get)
-        )
-        .route(
-            "/user",
-            get(handle::user::get)
-                .post(handle::user::post)
-        )
-        .route(
-            "/user/group",
-            get(handle::user::group::get)
-                .post(handle::user::group::post)
-        )
-        .route(
-            "/user/group/:group_id",
-            get(handle::user::group::group_id::get)
-                .patch(handle::user::group::group_id::patch)
-                .delete(handle::user::group::group_id::delete)
-        )
-        .route(
-            "/user/group/:group_id/users",
-            get(handle::user::group::group_id::users::get)
-                .post(handle::user::group::group_id::users::post)
-                .delete(handle::user::group::group_id::users::delete)
-        )
-        .route(
-            "/user/:user_id",
-            get(handle::user::user_id::get)
-                .patch(handle::user::user_id::patch)
-                .delete(handle::user::user_id::delete)
-        )
-        .route(
-            "/user/:user_id/bot",
-            get(okay)
-                .post(okay)
-        )
-        .route(
-            "/user/:user_id/bot/:bot_id",
-            get(okay)
-                .put(okay)
-                .delete(okay)
         )
         .route("/ping", get(ping))
         .fallback(serve_file)
