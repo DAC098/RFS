@@ -1,38 +1,153 @@
 use std::collections::HashSet;
 use std::fmt::Write;
-use std::str::FromStr;
 use std::io::ErrorKind as StdIoErrorKind;
+use std::str::FromStr;
 
 use rfs_lib::ids;
-use tokio::io::{AsyncWriteExt, BufWriter};
-use axum::debug_handler;
-use axum::http::{StatusCode, HeaderMap};
+use rfs_api::fs::{
+    DirectoryMin,
+    FileMin,
+    ItemMin,
+    RootMin,
+};
+
+use axum::{Router, debug_handler};
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, Query, State};
-use futures::{Stream, StreamExt, TryStreamExt};
+use axum::http::{StatusCode, HeaderMap};
+use axum::response::Response;
+use axum::routing::get;
 use deadpool_postgres::GenericClient;
+use futures::{Stream, StreamExt, TryStreamExt};
 use serde::Deserialize;
+use tokio::fs::OpenOptions;
+use tokio::io::{AsyncWriteExt, BufWriter};
+use tokio_util::io::ReaderStream;
 
-use crate::net::error;
-use crate::state::ArcShared;
+use crate::error::{ApiResult, ApiError};
+use crate::error::api::{Detail, Context, ApiErrorKind};
+use crate::fs::{self, backend};
+use crate::routing::query::PaginationQuery;
 use crate::sec::authn::initiator;
 use crate::sec::authz::permission;
 use crate::sql;
-use crate::fs;
+use crate::state::ArcShared;
 use crate::tags;
 
-pub mod contents;
-pub mod dl;
+mod storage;
+
+pub fn routes() -> Router<ArcShared> {
+    Router::new()
+        .route("/", get(retrieve))
+        .route("/storage", get(storage::retrieve)
+            .post(storage::create))
+        .route("/storage/:storage_id", get(storage::retrieve_id)
+            .patch(storage::update_id)
+            .delete(storage::delete_id))
+        .route("/:fs_id", get(retrieve_id)
+            .post(create_item)
+            .put(upload_file)
+            .patch(update_item)
+            .delete(delete_item))
+        .route("/:fs_id/contents", get(retrieve_id_contents))
+        .route("/:fs_id/download", get(download_id))
+}
+
+#[derive(Deserialize)]
+pub struct PathParams {
+    fs_id: ids::FSId,
+}
+
+async fn retrieve(
+    State(state): State<ArcShared>,
+    initiator: initiator::Initiator,
+    Query(PaginationQuery { limit, offset, last_id }): Query<PaginationQuery<ids::FSId>>,
+) -> ApiResult<rfs_api::Payload<Vec<ItemMin>>> {
+    let conn = state.pool().get().await?;
+
+    if !permission::has_ability(
+        &conn,
+        &initiator.user.id,
+        permission::Scope::Fs,
+        permission::Ability::Read,
+    ).await? {
+        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
+    }
+
+    let mut pagination = rfs_api::Pagination::from(&limit);
+
+    let result = if let Some(last_id) = last_id {
+        let params: sql::ParamsVec = vec![&initiator.user.id, &last_id, &fs::consts::ROOT_TYPE, &limit];
+
+        conn.query_raw(
+            "\
+            select fs.id, \
+                   fs.user_id, \
+                   fs.storage_id, \
+                   fs.basename, \
+                   fs.created, \
+                   fs.updated \
+            from fs \
+            where fs.user_id = $1 and \
+                  fs.id > $2 and \
+                  fs.fs_type = $3 \
+            order by fs.id \
+            limit $4",
+            params
+        ).await?
+    } else {
+        pagination.set_offset(offset);
+
+        let offset_num = limit.sql_offset(offset);
+        let params: sql::ParamsVec = vec![&initiator.user.id, &fs::consts::ROOT_TYPE, &limit, &offset_num];
+
+        conn.query_raw(
+            "\
+            select fs.id, \
+                   fs.user_id, \
+                   fs.storage_id, \
+                   fs.basename, \
+                   fs.created, \
+                   fs.updated \
+            from fs \
+            where fs.user_id = $1 and \
+                  fs.fs_type = $2 \
+            order by fs.id \
+            limit $3 \
+            offset $4",
+            params
+        ).await?
+    };
+
+    futures::pin_mut!(result);
+
+    let mut list = Vec::with_capacity(limit as usize);
+
+    while let Some(row) = result.try_next().await? {
+        let item = ItemMin::Root(RootMin {
+            id: row.get(0),
+            user_id: row.get(1),
+            storage_id: row.get(2),
+            basename: row.get(3),
+            created: row.get(4),
+            updated: row.get(5),
+        });
+
+        list.push(item);
+    }
+
+    Ok(rfs_api::Payload::from((pagination, list)))
+}
 
 async fn stream_to_writer<S, E, W>(
     mut stream: S,
     hasher: &mut blake3::Hasher,
     writer: &mut W,
-) -> error::Result<u64>
+) -> ApiResult<u64>
 where
     S: Stream<Item = Result<Bytes, E>> + Unpin,
     W: tokio::io::AsyncWrite + Unpin,
-    error::Error: From<E>,
+    ApiError: From<E>,
 {
     let mut written: usize = 0;
 
@@ -44,32 +159,23 @@ where
 
         let wrote = writer.write(slice).await?;
 
-        if let Some(checked) = written.checked_add(wrote) {
-            written = checked;
-        } else {
-            return Err(error::Error::api(error::ApiErrorKind::MaxSize));
-        }
+        written = written.checked_add(wrote)
+            .kind(ApiErrorKind::MaxSize)?;
     }
 
     writer.flush().await?;
 
-    let Ok(size) = TryFrom::try_from(written) else {
-        return Err(error::Error::api(error::ApiErrorKind::MaxSize));
-    };
+    let size = TryFrom::try_from(written)
+        .kind(ApiErrorKind::MaxSize)?;
 
     Ok(size)
 }
 
-#[derive(Deserialize)]
-pub struct PathParams {
-    fs_id: ids::FSId,
-}
-
-pub async fn get(
+pub async fn retrieve_id(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
     Path(PathParams { fs_id }): Path<PathParams>,
-) -> error::Result<rfs_api::Payload<rfs_api::fs::Item>> {
+) -> ApiResult<rfs_api::Payload<rfs_api::fs::Item>> {
     let conn = state.pool().get().await?;
 
     if !permission::has_ability(
@@ -78,19 +184,19 @@ pub async fn get(
         permission::Scope::Fs,
         permission::Ability::Read
     ).await? {
-        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
+        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
     }
 
     Ok(rfs_api::Payload::new(fs::fetch_item(&conn, &fs_id, &initiator).await?.into()))
 }
 
 #[debug_handler]
-pub async fn post(
+async fn create_item(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
     Path(PathParams { fs_id }): Path<PathParams>,
     axum::Json(json): axum::Json<rfs_api::fs::CreateDir>,
-) -> error::Result<(StatusCode, rfs_api::Payload<rfs_api::fs::Item>)> {
+) -> ApiResult<(StatusCode, rfs_api::Payload<rfs_api::fs::Item>)> {
     let mut conn = state.pool().get().await?;
 
     if !permission::has_ability(
@@ -99,7 +205,7 @@ pub async fn post(
         permission::Scope::Fs,
         permission::Ability::Write,
     ).await? {
-        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
+        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
     }
 
     let item = fs::fetch_item(&conn, &fs_id, &initiator).await?;
@@ -114,9 +220,9 @@ pub async fn post(
 
     let comment = if let Some(given) = json.comment {
         if !rfs_lib::fs::comment_valid(&given) {
-            return Err(error::Error::api((
-                error::ApiErrorKind::ValidationFailed,
-                error::Detail::with_key("comment")
+            return Err(ApiError::from((
+                ApiErrorKind::ValidationFailed,
+                Detail::with_key("comment")
             )));
         }
 
@@ -126,22 +232,22 @@ pub async fn post(
     };
 
     if !rfs_lib::fs::basename_valid(&basename) {
-        return Err(error::Error::api((
-            error::ApiErrorKind::ValidationFailed,
-            error::Detail::with_key("basename")
+        return Err(ApiError::from((
+            ApiErrorKind::ValidationFailed,
+            Detail::with_key("basename")
         )));
     }
 
     let Ok((parent, path, container_backend)) = item.try_into_parent_parts() else {
-        return Err(error::Error::api(error::ApiErrorKind::InvalidType));
+        return Err(ApiError::from(ApiErrorKind::InvalidType));
     };
 
     if fs::Item::name_check(&transaction, &parent, &basename).await?.is_some() {
-        return Err(error::Error::api(error::ApiErrorKind::AlreadyExists));
+        return Err(ApiError::from(ApiErrorKind::AlreadyExists));
     }
 
-    let backend = match fs::backend::Pair::match_up(&storage.backend, &container_backend)? {
-        fs::backend::Pair::Local((storage_local, container_local)) => {
+    let backend = match backend::Pair::match_up(&storage.backend, &container_backend)? {
+        backend::Pair::Local((storage_local, container_local)) => {
             let mut full = storage_local.path.join(&container_local.path);
             full.push(&basename);
 
@@ -149,7 +255,7 @@ pub async fn post(
 
             tokio::fs::create_dir(&full).await?;
 
-            fs::backend::Node::Local(fs::backend::NodeLocal {
+            backend::Node::Local(fs::backend::NodeLocal {
                 path: full.strip_prefix(&storage_local.path)
                     .unwrap()
                     .to_owned()
@@ -194,9 +300,9 @@ pub async fn post(
 
     let tags = if let Some(tags) = json.tags {
         if !tags::validate_map(&tags) {
-            return Err(error::Error::api((
-                error::ApiErrorKind::ValidationFailed,
-                error::Detail::with_key("tags")
+            return Err(ApiError::from((
+                ApiErrorKind::ValidationFailed,
+                Detail::with_key("tags")
             )));
         }
 
@@ -233,14 +339,14 @@ pub struct PutQuery {
 }
 
 #[debug_handler]
-pub async fn put(
+async fn upload_file(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
     headers: HeaderMap,
     Path(PathParams { fs_id }): Path<PathParams>,
     Query(PutQuery { basename }): Query<PutQuery>,
     stream: Body,
-) -> error::Result<rfs_api::Payload<rfs_api::fs::Item>> {
+) -> ApiResult<rfs_api::Payload<rfs_api::fs::Item>> {
     let mut conn = state.pool().get().await?;
 
     if !permission::has_ability(
@@ -249,9 +355,7 @@ pub async fn put(
         permission::Scope::Fs,
         permission::Ability::Write,
     ).await? {
-        return Err(error::Error::api(
-            error::ApiErrorKind::PermissionDenied
-        ));
+        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
     }
 
     let item = fs::fetch_item(&conn, &fs_id, &initiator).await?;
@@ -260,7 +364,7 @@ pub async fn put(
     let mime = if let Some(value) = headers.get("content-type") {
         mime::Mime::from_str(value.to_str()?)?
     } else {
-        return Err(error::Error::api(error::ApiErrorKind::NoContentType));
+        return Err(ApiError::from(ApiErrorKind::NoContentType));
     };
 
     let transaction = conn.transaction().await?;
@@ -277,36 +381,36 @@ pub async fn put(
             } else if let Some(value) = headers.get("x-basename") {
                 value.to_str()?.to_owned()
             } else {
-                return Err(error::Error::api((
-                    error::ApiErrorKind::MissingData,
-                    error::Detail::with_key("basename")
+                return Err(ApiError::from((
+                    ApiErrorKind::MissingData,
+                    Detail::with_key("basename")
                 )));
             };
 
             if !rfs_lib::fs::basename_valid(&basename) {
-                return Err(error::Error::api((
-                    error::ApiErrorKind::ValidationFailed,
-                    error::Detail::with_key("basename")
+                return Err(ApiError::api((
+                    ApiErrorKind::ValidationFailed,
+                    Detail::with_key("basename")
                 )));
             }
 
             if fs::Item::name_check(&transaction, &parent, &basename).await?.is_some() {
-                return Err(error::Error::api(error::ApiErrorKind::AlreadyExists));
+                return Err(ApiError::from(ApiErrorKind::AlreadyExists));
             }
 
             let size: u64;
             let hash: blake3::Hash;
 
-            let backend = match fs::backend::Pair::match_up(&storage.backend, &container_backend)? {
-                fs::backend::Pair::Local((local, node_local)) => {
+            let backend = match backend::Pair::match_up(&storage.backend, &container_backend)? {
+                backend::Pair::Local((local, node_local)) => {
                     let mut full = local.path.join(&node_local.path);
                     full.push(&basename);
 
                     tracing::debug!("file create path: {}", full.display());
 
                     if full.try_exists()? {
-                        return Err(error::Error::api((
-                            error::ApiErrorKind::AlreadyExists,
+                        return Err(ApiError::from((
+                            ApiErrorKind::AlreadyExists,
                             "an unknown file already exists in this location"
                         )));
                     }
@@ -322,7 +426,7 @@ pub async fn put(
                     size = stream_to_writer(stream.into_data_stream(), &mut hasher, &mut writer).await?;
                     hash = hasher.finalize();
 
-                    fs::backend::Node::Local(fs::backend::NodeLocal {
+                    backend::Node::Local(fs::backend::NodeLocal {
                         path: full.strip_prefix(&local.path)
                             .unwrap()
                             .to_owned()
@@ -337,10 +441,9 @@ pub async fn put(
                 let pg_mime_type = mime.type_().as_str();
                 let pg_mime_subtype = mime.subtype().as_str();
                 let pg_hash = hash.as_bytes().as_slice();
-                let Ok(pg_size): Result<i64, _> = TryFrom::try_from(size) else {
-                    return Err(error::Error::api(error::ApiErrorKind::MaxSize)
-                        .context("total bytes written exceeds i64"));
-                };
+                let pg_size: i64 = TryFrom::try_from(size)
+                    .kind(ApiErrorKind::MaxSize)
+                    .context("total bytes written exceeds i64")?;
 
                 let _ = transaction.execute(
                     "\
@@ -403,21 +506,15 @@ pub async fn put(
             let updated = chrono::Utc::now();
 
             if mime != file.mime {
-                return Err(error::Error::api(error::ApiErrorKind::MimeMismatch));
+                return Err(ApiError::from(ApiErrorKind::MimeMismatch));
             }
 
-            match &storage.backend {
-                fs::backend::Config::Local(storage_backend) => {
-                    let full = {
-                        let Some(file_backend) = file.backend.as_local() else {
-                            return Err(error::Error::new().context("backend miss-match when updating file"));
-                        };
-
-                        storage_backend.path.join(&file_backend.path)
-                    };
+            match backend::Pair::match_up(&storage.backend, &file.backend)? {
+                backend::Pair::Local((local, node_local)) => {
+                    let full = local.path.join(&node_local.path);
 
                     if !full.try_exists()? {
-                        return Err(error::Error::api(error::ApiErrorKind::FileNotFound));
+                        return Err(ApiError::from(ApiErrorKind::FileNotFound));
                     }
 
                     tracing::debug!("file update path: {}", full.display());
@@ -438,12 +535,12 @@ pub async fn put(
                 }
             };
 
+
             {
                 let pg_hash = hash.as_bytes().as_slice();
-                let Ok(pg_size): Result<i64, _> = TryFrom::try_from(size) else {
-                    return Err(error::Error::api(error::ApiErrorKind::MaxSize)
-                        .context("total bytes written exceeds i64"));
-                };
+                let pg_size: i64 = TryFrom::try_from(size)
+                    .kind(ApiErrorKind::MaxSize)
+                    .context("total bytes written exceeds i64")?;
 
                 let _ = transaction.execute(
                     "\
@@ -469,12 +566,12 @@ pub async fn put(
     Ok(rfs_api::Payload::new(rtn.into()))
 }
 
-pub async fn patch(
+async fn update_item(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
     Path(PathParams { fs_id }): Path<PathParams>,
     axum::Json(json): axum::Json<rfs_api::fs::UpdateMetadata>,
-) -> error::Result<rfs_api::Payload<rfs_api::fs::Item>> {
+) -> ApiResult<rfs_api::Payload<rfs_api::fs::Item>> {
     let mut conn = state.pool().get().await?;
 
     if !permission::has_ability(
@@ -483,11 +580,11 @@ pub async fn patch(
         permission::Scope::Fs,
         permission::Ability::Write,
     ).await? {
-        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
+        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
     }
 
     if !json.has_work() {
-        return Err(error::Error::api(error::ApiErrorKind::NoWork));
+        return Err(ApiError::from(ApiErrorKind::NoWork));
     }
 
     let mut item = fs::fetch_item(&conn, &fs_id, &initiator).await?;
@@ -524,7 +621,7 @@ pub async fn patch(
 
     if let Some(tags) = json.tags {
         if !tags::validate_map(&tags) {
-            return Err(error::Error::api(error::ApiErrorKind::InvalidTags));
+            return Err(ApiError::from(ApiErrorKind::InvalidTags));
         }
 
         tags::update_tags(
@@ -543,11 +640,11 @@ pub async fn patch(
     Ok(rfs_api::Payload::new(item.into()))
 }
 
-pub async fn delete(
+async fn delete_item(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
     Path(PathParams { fs_id }): Path<PathParams>,
-) -> error::Result<StatusCode> {
+) -> ApiResult<StatusCode> {
     let mut conn = state.pool().get().await?;
 
     if !permission::has_ability(
@@ -556,7 +653,7 @@ pub async fn delete(
         permission::Scope::Fs,
         permission::Ability::Write,
     ).await? {
-        return Err(error::Error::api(error::ApiErrorKind::PermissionDenied));
+        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
     }
 
     let item = fs::fetch_item(&conn, &fs_id, &initiator).await?;
@@ -564,7 +661,7 @@ pub async fn delete(
 
     match item {
         fs::Item::Root(_root) => {
-            return Err(error::Error::api(error::ApiErrorKind::NotPermitted));
+            return Err(ApiError::from(ApiErrorKind::NotPermitted));
         },
         fs::Item::Directory(dir) => {
             delete_dir(&mut conn, storage, dir).await?;
@@ -581,7 +678,7 @@ async fn delete_file(
     conn: &mut impl GenericClient,
     storage: fs::Storage,
     file: fs::File,
-) -> error::Result<()> {
+) -> ApiResult<()> {
     let transaction = conn.transaction().await?;
 
     transaction.execute(
@@ -589,8 +686,8 @@ async fn delete_file(
         &[&file.id]
     ).await?;
 
-    match fs::backend::Pair::match_up(&storage.backend, &file.backend)? {
-        fs::backend::Pair::Local((local, node_local)) => {
+    match backend::Pair::match_up(&storage.backend, &file.backend)? {
+        backend::Pair::Local((local, node_local)) => {
             let full_path = local.path.join(&node_local.path);
 
             tokio::fs::remove_file(&full_path).await?;
@@ -606,7 +703,7 @@ async fn delete_dir(
     conn: &mut impl GenericClient,
     storage: fs::Storage,
     directory: fs::Directory,
-) -> error::Result<()> {
+) -> ApiResult<()> {
     let transaction = conn.transaction().await?;
 
     let results = transaction.query_raw(
@@ -662,7 +759,7 @@ async fn delete_dir(
             continue;
         }
 
-        let Ok(pair) = fs::backend::Pair::match_up(&storage.backend, &backend) else {
+        let Ok(pair) = backend::Pair::match_up(&storage.backend, &backend) else {
             tracing::error!("failed to delete item. backend miss-match. id: {}", id.id());
 
             failed.push(id);
@@ -672,7 +769,7 @@ async fn delete_dir(
         };
 
         match pair {
-            fs::backend::Pair::Local((local, node_local)) => {
+            backend::Pair::Local((local, node_local)) => {
                 let full_path = local.path.join(&node_local.path);
 
                 tracing::debug!("deleting id: {}\ndepth: {level}\npath: {}", id.id(), full_path.display());
@@ -733,4 +830,184 @@ async fn delete_dir(
     transaction.commit().await?;
 
     Ok(())
+}
+
+async fn retrieve_id_contents(
+    State(state): State<ArcShared>,
+    initiator: initiator::Initiator,
+    Path(PathParams { fs_id }): Path<PathParams>,
+    Query(PaginationQuery { limit, offset, last_id }): Query<PaginationQuery<ids::FSId>>,
+) -> ApiResult<rfs_api::Payload<Vec<ItemMin>>> {
+    let conn = state.pool().get().await?;
+
+    if !permission::has_ability(
+        &conn,
+        &initiator.user.id,
+        permission::Scope::Fs,
+        permission::Ability::Read,
+    ).await? {
+        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
+    }
+
+    let item = fs::Item::retrieve(&conn, &fs_id)
+        .await?
+        .kind(ApiErrorKind::FileNotFound)?;
+
+    if *item.user_id() != initiator.user.id {
+        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
+    }
+
+    let container = item.as_container()
+        .kind(ApiErrorKind::NotDirectory)?;
+
+    let mut pagination = rfs_api::Pagination::from(&limit);
+
+    let result = if let Some(last_id) = last_id {
+        let params: sql::ParamsVec = vec![container.id(), &last_id, &limit];
+
+        conn.query_raw(
+            "\
+            select fs.id, \
+                   fs.user_id, \
+                   fs.storage_id, \
+                   fs.parent, \
+                   fs.basename, \
+                   fs.fs_type, \
+                   fs.fs_path, \
+                   fs.fs_size, \
+                   fs.mime_type, \
+                   fs.mime_subtype, \
+                   fs.created, \
+                   fs.updated \
+            from fs \
+            where fs.parent = $1 and fs.id > $2 \
+            order by fs.id \
+            limit $3",
+            params
+        ).await?
+    } else {
+        pagination.set_offset(offset);
+
+        let offset_num = limit.sql_offset(offset);
+        let params: sql::ParamsVec = vec![container.id(), &limit, &offset_num];
+
+        conn.query_raw(
+            "\
+            select fs.id, \
+                   fs.user_id, \
+                   fs.storage_id, \
+                   fs.parent, \
+                   fs.basename, \
+                   fs.fs_type, \
+                   fs.fs_path, \
+                   fs.fs_size, \
+                   fs.mime_type, \
+                   fs.mime_subtype, \
+                   fs.created, \
+                   fs.updated \
+            from fs \
+            where fs.parent = $1 \
+            order by fs.id \
+            limit $2 \
+            offset $3",
+            params
+        ).await?
+    };
+
+    futures::pin_mut!(result);
+
+    let mut list = Vec::with_capacity(limit as usize);
+
+    while let Some(row) = result.try_next().await? {
+        let fs_type = row.get(5);
+
+        let item = match fs_type {
+            fs::consts::ROOT_TYPE => {
+                ItemMin::Root(RootMin {
+                    id: row.get(0),
+                    user_id: row.get(1),
+                    storage_id: row.get(2),
+                    basename: row.get(4),
+                    created: row.get(10),
+                    updated: row.get(11),
+                })
+            }
+            fs::consts::FILE_TYPE => {
+                ItemMin::File(FileMin {
+                    id: row.get(0),
+                    user_id: row.get(1),
+                    storage_id: row.get(2),
+                    parent: row.get(3),
+                    basename: row.get(4),
+                    path: row.get(6),
+                    size: sql::u64_from_sql(row.get(7)),
+                    mime: sql::mime_from_sql(row.get(8), row.get(9)),
+                    created: row.get(10),
+                    updated: row.get(11),
+                })
+            }
+            fs::consts::DIR_TYPE => {
+                ItemMin::Directory(DirectoryMin {
+                    id: row.get(0),
+                    user_id: row.get(1),
+                    storage_id: row.get(2),
+                    parent: row.get(3),
+                    basename: row.get(4),
+                    path: row.get(6),
+                    created: row.get(10),
+                    updated: row.get(11),
+                })
+            }
+            _ => {
+                panic!("unexpected fs_type when retrieving fs item. type: {fs_type}");
+            }
+        };
+
+        list.push(item);
+    }
+
+    Ok(rfs_api::Payload::from((pagination, list)))
+}
+
+async fn download_id(
+    State(state): State<ArcShared>,
+    initiator: initiator::Initiator,
+    Path(PathParams { fs_id }): Path<PathParams>,
+) -> ApiResult<Response<Body>> {
+    let conn = state.pool().get().await?;
+
+    if !permission::has_ability(
+        &conn,
+        &initiator.user.id,
+        permission::Scope::Fs,
+        permission::Ability::Read
+    ).await? {
+        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
+    }
+
+    let item = fs::fetch_item(&conn, &fs_id, &initiator).await?;
+    let storage = fs::fetch_storage(&conn, item.storage_id()).await?;
+
+    let Ok(file): Result<fs::File, _> = item.try_into() else {
+        return Err(ApiError::from(ApiErrorKind::NotFile));
+    };
+
+    let builder = Response::builder()
+        .status(StatusCode::OK)
+        .header("content-disposition", format!("attachment; filename=\"{}\"", file.basename))
+        .header("content-type", file.mime.to_string())
+        .header("content-length", file.size)
+        .header("x-checksum", format!("blake3:{}", file.hash.to_hex()));
+
+    match backend::Pair::match_up(&storage.backend, &file.backend)? {
+        backend::Pair::Local((local, node_local)) => {
+            let full = local.path.join(&node_local.path);
+            let stream = ReaderStream::new(OpenOptions::new()
+                .read(true)
+                .open(full)
+                .await?);
+
+            Ok(builder.body(Body::from_stream(stream))?)
+        }
+    }
 }

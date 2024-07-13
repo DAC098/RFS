@@ -9,6 +9,7 @@ use crate::error::api::ApiErrorKind;
 mod auth;
 mod sec;
 mod user;
+mod fs;
 
 async fn not_found() -> ApiError {
     ApiError::from(ApiErrorKind::NotFound)
@@ -32,6 +33,7 @@ pub fn routes() -> Router<ArcShared> {
         .nest("/auth", auth::routes())
         .nest("/sec", sec::routes())
         .nest("/user", user::routes())
+        .nest("/fs", fs::routes())
         .fallback(not_found)
         .layer(ServiceBuilder::new()
             .layer(HandleErrorLayer::new(handle_error)))

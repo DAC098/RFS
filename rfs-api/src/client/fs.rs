@@ -31,7 +31,7 @@ impl RetrieveItem {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<Option<Payload<Item>>, RequestError> {
-        let res = client.get(format!("/fs/{}", self.id.id())).send()?;
+        let res = client.get(format!("/api/fs/{}", self.id.id())).send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(Some(res.json()?)),
@@ -89,7 +89,7 @@ impl RetrieveRoots {
     }
 
     pub fn send(&self, client: &ApiClient) -> Result<Payload<Vec<ItemMin>>, RequestError> {
-        let mut builder = client.get("/fs/roots");
+        let mut builder = client.get("/api/fs");
 
         if let Some(limit) = &self.limit {
             builder = builder.query(&[("limit", limit)]);
@@ -181,7 +181,7 @@ impl RetrieveContents {
     }
 
     pub fn send(&self, client: &ApiClient) -> Result<Payload<Vec<ItemMin>>, RequestError> {
-        let mut builder = client.get(format!("/fs/{}/contents", self.id.id()));
+        let mut builder = client.get(format!("/api/fs/{}/contents", self.id.id()));
 
         if let Some(limit) = &self.limit {
             builder = builder.query(&[("limit", limit)]);
@@ -241,7 +241,7 @@ impl DownloadItem {
     }
 
     pub fn send(&self, client: &ApiClient) -> Result<Response, RequestError> {
-        let res = client.get(format!("/fs/{}/dl", self.id.id()))
+        let res = client.get(format!("/api/fs/{}/download", self.id.id()))
             .send()?;
 
         match res.status() {
@@ -319,7 +319,7 @@ impl CreateDir {
     pub fn send(self, client: &ApiClient) -> Result<Payload<Item>, RequestError> {
         //self.body.assert_ok()?;
 
-        let res = client.post(format!("/fs/{}", self.parent.id()))
+        let res = client.post(format!("/api/fs/{}", self.parent.id()))
             .json(&self.body)
             .send()?;
 
@@ -379,7 +379,7 @@ where
 {
     pub fn send(self, client: &ApiClient) -> Result<Payload<Item>, RequestError> {
         let content_type = self.content_type.unwrap_or(mime::APPLICATION_OCTET_STREAM);
-        let mut builder = client.put(format!("/fs/{}", self.id.id()))
+        let mut builder = client.put(format!("/api/fs/{}", self.id.id()))
             .header("content-type", content_type.to_string());
 
         if let Some(length) = self.content_length {
@@ -461,7 +461,7 @@ impl UpdateMetadata {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<Payload<Item>, RequestError> {
-        let res = client.patch(format!("/fs/{}", self.id.id()))
+        let res = client.patch(format!("/api/fs/{}", self.id.id()))
             .json(&self.body)
             .send()?;
 
@@ -482,7 +482,7 @@ impl DeleteItem {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
-        let res = client.delete(format!("/fs/{}", self.id.id())).send()?;
+        let res = client.delete(format!("/api/fs/{}", self.id.id())).send()?;
 
         match res.status() {
             reqwest::StatusCode::NO_CONTENT => Ok(()),

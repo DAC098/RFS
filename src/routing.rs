@@ -15,11 +15,9 @@ use crate::net;
 use crate::state::ArcShared;
 
 mod query;
+mod layer;
 
 mod api;
-
-mod layer;
-mod handle;
 
 async fn okay() -> (StatusCode, &'static str) {
     (StatusCode::OK, "OK")
@@ -81,41 +79,6 @@ async fn serve_file(
 pub fn routes(state: &ArcShared) -> Router {
     Router::new()
         .nest("/api", api::routes())
-        .route(
-            "/",
-            get(handle::get)
-        )
-        .route(
-            "/fs/storage",
-            get(handle::fs::storage::get)
-                .post(handle::fs::storage::post)
-        )
-        .route(
-            "/fs/storage/:storage_id",
-            get(handle::fs::storage::storage_id::get)
-                .put(handle::fs::storage::storage_id::put)
-                .delete(handle::fs::storage::storage_id::delete)
-        )
-        .route(
-            "/fs/roots",
-            get(handle::fs::roots::get)
-        )
-        .route(
-            "/fs/:fs_id",
-            get(handle::fs::fs_id::get)
-                .post(handle::fs::fs_id::post)
-                .put(handle::fs::fs_id::put)
-                .patch(handle::fs::fs_id::patch)
-                .delete(handle::fs::fs_id::delete)
-        )
-        .route(
-            "/fs/:fs_id/contents",
-            get(handle::fs::fs_id::contents::get)
-        )
-        .route(
-            "/fs/:fs_id/dl",
-            get(handle::fs::fs_id::dl::get)
-        )
         .route("/ping", get(ping))
         .fallback(serve_file)
         .layer(ServiceBuilder::new()
