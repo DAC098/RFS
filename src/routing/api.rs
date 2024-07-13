@@ -6,7 +6,6 @@ use crate::state::ArcShared;
 use crate::error::ApiError;
 use crate::error::api::ApiErrorKind;
 
-mod auth;
 mod sec;
 mod user;
 mod fs;
@@ -30,7 +29,6 @@ where
 
 pub fn routes() -> Router<ArcShared> {
     Router::new()
-        .nest("/auth", auth::routes())
         .nest("/sec", sec::routes())
         .nest("/user", user::routes())
         .nest("/fs", fs::routes())

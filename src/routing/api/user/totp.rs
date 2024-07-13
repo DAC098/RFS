@@ -27,7 +27,7 @@ pub async fn retrieve(
         .await?
         .kind(ApiErrorKind::TotpNotFound)?;
 
-    Ok(rfs_api::Payload::new(rfs_api::auth::totp::Totp {
+    Ok(rfs_api::Payload::new(rfs_api::users::totp::Totp {
         algo: totp.algo.get().to_string(),
         secret: totp.secret.into(),
         digits: totp.digits.into(),
@@ -38,7 +38,7 @@ pub async fn retrieve(
 pub async fn create(
     State(state): State<ArcShared>,
     initiator: Initiator,
-    axum::Json(json): axum::Json<rfs_api::auth::totp::CreateTotp>,
+    axum::Json(json): axum::Json<rfs_api::users::totp::CreateTotp>,
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
@@ -77,7 +77,7 @@ pub async fn create(
 
     Ok((
         StatusCode::CREATED,
-        rfs_api::Payload::new(rfs_api::auth::totp::Totp {
+        rfs_api::Payload::new(rfs_api::users::totp::Totp {
             algo: algo.to_string(),
             secret,
             digits,
@@ -89,7 +89,7 @@ pub async fn create(
 pub async fn update(
     State(state): State<ArcShared>,
     initiator: Initiator,
-    axum::Json(json): axum::Json<rfs_api::auth::totp::UpdateTotp>,
+    axum::Json(json): axum::Json<rfs_api::users::totp::UpdateTotp>,
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
     let mut regen = false;
@@ -125,7 +125,7 @@ pub async fn update(
 
     transaction.commit().await?;
 
-    Ok(rfs_api::Payload::new(rfs_api::auth::totp::Totp {
+    Ok(rfs_api::Payload::new(rfs_api::users::totp::Totp {
         algo: totp.algo.get().to_string(),
         secret: totp.secret.into(),
         digits: totp.digits.into(),
@@ -179,7 +179,7 @@ pub async fn retrieve_recovery(
     let mut rtn = Vec::new();
 
     while let Some(row) = result.try_next().await? {
-        rtn.push(rfs_api::auth::totp::TotpRecovery {
+        rtn.push(rfs_api::users::totp::TotpRecovery {
             user_id: row.get(0),
             key: row.get(1),
             hash: row.get(2),
@@ -193,7 +193,7 @@ pub async fn retrieve_recovery(
 pub async fn create_recovery(
     State(state): State<ArcShared>,
     initiator: Initiator,
-    axum::Json(json): axum::Json<rfs_api::auth::totp::CreateTotpHash>,
+    axum::Json(json): axum::Json<rfs_api::users::totp::CreateTotpHash>,
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
@@ -218,7 +218,7 @@ pub async fn create_recovery(
 
     Ok((
         StatusCode::CREATED,
-        rfs_api::Payload::new(rfs_api::auth::totp::TotpRecovery {
+        rfs_api::Payload::new(rfs_api::users::totp::TotpRecovery {
             user_id: initiator.user.id.clone(),
             key: json.key,
             hash,
@@ -238,7 +238,7 @@ pub async fn retrieve_recovery_key(
         .await?
         .kind(ApiErrorKind::TotpRecoveryNotFound)?;
 
-    Ok(rfs_api::Payload::new(rfs_api::auth::totp::TotpRecovery {
+    Ok(rfs_api::Payload::new(rfs_api::users::totp::TotpRecovery {
         user_id: hash.user_id,
         key: hash.key.into(),
         hash: hash.hash.into(),
@@ -250,7 +250,7 @@ pub async fn update_recovery_key(
     State(state): State<ArcShared>,
     initiator: Initiator,
     Path(RecoveryKeyPath { key_id }): Path<RecoveryKeyPath>,
-    axum::Json(json): axum::Json<rfs_api::auth::totp::UpdateTotpHash>,
+    axum::Json(json): axum::Json<rfs_api::users::totp::UpdateTotpHash>,
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
@@ -278,7 +278,7 @@ pub async fn update_recovery_key(
 
     transaction.commit().await?;
 
-    Ok(rfs_api::Payload::new(rfs_api::auth::totp::TotpRecovery {
+    Ok(rfs_api::Payload::new(rfs_api::users::totp::TotpRecovery {
         user_id: hash.user_id,
         key: hash.key.into(),
         hash: hash.hash.into(),

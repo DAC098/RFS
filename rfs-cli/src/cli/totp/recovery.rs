@@ -1,6 +1,6 @@
-use rfs_api::auth::totp::TotpRecovery;
+use rfs_api::users::totp::TotpRecovery;
 use rfs_api::client::ApiClient;
-use rfs_api::client::auth::totp::{
+use rfs_api::client::users::totp::{
     RetrieveTotpRecovery,
     CreateTotpRecovery,
     UpdateTotpRecovery,
@@ -15,14 +15,11 @@ use crate::formatting::{TextTable, Column, PRETTY_OPTIONS};
 #[derive(Debug, Args)]
 pub struct RecoveryArgs {
     #[command(subcommand)]
-    command: RecoveryCmds
+    command: Option<RecoveryCmds>,
 }
 
 #[derive(Debug, Subcommand)]
 enum RecoveryCmds {
-    /// retrieves all recovery codes
-    Get,
-
     /// creates a new recovery code
     Create(CreateArgs),
 
@@ -34,15 +31,18 @@ enum RecoveryCmds {
 }
 
 pub fn handle(client: &ApiClient, args: RecoveryArgs) -> error::Result {
-    match args.command {
-        RecoveryCmds::Get => get(client),
-        RecoveryCmds::Create(given) => create(client, given),
-        RecoveryCmds::Update(given) => update(client, given),
-        RecoveryCmds::Delete(given) => delete(client, given),
+    if let Some(cmd) = args.command {
+        match cmd {
+            RecoveryCmds::Create(given) => create(client, given),
+            RecoveryCmds::Update(given) => update(client, given),
+            RecoveryCmds::Delete(given) => delete(client, given),
+        }
+    } else {
+        get(client)
     }
 }
 
-fn print_recovery(recovery: &rfs_api::auth::totp::TotpRecovery) {
+fn print_recovery(recovery: &TotpRecovery) {
     print!("{} ", recovery.key);
 
     if recovery.used {

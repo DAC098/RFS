@@ -18,6 +18,8 @@ use crate::users::{
 };
 
 pub mod groups;
+pub mod password;
+pub mod totp;
 
 pub struct QueryUsers {
     limit: Option<Limit>,

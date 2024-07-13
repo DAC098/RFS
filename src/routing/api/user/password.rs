@@ -1,11 +1,12 @@
-use rfs_api::auth::password::CreatePassword;
+use rfs_api::users::password::CreatePassword;
 
 use axum::http::StatusCode;
 use axum::extract::State;
 use axum::response::IntoResponse;
 use futures::TryStreamExt;
 
-use crate::net::error::{self, Context};
+use crate::error::{ApiResult, ApiError};
+use crate::error::api::{Context, Detail, ApiErrorKind};
 use crate::state::ArcShared;
 use crate::sec::authn::initiator::{Initiator, Mechanism};
 use crate::sec::authn::password::Password;
@@ -15,7 +16,7 @@ pub async fn update(
     State(state): State<ArcShared>,
     initiator: Initiator,
     axum::Json(json): axum::Json<CreatePassword>,
-) -> error::Result<impl IntoResponse> {
+) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
     json.validate()?;
@@ -26,21 +27,14 @@ pub async fn update(
         .await?
         .context("missing password for user")?;
 
-    let Some(given) = json.current else {
-        return Err(error::Error::api((
-            error::ApiErrorKind::MissingData,
-            error::Detail::Keys(vec![String::from("current")])
-        )));
-    };
-
-    if !password.verify(&given, state.sec().peppers())? {
-        return Err(error::Error::api((
-            error::ApiErrorKind::InvalidData,
-            error::Detail::Keys(vec![String::from("password")])
+    if !password.verify(&json.current, state.sec().peppers())? {
+        return Err(ApiError::from((
+            ApiErrorKind::InvalidData,
+            Detail::Keys(vec![String::from("password")])
         )));
     }
 
-    password.update(&transaction, given, state.sec().peppers()).await?;
+    password.update(&transaction, json.updated, state.sec().peppers()).await?;
 
     match initiator.mechanism {
         Mechanism::Session(session) => {

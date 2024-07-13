@@ -7,20 +7,27 @@ use axum::Router;
 use axum::http::StatusCode;
 use axum::extract::{State, Query, Path};
 use axum::response::IntoResponse;
-use axum::routing::get;
+use axum::routing::{get, post};
 use futures::TryStreamExt;
 use serde::Deserialize;
 
 use crate::error::{ApiResult, ApiError};
 use crate::error::api::{ApiErrorKind, Detail, Context};
 use crate::state::ArcShared;
-use crate::sec::authn::{initiator, password, session};
+use crate::sec::authn::{self, initiator, session};
 use crate::sec::authz::permission;
 use crate::sql;
 use crate::user;
 use crate::routing::query::PaginationQuery;
 
 mod group;
+mod password;
+mod totp;
+
+#[derive(Deserialize)]
+struct PathParams {
+    user_id: ids::UserId
+}
 
 pub fn routes() -> Router<ArcShared> {
     Router::new()
@@ -34,6 +41,16 @@ pub fn routes() -> Router<ArcShared> {
         .route("/group/:group_id/users", get(group::retrieve_users)
             .post(group::add_users)
             .delete(group::delete_users))
+        .route("/password", post(password::update))
+        .route("/totp", get(totp::retrieve)
+            .post(totp::create)
+            .patch(totp::update)
+            .delete(totp::delete))
+        .route("/totp/recovery", get(totp::retrieve_recovery)
+            .post(totp::create_recovery))
+        .route("/totp/recovery/:key_id", get(totp::retrieve_recovery_key)
+            .patch(totp::update_recovery_key)
+            .delete(totp::delete_recovery_key))
         .route("/:user_id", get(retrieve_id)
             .patch(update_id)
             .delete(delete_id))
@@ -167,7 +184,7 @@ async fn create(
         &[&id, &username, &email]
     ).await?;
 
-    let _ = password::Password::create(&transaction, &id, json.password, state.sec().peppers()).await?;
+    let _ = authn::password::Password::create(&transaction, &id, json.password, state.sec().peppers()).await?;
 
     transaction.commit().await?;
 
@@ -184,11 +201,6 @@ async fn create(
             email
         })
     ))
-}
-
-#[derive(Deserialize)]
-struct PathParams {
-    user_id: ids::UserId
 }
 
 async fn retrieve_id(

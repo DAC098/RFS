@@ -1,38 +1,29 @@
 use crate::client::error::RequestError;
 use crate::client::ApiClient;
-use crate::auth::password::CreatePassword;
+use crate::users::password::CreatePassword;
 
 pub struct UpdatePassword {
     body: CreatePassword
 }
 
 impl UpdatePassword {
-    pub fn update_password<P>(updated: P, confirm: P) -> Self
+    pub fn update_password<P>(current: P, updated: P, confirm: P) -> Self
     where
         P: Into<String>
     {
         UpdatePassword {
             body: CreatePassword {
-                current: None,
+                current: current.into(),
                 updated: updated.into(),
                 confirm: confirm.into(),
             }
         }
     }
 
-    pub fn current<P>(&mut self, current: P) -> &mut Self
-    where
-        P: Into<String>
-    {
-        self.body.current = Some(current.into());
-
-        self
-    }
-
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
         self.body.validate()?;
 
-        let url = client.info.url.join("/api/auth/password").unwrap();
+        let url = client.info.url.join("/api/user/password").unwrap();
         let res = client.client.post(url)
             .json(&self.body)
             .send()?;

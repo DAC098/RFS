@@ -7,6 +7,8 @@ use snowcloud_flake::serde_ext::string_id;
 use crate::{Validator, ApiError, ApiErrorKind, Detail};
 
 pub mod groups;
+pub mod password;
+pub mod totp;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ListItem {

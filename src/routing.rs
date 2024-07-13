@@ -18,6 +18,7 @@ mod query;
 mod layer;
 
 mod api;
+mod auth;
 
 async fn okay() -> (StatusCode, &'static str) {
     (StatusCode::OK, "OK")
@@ -78,6 +79,7 @@ async fn serve_file(
 
 pub fn routes(state: &ArcShared) -> Router {
     Router::new()
+        .nest("/auth", auth::routes())
         .nest("/api", api::routes())
         .route("/ping", get(ping))
         .fallback(serve_file)

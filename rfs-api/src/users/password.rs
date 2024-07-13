@@ -4,7 +4,7 @@ use crate::{ApiError, ApiErrorKind, Detail};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreatePassword {
-    pub current: Option<String>,
+    pub current: String,
     pub updated: String,
     pub confirm: String,
 }
@@ -13,10 +13,8 @@ impl CreatePassword {
     pub fn validate(&self) -> Result<(), ApiError> {
         let mut invalid = Vec::new();
 
-        if let Some(current) = &self.current {
-            if !rfs_lib::sec::authn::password_valid(current) {
-                invalid.push("current");
-            }
+        if !rfs_lib::sec::authn::password_valid(&self.current) {
+            invalid.push("current");
         }
 
         if !rfs_lib::sec::authn::password_valid(&self.updated) {

@@ -1,11 +1,11 @@
 use rfs_api::client::ApiClient;
-use rfs_api::client::auth::totp::{
+use rfs_api::client::users::totp::{
     RetrieveTotp,
     CreateTotp,
     DeleteTotp,
     UpdateTotp,
 };
-use rfs_api::auth::totp::Algo;
+use rfs_api::users::totp::Algo;
 
 use clap::{Subcommand, Args, ValueEnum};
 
@@ -33,14 +33,11 @@ impl From<ValidAlgo> for Algo {
 #[derive(Debug, Args)]
 pub struct TotpArgs {
     #[command(subcommand)]
-    command: TotpCmds
+    command: Option<TotpCmds>
 }
 
 #[derive(Debug, Subcommand)]
 enum TotpCmds {
-    /// retrieves any current available totp data
-    Get,
-
     /// enables totp 2FA
     Enable(EnableArgs),
 
@@ -55,12 +52,15 @@ enum TotpCmds {
 }
 
 pub fn handle(client: &ApiClient, args: TotpArgs) -> error::Result {
-    match args.command {
-        TotpCmds::Get => get(client),
-        TotpCmds::Enable(given) => enable(client, given),
-        TotpCmds::Disable => disable(client),
-        TotpCmds::Update(given) => update(client, given),
-        TotpCmds::Recovery(given) => recovery::handle(client, given),
+    if let Some(cmd) = args.command {
+        match cmd {
+            TotpCmds::Enable(given) => enable(client, given),
+            TotpCmds::Disable => disable(client),
+            TotpCmds::Update(given) => update(client, given),
+            TotpCmds::Recovery(given) => recovery::handle(client, given),
+        }
+    } else {
+        get(client)
     }
 }
 

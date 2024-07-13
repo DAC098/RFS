@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use rfs_api::client::ApiClient;
 use rfs_api::client::auth::session::DropSession;
+use rfs_api::client::users::password::UpdatePassword;
 use clap::{Parser, Subcommand, Args};
 
 use crate::error::{self, Context};
@@ -9,9 +10,8 @@ use crate::input;
 
 mod fs;
 mod user;
-mod auth;
 mod sec;
-
+mod totp;
 mod connect;
 
 /// a cli for interacting with a RFS.
@@ -134,11 +134,14 @@ enum BaseCmds {
     #[command(alias = "logout")]
     Disconnect,
 
+    /// updates the current password to a new one
+    Password,
+
+    /// interacts with data specific to totp 2FA
+    Totp(totp::TotpArgs),
+
     /// create a hash from a specified file
     Hash(HashArgs),
-
-    /// pings the server for activity
-    Ping,
 
     /// interacts with fs items on a server
     Fs(fs::FsArgs),
@@ -146,21 +149,21 @@ enum BaseCmds {
     /// interacts with users on a server
     Users(user::UsersArgs),
 
-    /// interacts with auth data for the current user
-    Auth(auth::AuthArgs),
-
     /// helps to manage security related features on a server
     Sec(sec::SecArgs),
 
+    /// pings the server for activity
+    Ping,
 }
 
 fn handle(client: &mut ApiClient, command: BaseCmds) -> error::Result {
     match command {
         BaseCmds::Connect => connect(client),
         BaseCmds::Disconnect => disconnect(client),
+        BaseCmds::Password => password(client),
+        BaseCmds::Totp(given) => totp::handle(client, given),
         BaseCmds::Fs(given) => fs::handle(client, given),
         BaseCmds::Users(given) => user::handle(client, given),
-        BaseCmds::Auth(given) => auth::handle(client, given),
         BaseCmds::Sec(given) => sec::handle(client, given),
         BaseCmds::Hash(given) => hash(given),
         BaseCmds::Ping => ping(client),
@@ -183,6 +186,32 @@ fn disconnect(client: &mut ApiClient) -> error::Result {
     DropSession::new().send(client)?;
 
     client.save_session().context("failed saving session data")?;
+
+    Ok(())
+}
+
+fn password(client: &mut ApiClient) -> error::Result {
+    let current_prompt = "current: ";
+    let updated_prompt = "updated: ";
+    let confirm_prompt = "confirm: ";
+
+    let current = rpassword::prompt_password(&current_prompt)?;
+    let updated = rpassword::prompt_password(&updated_prompt)?;
+    let mut confirm;
+
+    loop {
+        confirm = rpassword::prompt_password(&confirm_prompt)?;
+
+        if confirm != updated {
+            println!("updated and confirm do not match");
+        } else {
+            break;
+        }
+    }
+
+    UpdatePassword::update_password(current, updated, confirm)
+        .send(client)
+        .context("failed to update password")?;
 
     Ok(())
 }

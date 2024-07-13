@@ -28,7 +28,7 @@ impl RequestAuth {
     pub fn send(self, client: &ApiClient) -> Result<Option<Payload<RequestedAuth>>, RequestError> {
         self.body.validate()?;
 
-        let res = client.post("/api/auth/session/request")
+        let res = client.post("/auth/session/request")
             .json(&self.body)
             .send()?;
 
@@ -55,7 +55,7 @@ impl SubmitAuth {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<Option<Payload<RequestedVerify>>, RequestError> {
-        let res = client.post("/api/auth/session/submit")
+        let res = client.post("/auth/session/submit")
             .json(&self.body)
             .send()?;
 
@@ -93,7 +93,7 @@ impl SubmitVerify {
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
         self.body.validate()?;
 
-        let res = client.post("/api/auth/session/verify")
+        let res = client.post("/auth/session/verify")
             .json(&self.body)
             .send()?;
 
@@ -112,7 +112,7 @@ impl DropSession {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
-        let res = client.delete("/api/auth/session/drop").send()?;
+        let res = client.delete("/auth/session/drop").send()?;
 
         if res.status() != reqwest::StatusCode::NO_CONTENT {
             Err(RequestError::Api(res.json()?))
