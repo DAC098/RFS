@@ -1,10 +1,14 @@
 use std::sync::Arc;
 
-use tracing_subscriber::{FmtSubscriber, EnvFilter};
+use clap::Parser;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
+use tokio::runtime::Builder;
+use tracing_subscriber::{FmtSubscriber, EnvFilter};
 
 mod error;
+mod path;
+mod config;
 mod time;
 mod sql;
 mod net;
@@ -14,18 +18,25 @@ mod user;
 mod sec;
 mod state;
 mod tags;
-//mod storage;
 mod routing;
-mod config;
 mod jobs;
 
 fn main() {
-    use tokio::runtime::Builder;
+    let args = config::CliArgs::parse();
 
     FmtSubscriber::builder()
         .with_env_filter(EnvFilter::from_default_env())
         .try_init()
         .expect("failed to initialize global tracing subscriber");
+
+    let config = match config::Config::from_args(args) {
+        Ok(config) => config,
+        Err(err) => {
+            tracing::error!("{err}");
+
+            return;
+        }
+    };
 
     let rt = match Builder::new_multi_thread()
         .enable_io()
@@ -43,13 +54,12 @@ fn main() {
         "started tokio runtime"
     );
 
-    if let Err(err) = rt.block_on(init()) {
+    if let Err(err) = rt.block_on(init(config)) {
         tracing::error!("{err}");
     }
 }
 
-async fn init() -> error::Result<()> {
-    let config = config::get_config()?;
+async fn init(config: config::Config) -> error::Result<()> {
     let state = Arc::new(state::Shared::from_config(&config)?);
     let mut all_futs = FuturesUnordered::new();
 
