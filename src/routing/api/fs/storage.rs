@@ -145,7 +145,7 @@ pub async fn create(
             "\
             insert into storage (id, user_id, name, backend, created) values \
             ($1, $2, $3, $4, $5)",
-            &[&id, initiator.user().id(), &json.name, &pg_backend, &created]
+            &[&id, &initiator.user.id, &json.name, &pg_backend, &created]
         ).await?;
 
         if !tags::validate_map(&json.tags) {
@@ -158,7 +158,7 @@ pub async fn create(
     let storage = fs::Storage {
         id,
         name: json.name,
-        user_id: initiator.user().id().clone(),
+        user_id: initiator.user.id.clone(),
         backend,
         tags: json.tags,
         created,

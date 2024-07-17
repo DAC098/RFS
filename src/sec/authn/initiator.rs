@@ -2,13 +2,13 @@ use std::ops::Deref;
 use std::pin::Pin;
 use std::future::Future;
 
-
 use axum::http::header::{HeaderMap, HeaderValue, GetAll};
 use axum::http::request::Parts;
 use axum::extract::FromRequestParts;
 use deadpool_postgres::{Pool, GenericClient};
 
-use crate::net::error;
+use crate::error::ApiError;
+use crate::error::api::ApiErrorKind;
 use crate::sec::state;
 use crate::user;
 
@@ -22,14 +22,7 @@ pub enum Mechanism {
 
 pub struct Initiator {
     pub user: user::User,
-    pub bot: Option<()>,
     pub mechanism: Mechanism
-}
-
-impl Initiator {
-    pub fn user(&self) -> &user::User {
-        &self.user
-    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -62,17 +55,17 @@ pub enum LookupError {
     HeaderToStr(#[from] axum::http::header::ToStrError),
 }
 
-impl From<LookupError> for error::Error {
+impl From<LookupError> for ApiError {
     fn from(e: LookupError) -> Self {
         match e {
-            LookupError::SessionNotFound => error::Error::api(error::ApiErrorKind::SessionNotFound),
-            LookupError::SessionExpired(_session) => error::Error::api(error::ApiErrorKind::SessionExpired),
-            LookupError::SessionUnauthenticated(_session) => error::Error::api(error::ApiErrorKind::SessionUnauthenticated),
-            LookupError::SessionUnverified(_session) => error::Error::api(error::ApiErrorKind::SessionUnverified),
+            LookupError::SessionNotFound => ApiError::from(ApiErrorKind::SessionNotFound),
+            LookupError::SessionExpired(_session) => ApiError::from(ApiErrorKind::SessionExpired),
+            LookupError::SessionUnauthenticated(_session) => ApiError::from(ApiErrorKind::SessionUnauthenticated),
+            LookupError::SessionUnverified(_session) => ApiError::from(ApiErrorKind::SessionUnverified),
 
-            LookupError::UserNotFound(_authorization) => error::Error::api(error::ApiErrorKind::UserNotFound),
+            LookupError::UserNotFound(_authorization) => ApiError::from(ApiErrorKind::UserNotFound),
 
-            LookupError::MechanismNotFound => error::Error::api(error::ApiErrorKind::MechanismNotFound),
+            LookupError::MechanismNotFound => ApiError::from(ApiErrorKind::MechanismNotFound),
 
             LookupError::Database(e) => e.into(),
             LookupError::HeaderToStr(e) => e.into(),
@@ -80,8 +73,8 @@ impl From<LookupError> for error::Error {
             LookupError::SessionDecode(err) => match err {
                 session::DecodeError::InvalidString |
                 session::DecodeError::InvalidLength |
-                session::DecodeError::InvalidHash => error::Error::api(error::ApiErrorKind::InvalidSession),
-                err => error::Error::new().source(err)
+                session::DecodeError::InvalidHash => ApiError::from(ApiErrorKind::InvalidSession),
+                err => ApiError::new().source(err)
             }
         }
     }
@@ -116,7 +109,6 @@ where
 
         Ok(Initiator {
             user,
-            bot: None,
             mechanism: Mechanism::Session(session)
         })
     } else if let Some(session) = session::Session::retrieve_token(conn, &token).await? {
@@ -137,7 +129,6 @@ where
 
             Ok(Initiator {
                 user,
-                bot: None,
                 mechanism: Mechanism::Session(session),
             })
         } else {
@@ -181,7 +172,7 @@ where
     A: Deref<Target = S> + Sync,
     S: AsRef<state::Sec> + AsRef<Pool> + Sync,
 {
-    type Rejection = error::Error;
+    type Rejection = ApiError;
 
     fn from_request_parts<'life0, 'life1, 'async_trait>(
         parts: &'life0 mut Parts,
@@ -207,4 +198,3 @@ where
         })
     }
 }
-

@@ -395,7 +395,7 @@ pub async fn delete_id(
 
     if !permission::has_ability(
         &conn,
-        initiator.user().id(),
+        &initiator.user.id,
         Scope::SecRoles,
         Ability::Write
     ).await? {

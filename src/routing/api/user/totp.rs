@@ -64,7 +64,7 @@ pub async fn create(
             insert into auth_totp (user_id, algo, secret, digits, step) values \
             ($1, $2, $3, $4, $5)",
             &[
-                initiator.user().id(),
+                &initiator.user.id,
                 &pg_algo,
                 &secret.as_slice(),
                 &(digits as i32),
@@ -261,7 +261,7 @@ pub async fn update_recovery_key(
         .kind(ApiErrorKind::NotFound)?;
 
     if let Some(new_key) = json.key {
-        if totp::recovery::key_exists(&conn, initiator.user().id(), &new_key).await? {
+        if totp::recovery::key_exists(&conn, &initiator.user.id, &new_key).await? {
             return Err(ApiError::from(ApiErrorKind::AlreadyExists));
         }
 
