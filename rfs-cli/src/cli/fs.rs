@@ -22,15 +22,15 @@ mod storage;
 
 #[derive(Debug, Args)]
 pub struct FsArgs {
+    #[command(flatten)]
+    get: get::GetArgs,
+
     #[command(subcommand)]
-    command: FsCmds
+    command: Option<FsCmds>
 }
 
 #[derive(Debug, Subcommand)]
 enum FsCmds {
-    /// retrieves the desired fs item
-    Get(get::GetArgs),
-
     /// downloads the desired fs item
     Download(download::DownloadArgs),
 
@@ -51,14 +51,17 @@ enum FsCmds {
 }
 
 pub fn handle(client: &ApiClient, args: FsArgs) -> error::Result {
-    match args.command {
-        FsCmds::Get(given) => get::get(client, given),
-        FsCmds::Download(given) => download::download(client, given),
-        FsCmds::Create(given) => create(client, given),
-        FsCmds::Update(given) => update(client, given),
-        FsCmds::Upload(given) => upload(client, given),
-        FsCmds::Delete(given) => delete(client, given),
-        FsCmds::Storage(given) => storage::handle(client, given),
+    if let Some(cmd) = args.command {
+        match cmd {
+            FsCmds::Download(given) => download::download(client, given),
+            FsCmds::Create(given) => create(client, given),
+            FsCmds::Update(given) => update(client, given),
+            FsCmds::Upload(given) => upload(client, given),
+            FsCmds::Delete(given) => delete(client, given),
+            FsCmds::Storage(given) => storage::handle(client, given),
+        }
+    } else {
+        get::get(client, args.get)
     }
 }
 

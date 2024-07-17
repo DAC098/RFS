@@ -16,59 +16,47 @@ use crate::formatting::{self, OutputOptions, TextTable, Column, Float, PRETTY_OP
 
 #[derive(Debug, Args)]
 pub struct GetArgs {
-    /// retrieves the roots available
-    #[arg(long, required_unless_present("id"))]
-    roots: bool,
-
     /// the id of the item to retrieve
     #[arg(
         long,
-        value_parser(util::parse_flake_id::<ids::FSId>),
-        required_unless_present("roots")
+        value_parser(util::parse_flake_id::<ids::FSId>)
     )]
     id: Option<ids::FSId>,
 
-    /// will retrieve the contents of the specified file item
+    /// will not retrieve the contents of the specified file item
     #[arg(long)]
-    contents: bool,
+    no_contents: bool,
 
     #[command(flatten)]
     output_options: OutputOptions
 }
 
 fn sort_item(a: &ItemMin, b: &ItemMin) -> bool {
-    match b {
-        ItemMin::Root(root) => match a {
-            ItemMin::Root(a_root) => root.id.id() < a_root.id.id(),
-            ItemMin::Directory(_a_dir) => false,
-            ItemMin::File(_a_file) => false,
-        },
-        ItemMin::Directory(dir) => match a {
-            ItemMin::Root(_a_root) => true,
-            ItemMin::Directory(a_dir) => match dir.basename.cmp(&a_dir.basename) {
-                Ordering::Equal => dir.id.id() < a_dir.id.id(),
-                Ordering::Less => true,
-                Ordering::Greater => false,
-            },
-            ItemMin::File(a_file) => match dir.basename.cmp(&a_file.basename) {
-                Ordering::Equal => dir.id.id() < a_file.id.id(),
-                Ordering::Less => true,
-                Ordering::Greater => false,
-            },
-        },
-        ItemMin::File(file) => match a {
-            ItemMin::Root(_a_root) => true,
-            ItemMin::Directory(a_dir) => match file.basename.cmp(&a_dir.basename) {
-                Ordering::Equal => file.id.id() < a_dir.id.id(),
-                Ordering::Less => true,
-                Ordering::Greater => false,
-            },
-            ItemMin::File(a_file) => match file.basename.cmp(&a_file.basename) {
-                Ordering::Equal => file.id.id() < a_file.id.id(),
-                Ordering::Less => true,
-                Ordering::Greater => false,
-            },
-        },
+    match (a, b) {
+        (ItemMin::Root(a_root), ItemMin::Root(b_root)) =>
+            match a_root.basename.cmp(&b_root.basename) {
+                Ordering::Equal => a_root.id.id() < b_root.id.id(),
+                Ordering::Less => false,
+                Ordering::Greater => true,
+        }
+        (ItemMin::Root(_a_root), ItemMin::Directory(_b_dir)) => false,
+        (ItemMin::Root(_a_root), ItemMin::File(_b_file)) => false,
+        (ItemMin::Directory(a_dir), ItemMin::Directory(b_dir)) =>
+            match a_dir.basename.cmp(&b_dir.basename) {
+                Ordering::Equal => a_dir.id.id() < b_dir.id.id(),
+                Ordering::Less => false,
+                Ordering::Greater => true,
+            }
+        (ItemMin::Directory(_a_dir), ItemMin::Root(_b_root)) => true,
+        (ItemMin::Directory(_a_dir), ItemMin::File(_b_file)) => false,
+        (ItemMin::File(a_file), ItemMin::File(b_file)) =>
+            match a_file.basename.cmp(&b_file.basename) {
+                Ordering::Equal => a_file.id.id() < b_file.id.id(),
+                Ordering::Less => false,
+                Ordering::Greater => true,
+            }
+        (ItemMin::File(_a_file), ItemMin::Root(_b_root)) => true,
+        (ItemMin::File(_a_dir), ItemMin::Directory(_b_dir)) => true,
     }
 }
 
@@ -99,7 +87,7 @@ fn retrieve_id(client: &ApiClient, id: ids::FSId, args: GetArgs) -> error::Resul
         }
     }
 
-    if args.contents && !ignore_contents {
+    if !args.no_contents && !ignore_contents {
         let mut builder = RetrieveContents::id(id);
         let mut table = TextTable::with_columns([
             Column::builder("type").build(),
