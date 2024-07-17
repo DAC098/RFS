@@ -2,6 +2,7 @@ mod error;
 mod input;
 mod util;
 mod cli;
+mod path;
 mod formatting;
 
 fn main() {

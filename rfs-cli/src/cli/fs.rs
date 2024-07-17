@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::io::ErrorKind;
 use std::ffi::OsStr;
 
 use rfs_api::client::ApiClient;
@@ -15,6 +14,7 @@ use clap::{Subcommand, Args};
 use crate::error::{self, Context};
 use crate::util;
 use crate::formatting::{self, OutputOptions};
+use crate::path::{normalize_from, metadata};
 
 mod get;
 mod download;
@@ -65,35 +65,6 @@ pub fn handle(client: &ApiClient, args: FsArgs) -> error::Result {
 fn cwd() -> error::Result<PathBuf> {
     std::env::current_dir()
         .context("failed to retrieve the current working directory")
-}
-
-fn canonicalize_file_path(file_path: PathBuf, cwd: &PathBuf) -> error::Result<PathBuf> {
-    let rtn = if !file_path.is_absolute() {
-        cwd.join(&file_path)
-            .canonicalize()
-            .context("failed to canonicalize file path")?
-    } else {
-        file_path
-    };
-
-    Ok(rtn)
-}
-
-fn path_metadata(file_path: &PathBuf) -> error::Result<std::fs::Metadata> {
-    match file_path.metadata() {
-        Ok(m) => Ok(m),
-        Err(err) => match err.kind() {
-            ErrorKind::NotFound => {
-                Err(error::Error::new()
-                    .context("requested file system item was not found"))
-            },
-            _ => {
-                Err(error::Error::new()
-                    .context("failed to read data about desired file system item")
-                    .source(err))
-            }
-        }
-    }
 }
 
 fn path_basename(fs_path: &PathBuf) -> error::Result<Option<String>> {
@@ -314,8 +285,10 @@ enum UploadType {
 
 fn upload(client: &ApiClient, args: UploadArgs) -> error::Result {
     let cwd = cwd()?;
-    let file_path = canonicalize_file_path(args.path, &cwd)?;
-    let metadata = path_metadata(&file_path)?;
+    let file_path = normalize_from(&cwd, args.path);
+    let metadata = metadata(&file_path)
+        .context("failed to retrieve metadata for file")?
+        .context("file not found")?;
 
     if !metadata.is_file() {
         return Err(error::Error::new()

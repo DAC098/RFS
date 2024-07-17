@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf, Component};
+use std::path::PathBuf;
 
 #[cfg(target_family = "unix")]
 use std::os::unix::fs::FileTypeExt;
@@ -16,6 +16,7 @@ use crate::formatting::{
     OutputOptions,
     BaseSize,
 };
+use crate::path::{metadata, normalize_from};
 
 #[derive(Debug, Args)]
 pub struct DownloadArgs {
@@ -119,78 +120,28 @@ fn get_checksum(headers: &HeaderMap) -> error::Result<blake3::Hash> {
     }
 }
 
-// https://github.com/danreeves/path-clean
-// slighly modified
-fn clean_path<P>(path: P) -> PathBuf
-where
-    P: AsRef<Path>,
-{
-    let mut rtn = Vec::new();
-
-    for comp in path.as_ref().components() {
-        match comp {
-            Component::CurDir => (),
-            Component::ParentDir => match rtn.last() {
-                Some(Component::RootDir) => (),
-                Some(Component::Normal(_)) => {
-                    rtn.pop();
-                }
-                None |
-                Some(Component::CurDir) |
-                Some(Component::ParentDir) |
-                Some(Component::Prefix(_)) => rtn.push(comp),
-            }
-            comp => rtn.push(comp),
-        }
-    }
-
-    if !rtn.is_empty() {
-        rtn.iter().collect()
-    } else {
-        PathBuf::from(".")
-    }
-}
-
-fn get_canonical<P>(path: P) -> error::Result<Option<PathBuf>>
-where
-    P: AsRef<Path>
-{
-    match path.as_ref().canonicalize() {
-        Ok(c) => Ok(Some(c)),
-        Err(err) => match err.kind() {
-            std::io::ErrorKind::NotFound => Ok(None),
-            _ => Err(error::Error::new().source(err))
-        }
-    }
-}
-
 fn resolve_file_path(given: Option<PathBuf>, filename: &str) -> error::Result<PathBuf> {
+    let curr_dir = std::env::current_dir()
+        .context("failed to retrieve current working directory")?;
+
     if let Some(given) = given {
-        let resolved = if !given.is_absolute() {
-            let curr_dir = std::env::current_dir()
-                .context("failed to retrieve current working directory")?;
-            clean_path(curr_dir.join(given))
-        } else {
-            clean_path(given)
-        };
+        let mut resolved = normalize_from(&curr_dir, given);
 
-        if let Some(mut canonical) = get_canonical(&resolved)
-            .context("failed to resolve the output path")? {
-            let metadata = canonical.metadata()
-                .context("failed to resolve output path")?;
-
+        if let Some(metadata) = metadata(&resolved)
+            .context("failed to resolve the output path")?
+        {
             let file_type = metadata.file_type();
 
             if file_type.is_dir() {
-                canonical.push(filename);
+                resolved.push(filename);
 
-                Ok(canonical)
+                Ok(resolved)
             } else if file_type.is_file() {
-                Ok(canonical)
+                Ok(resolved)
             } else {
                 if cfg!(target_family = "unix") {
                     if file_type.is_fifo() || file_type.is_char_device() {
-                        Ok(canonical)
+                        Ok(resolved)
                     } else {
                         Err("output path is not a file or directory".into())
                     }
@@ -199,37 +150,21 @@ fn resolve_file_path(given: Option<PathBuf>, filename: &str) -> error::Result<Pa
                 }
             }
         } else {
-            let Some(parent) = resolved.parent() else {
-                return Err("output path does not exist".into());
-            };
+            let parent = resolved.parent()
+                .context("output path does not exist")?;
 
-            let Some(mut canonical) = get_canonical(parent)
-                .context("failed to resolve output_path")? else {
-                return Err("output path does not exist".into());
-            };
-
-            let metadata = canonical.metadata()
-                .context("failed to resolve output path")?;
+            let metadata = metadata(&parent)
+                .context("failed to resolve output_path")?
+                .context("output path does not exist")?;
 
             if !metadata.is_dir() {
                 return Err("output path is not a directory".into());
             }
 
-            let Some(file_name) = resolved.file_name() else {
-                return Err("failed to resolve output path".into());
-            };
-
-            canonical.push(file_name);
-
-            Ok(canonical)
+            Ok(resolved)
         }
     } else {
-        let mut curr_dir = std::env::current_dir()
-            .context("failed to retrieve current working directory")?;
-
-        curr_dir.push(filename);
-
-        Ok(curr_dir)
+        Ok(curr_dir.join(filename))
     }
 }
 

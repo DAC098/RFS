@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::fs::OpenOptions;
 
 use rfs_api::client::ApiClient;
 use rfs_api::client::auth::session::DropSession;
@@ -7,6 +8,7 @@ use clap::{Parser, Subcommand, Args};
 
 use crate::error::{self, Context};
 use crate::input;
+use crate::path::{metadata, normalize_from};
 
 mod fs;
 mod user;
@@ -223,31 +225,14 @@ struct HashArgs {
     file: PathBuf,
 }
 
-fn hash(mut args: HashArgs) -> error::Result {
-    use std::io::{BufReader, BufRead, ErrorKind};
-    use std::fs::OpenOptions;
+fn hash(args: HashArgs) -> error::Result {
+    let cwd = std::env::current_dir()
+        .context("failed to retrieve cwd")?;
+    let file_path = normalize_from(&cwd, args.file);
 
-    if !args.file.is_absolute() {
-        let mut cwd = std::env::current_dir()?;
-        cwd.push(&args.file);
-
-        args.file = cwd.canonicalize()?;
-    }
-
-    let metadata = match args.file.metadata() {
-        Ok(m) => m,
-        Err(err) => match err.kind() {
-            ErrorKind::NotFound => {
-                return Err(error::Error::new()
-                    .context("requested file was not found"));
-            },
-            _ => {
-                return Err(error::Error::new()
-                    .context("failed to read data about the desired file")
-                    .source(err));
-            }
-        }
-    };
+    let metadata = metadata(&file_path)
+        .context("failed to retrieve metadata for file")?
+        .context("file not found")?;
 
     if !metadata.is_file() {
         return Err(error::Error::new()
@@ -257,25 +242,11 @@ fn hash(mut args: HashArgs) -> error::Result {
     let mut hasher = blake3::Hasher::new();
     let file = OpenOptions::new()
         .read(true)
-        .open(&args.file)?;
+        .open(&file_path)
+        .context("failed to open file for reading")?;
 
-    let mut reader = BufReader::with_capacity(1024 * 4, file);
-
-    loop {
-        let read = {
-            let buffer = reader.fill_buf()?;
-
-            if buffer.len() == 0 {
-                break;
-            }
-
-            hasher.update(buffer);
-
-            buffer.len()
-        };
-
-        reader.consume(read);
-    }
+    hasher.update_reader(file)
+        .context("error when reading file to hasher")?;
 
     let hash = hasher.finalize();
 
