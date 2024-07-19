@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use rfs_api::client::ApiClient;
+use rfs_api::client::iterate;
 use rfs_api::client::sec::roles::{
     AddRoleGroups,
     AddRoleUsers,
@@ -20,19 +21,19 @@ use clap::{Subcommand, Args};
 
 use crate::error::{self, Context};
 use crate::util;
-use crate::input;
+use crate::formatting::{TextTable, Column, Float, PRETTY_OPTIONS};
 
 #[derive(Debug, Args)]
 pub struct RolesArgs {
+    #[command(flatten)]
+    get: GetArgs,
+
     #[command(subcommand)]
-    command: RolesCmds
+    command: Option<RolesCmds>,
 }
 
 #[derive(Debug, Subcommand)]
 enum RolesCmds {
-    /// retrieves a list of roles or a specific role
-    Get(GetArgs),
-
     /// creates a new role
     Create(CreateArgs),
 
@@ -50,13 +51,16 @@ enum RolesCmds {
 }
 
 pub fn handle(client: &ApiClient, args: RolesArgs) -> error::Result {
-    match args.command {
-        RolesCmds::Get(given) => get(client, given),
-        RolesCmds::Create(given) => create(client, given),
-        RolesCmds::Update(given) => update(client, given),
-        RolesCmds::Delete(given) => delete(client, given),
-        RolesCmds::Users(given) => handle_users(client, given),
-        RolesCmds::Groups(given) => handle_groups(client, given),
+    if let Some(cmd) = args.command {
+        match cmd {
+            RolesCmds::Create(given) => create(client, given),
+            RolesCmds::Update(given) => update(client, given),
+            RolesCmds::Delete(given) => delete(client, given),
+            RolesCmds::Users(given) => handle_users(client, given),
+            RolesCmds::Groups(given) => handle_groups(client, given),
+        }
+    } else {
+        get(client, args.get)
     }
 }
 
@@ -65,10 +69,6 @@ struct GetArgs {
     /// id of the role to retrieve
     #[arg(long)]
     id: Option<rfs_lib::ids::RoleId>,
-
-    /// will retrieve all values and not prompt for more
-    #[arg(long)]
-    no_prompt: bool
 }
 
 fn get(client: &ApiClient, args: GetArgs) -> error::Result {
@@ -78,31 +78,50 @@ fn get(client: &ApiClient, args: GetArgs) -> error::Result {
             .context("failed to retrieve role")?;
 
         if let Some(payload) = result {
-            println!("{:#?}", payload.into_payload());
+            let inner = payload.into_payload();
+            let mut table = TextTable::with_columns([
+                Column::builder("scope").build(),
+                Column::builder("ability").build()
+            ]);
+
+            println!("id: {}\nname: \"{}\"", inner.id, inner.name);
+
+            for perm in inner.permissions {
+                let mut row = table.add_row();
+                row.set_col(0, perm.scope.as_str());
+                row.set_col(1, perm.ability.as_str());
+
+                row.finish_sort(perm);
+            }
+
+            if !table.is_empty() {
+                table.print(&PRETTY_OPTIONS)
+                    .context("failed to output results to stdout")?;
+            }
         } else {
             println!("role not found");
         }
     } else {
         let mut builder = QueryRoles::new();
+        let mut table = TextTable::with_columns([
+            Column::builder("id").float(Float::Right).build(),
+            Column::builder("name").build(),
+        ]);
 
-        loop {
-            let (_pagination, payload) = builder.send(client)
-                .context("failed to retrieve roles")?
-                .into_tuple();
+        for result in iterate::Iterate::new(client, &mut builder) {
+            let role = result.context("failed to retrieve roles")?;
+            let mut row = table.add_row();
+            row.set_col(0, role.id);
+            row.set_col(1, role.name.clone());
 
-            let Some(last) = payload.last() else {
-                break;
-            };
+            row.finish(role);
+        }
 
-            builder.last_id(last.id);
-
-            for role in &payload {
-                println!("id: {} | name: {}", role.id, role.name);
-            }
-
-            if !args.no_prompt && !input::read_yn("continue?")? {
-                break;
-            }
+        if table.is_empty() {
+            println!("no contents");
+        } else {
+            table.print(&PRETTY_OPTIONS)
+                .context("failed to output results to stdout")?;
         }
     }
 
@@ -247,16 +266,15 @@ fn delete(client: &ApiClient, args: DeleteArgs) -> error::Result {
 
 #[derive(Debug, Args)]
 struct UsersArgs {
+    #[command(flatten)]
+    get: GetUsersArgs,
+
     #[command(subcommand)]
-    command: UsersCmds
+    command: Option<UsersCmds>,
 }
 
 #[derive(Debug, Subcommand)]
 enum UsersCmds {
-    /// retrieves a list of users for a role
-    #[command(name = "get")]
-    GetUsers(GetUsersArgs),
-
     /// adds users to a role
     #[command(name = "add")]
     AddUsers(AddUsersArgs),
@@ -267,10 +285,13 @@ enum UsersCmds {
 }
 
 fn handle_users(client: &ApiClient, args: UsersArgs) -> error::Result {
-    match args.command {
-        UsersCmds::GetUsers(given) => get_users(client, given),
-        UsersCmds::AddUsers(given) => add_users(client, given),
-        UsersCmds::DropUsers(given) => drop_users(client, given),
+    if let Some(cmd) = args.command {
+        match cmd {
+            UsersCmds::AddUsers(given) => add_users(client, given),
+            UsersCmds::DropUsers(given) => drop_users(client, given),
+        }
+    } else {
+        get_users(client, args.get)
     }
 }
 
@@ -279,34 +300,27 @@ struct GetUsersArgs {
     /// id of the role
     #[arg(long)]
     id: rfs_lib::ids::RoleId,
-
-    /// will retrieve all values and not prompt for more
-    #[arg(long)]
-    no_prompt: bool
 }
 
 fn get_users(client: &ApiClient, args: GetUsersArgs) -> error::Result {
     let mut builder = QueryRoleUsers::id(args.id);
+    let mut table = TextTable::with_columns([
+        Column::builder("id").float(Float::Right).build(),
+    ]);
 
-    loop {
-        let (_pagination, payload) = builder.send(client)
-            .context("failed to retrieve users")?
-            .context("role not found")?
-            .into_tuple();
+    for result in iterate::Iterate::new(client, &mut builder) {
+        let user = result.context("failed to retrieve group users")?;
+        let mut row = table.add_row();
+        row.set_col(0, user.id.id());
 
-        let Some(last) = payload.last() else {
-            break;
-        };
+        row.finish(user);
+    }
 
-        builder.last_id(last.id.clone());
-
-        for user in &payload {
-            println!("id: {}", user.id.id());
-        }
-
-        if !args.no_prompt && !input::read_yn("continue?")? {
-            break;
-        }
+    if table.is_empty() {
+        println!("no contents");
+    } else {
+        table.print(&PRETTY_OPTIONS)
+            .context("failed to output results to stdout")?;
     }
 
     Ok(())
@@ -354,16 +368,15 @@ fn drop_users(client: &ApiClient, args: DropUsersArgs) -> error::Result {
 
 #[derive(Debug, Args)]
 struct GroupsArgs {
+    #[command(flatten)]
+    get: GetGroupsArgs,
+
     #[command(subcommand)]
-    command: GroupsCmds
+    command: Option<GroupsCmds>,
 }
 
 #[derive(Debug, Subcommand)]
 enum GroupsCmds {
-    /// retrieves a lsit of groups for a role
-    #[command(name = "get")]
-    GetGroups(GetGroupsArgs),
-
     /// adds groups to a role
     #[command(name = "add")]
     AddGroups(AddGroupsArgs),
@@ -374,10 +387,13 @@ enum GroupsCmds {
 }
 
 fn handle_groups(client: &ApiClient, args: GroupsArgs) -> error::Result {
-    match args.command {
-        GroupsCmds::GetGroups(given) => get_groups(client, given),
-        GroupsCmds::AddGroups(given) => add_groups(client, given),
-        GroupsCmds::DropGroups(given) => drop_groups(client, given),
+    if let Some(cmd) = args.command {
+        match cmd {
+            GroupsCmds::AddGroups(given) => add_groups(client, given),
+            GroupsCmds::DropGroups(given) => drop_groups(client, given),
+        }
+    } else {
+        get_groups(client, args.get)
     }
 }
 
@@ -386,34 +402,27 @@ struct GetGroupsArgs {
     /// id of the role
     #[arg(long)]
     id: rfs_lib::ids::RoleId,
-
-    /// will retrieve all values and not prompt for more
-    #[arg(long)]
-    no_prompt: bool
 }
 
 fn get_groups(client: &ApiClient, args: GetGroupsArgs) -> error::Result {
     let mut builder = QueryRoleGroups::id(args.id);
+    let mut table = TextTable::with_columns([
+        Column::builder("id").float(Float::Right).build(),
+    ]);
 
-    loop {
-        let (_pagination, payload) = builder.send(client)
-            .context("failed to retrieve role groups")?
-            .context("role not found")?
-            .into_tuple();
+    for result in iterate::Iterate::new(client, &mut builder) {
+        let group = result.context("failed to retrieve role groups")?;
+        let mut row = table.add_row();
+        row.set_col(0, group.id);
 
-        let Some(last) = payload.last() else {
-            break;
-        };
+        row.finish(group);
+    }
 
-        builder.last_id(last.id);
-
-        for group in &payload {
-            println!("id: {}", group.id);
-        }
-
-        if !args.no_prompt && !input::read_yn("continue?")? {
-            break;
-        }
+    if table.is_empty() {
+        println!("no contents");
+    } else {
+        table.print(&PRETTY_OPTIONS)
+            .context("failed to output results to stdout")?;
     }
 
     Ok(())

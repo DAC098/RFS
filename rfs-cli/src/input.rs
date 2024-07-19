@@ -34,7 +34,7 @@ where
     Ok(given.trim().to_owned())
 }
 
-pub fn read_yn<P>(prefix: P) -> std::io::Result<bool>
+pub fn _read_yn<P>(prefix: P) -> std::io::Result<bool>
 where
     P: std::fmt::Display
 {

@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use rfs_lib::ids;
 use rfs_lib::serde::from_to_str;
 use rfs_lib::sec::authz::permission::{Ability, Scope};
@@ -14,7 +16,7 @@ pub struct RoleListItem {
     pub name: String
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Hash, Serialize, Deserialize)]
 pub struct Permission {
     pub scope: Scope,
     pub ability: Ability,
@@ -23,6 +25,17 @@ pub struct Permission {
 impl From<(Scope, Ability)> for Permission {
     fn from((scope, ability): (Scope, Ability)) -> Self {
         Permission { scope, ability }
+    }
+}
+
+impl Ord for Permission {
+    fn cmp(&self, other: &Self) -> Ordering {
+        let cmp = self.scope.cmp(&other.scope);
+
+        match cmp {
+            Ordering::Equal => self.ability.cmp(&other.ability),
+            _ => cmp
+        }
     }
 }
 

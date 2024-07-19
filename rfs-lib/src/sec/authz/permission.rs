@@ -12,7 +12,7 @@ pub fn role_name_valid(given: &str) -> bool {
     !given.is_empty() && check_control_whitespace(given, Some(MAX_ROLE_CHARS))
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Serialize, Deserialize)]
 pub enum Ability {
     Read,
     Write,
@@ -62,37 +62,37 @@ impl ToSql for Ability {
     to_sql_checked!();
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Serialize, Deserialize)]
 pub enum Scope {
-    SecSecrets,
+    Fs,
     SecRoles,
+    SecSecrets,
+    Storage,
     User,
     UserGroup,
-    Fs,
-    Storage
 }
 
 impl Scope {
     pub fn from_str(v: &str) -> Option<Self> {
         match v {
-            "SecSecrets" => Some(Scope::SecSecrets),
+            "Fs" => Some(Scope::Fs),
             "SecRoles" => Some(Scope::SecRoles),
+            "SecSecrets" => Some(Scope::SecSecrets),
+            "Storage" => Some(Scope::Storage),
             "User" => Some(Scope::User),
             "UserGroup" => Some(Scope::UserGroup),
-            "Fs" => Some(Scope::Fs),
-            "Storage" => Some(Scope::Storage),
             _ => None
         }
     }
 
     pub fn as_str(&self) -> &str {
         match self {
-            Scope::SecSecrets => "SecSecrets",
+            Scope::Fs => "Fs",
             Scope::SecRoles => "SecRoles",
+            Scope::SecSecrets => "SecSecrets",
+            Scope::Storage => "Storage",
             Scope::User => "User",
             Scope::UserGroup => "UserGroup",
-            Scope::Fs => "Fs",
-            Scope::Storage => "Storage",
         }
     }
 }
@@ -102,12 +102,13 @@ impl<'a> FromSql<'a> for Scope {
         let v = <&str as FromSql>::from_sql(ty, raw)?;
 
         Scope::from_str(v)
-            .ok_or("invalid sql value for Ability. expecting \"SecStorage\", \
-                   \"SecRoles\", \
-                   \"User\", \
-                   \"UserGroup\", \
-                   \"Fs\", \
-                   \"Storage\"".into())
+            .ok_or("invalid sql value for Ability. expecting \
+                \"Fs\", \
+                \"SecRoles\", \
+                \"SecStorage\", \
+                \"Storage\", \
+                \"User\", \
+                \"UserGroup\"".into())
     }
 
     fn accepts(ty: &Type) -> bool {

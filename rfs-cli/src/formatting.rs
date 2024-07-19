@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::{HashMap, BinaryHeap};
 use std::fmt::{Write, Formatter, Display, Result as FmtResult};
 use std::default::Default;
@@ -451,7 +452,7 @@ impl<'a, T, const N: usize> TextRow<'a, T, N> {
         }
     }
 
-    pub fn finish(self, data: T) {
+    fn update_cols(&mut self) {
         for (value, col) in self.row.iter().zip(&mut self.table.columns) {
             if let Some(st) = &value {
                 let chars_count = st.chars().count();
@@ -459,23 +460,40 @@ impl<'a, T, const N: usize> TextRow<'a, T, N> {
                 col.update_width(chars_count);
             }
         }
+    }
+
+    pub fn finish(mut self, data: T) {
+        self.update_cols();
 
         self.table.rows.push((data, self.row));
     }
 
-    pub fn finish_sort_by<F>(self, data: T, cb: F)
+    pub fn finish_sort_by<F>(mut self, data: T, cb: F)
     where
         F: Fn(&T, &T) -> bool
     {
-        for (value, col) in self.row.iter().zip(&mut self.table.columns) {
-            if let Some(st) = &value {
-                let chars_count = st.chars().count();
-
-                col.update_width(chars_count);
-            }
-        }
+        self.update_cols();
 
         let index = self.table.rows.partition_point(|(v, _)| cb(&data, v));
+
+        self.table.rows.insert(index, (data, self.row));
+    }
+}
+
+impl<'a, T, const N: usize> TextRow<'a, T, N>
+where
+    T: Ord
+{
+    pub fn finish_sort(mut self, data: T) {
+        self.update_cols();
+
+        let index = self.table.rows.partition_point(|(v, _)| {
+            match v.cmp(&data) {
+                Ordering::Equal => true,
+                Ordering::Less => true,
+                Ordering::Greater=> false,
+            }
+        });
 
         self.table.rows.insert(index, (data, self.row));
     }

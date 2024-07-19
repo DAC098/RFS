@@ -1,7 +1,7 @@
 use rfs_lib::ids;
 
 use crate::client::error::RequestError;
-use crate::client::ApiClient;
+use crate::client::{ApiClient, iterate};
 use crate::{
     Payload,
     Validator,
@@ -85,6 +85,31 @@ impl QueryRoles {
     }
 }
 
+impl iterate::Pageable for QueryRoles {
+    type Id = ids::RoleId;
+    type Item = RoleListItem;
+
+    #[inline]
+    fn get_last_id(item: &Self::Item) -> Option<Self::Id> {
+        Some(item.id.clone())
+    }
+
+    #[inline]
+    fn set_limit(&mut self, limit: Option<Limit>) {
+        self.limit(limit);
+    }
+
+    #[inline]
+    fn set_last_id(&mut self, id: Option<Self::Id>) {
+        self.last_id(id);
+    }
+
+    #[inline]
+    fn send(&self, client: &ApiClient) -> Result<Payload<Vec<Self::Item>>, RequestError> {
+        self.send(client)
+    }
+}
+
 pub struct RetrieveRole {
     id: ids::RoleId
 }
@@ -154,7 +179,7 @@ impl QueryRoleUsers {
         self
     }
 
-    pub fn send(&self, client: &ApiClient) -> Result<Option<Payload<Vec<RoleUser>>>, RequestError> {
+    pub fn send(&self, client: &ApiClient) -> Result<Payload<Vec<RoleUser>>, RequestError> {
         let mut builder = client.get(format!("/api/sec/roles/{}/users", self.id));
 
         if let Some(limit) = &self.limit {
@@ -170,18 +195,34 @@ impl QueryRoleUsers {
         let res = builder.send()?;
 
         match res.status() {
-            reqwest::StatusCode::OK => Ok(Some(res.json()?)),
-            reqwest::StatusCode::NOT_FOUND => {
-                let err: ApiError = res.json()?;
-
-                if *err.kind() == ApiErrorKind::RoleNotFound {
-                    return Ok(None);
-                }
-
-                Err(RequestError::Api(err))
-            },
+            reqwest::StatusCode::OK => Ok(res.json()?),
             _ => Err(RequestError::Api(res.json()?))
         }
+    }
+}
+
+impl iterate::Pageable for QueryRoleUsers {
+    type Id = ids::UserId;
+    type Item = RoleUser;
+
+    #[inline]
+    fn get_last_id(item: &Self::Item) -> Option<Self::Id> {
+        Some(item.id.clone())
+    }
+
+    #[inline]
+    fn set_limit(&mut self, limit: Option<Limit>) {
+        self.limit(limit);
+    }
+
+    #[inline]
+    fn set_last_id(&mut self, id: Option<Self::Id>) {
+        self.last_id(id);
+    }
+
+    #[inline]
+    fn send(&self, client: &ApiClient) -> Result<Payload<Vec<Self::Item>>, RequestError> {
+        self.send(client)
     }
 }
 
@@ -226,7 +267,7 @@ impl QueryRoleGroups {
         self
     }
 
-    pub fn send(&self, client: &ApiClient) -> Result<Option<Payload<Vec<RoleGroup>>>, RequestError> {
+    pub fn send(&self, client: &ApiClient) -> Result<Payload<Vec<RoleGroup>>, RequestError> {
         let mut builder = client.get(format!("/api/sec/roles/{}/groups", self.id));
 
         if let Some(limit) = &self.limit {
@@ -242,18 +283,34 @@ impl QueryRoleGroups {
         let res = builder.send()?;
 
         match res.status() {
-            reqwest::StatusCode::OK => Ok(Some(res.json()?)),
-            reqwest::StatusCode::NOT_FOUND => {
-                let err: ApiError = res.json()?;
-
-                if *err.kind() == ApiErrorKind::RoleNotFound {
-                    return Ok(None);
-                }
-
-                Err(RequestError::Api(err))
-            }
+            reqwest::StatusCode::OK => Ok(res.json()?),
             _ => Err(RequestError::Api(res.json()?))
         }
+    }
+}
+
+impl iterate::Pageable for QueryRoleGroups {
+    type Id = ids::GroupId;
+    type Item = RoleGroup;
+
+    #[inline]
+    fn get_last_id(item: &Self::Item) -> Option<Self::Id> {
+        Some(item.id.clone())
+    }
+
+    #[inline]
+    fn set_limit(&mut self, limit: Option<Limit>) {
+        self.limit(limit);
+    }
+
+    #[inline]
+    fn set_last_id(&mut self, id: Option<Self::Id>) {
+        self.last_id(id);
+    }
+
+    #[inline]
+    fn send(&self, client: &ApiClient) -> Result<Payload<Vec<Self::Item>>, RequestError> {
+        self.send(client)
     }
 }
 

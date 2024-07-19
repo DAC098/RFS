@@ -510,7 +510,7 @@ pub async fn retreive_id_users(
         });
     }
 
-    Ok(rfs_api::Payload::new(users))
+    Ok(rfs_api::Payload::from((pagination, users)))
 }
 
 pub async fn add_id_users(
