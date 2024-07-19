@@ -9,6 +9,7 @@ use rfs_api::client::users::{
     CreateUser,
     UpdateUser,
 };
+use rfs_api::client::users::groups::QueryGroupUsers;
 use rfs_api::users::ListItem;
 
 use clap::{Subcommand, Args};
@@ -21,15 +22,15 @@ mod group;
 
 #[derive(Debug, Args)]
 pub struct UsersArgs {
+    #[command(flatten)]
+    get: GetArgs,
+
     #[command(subcommand)]
-    command: UsersCmds
+    command: Option<UsersCmds>
 }
 
 #[derive(Debug, Subcommand)]
 enum UsersCmds {
-    /// retrieves a list of users
-    Get(GetArgs),
-
     /// creats a new user
     Create(CreateArgs),
 
@@ -41,11 +42,14 @@ enum UsersCmds {
 }
 
 pub fn handle(client: &ApiClient, args: UsersArgs) -> error::Result {
-    match args.command {
-        UsersCmds::Get(given) => get(client, given),
-        UsersCmds::Create(given) => create(client, given),
-        UsersCmds::Update(given) => update(client, given),
-        UsersCmds::Groups(given) => group::handle(client, given),
+    if let Some(cmd) = args.command {
+        match cmd {
+            UsersCmds::Create(given) => create(client, given),
+            UsersCmds::Update(given) => update(client, given),
+            UsersCmds::Groups(given) => group::handle(client, given),
+        }
+    } else {
+        get(client, args.get)
     }
 }
 
@@ -60,8 +64,16 @@ fn sort_user(a: &ListItem, b: &ListItem) -> bool {
 #[derive(Debug, Args)]
 struct GetArgs {
     /// retrieves information about a single user
-    #[arg(long, value_parser(util::parse_flake_id::<ids::UserId>))]
+    #[arg(
+        long,
+        conflicts_with("group"),
+        value_parser(util::parse_flake_id::<ids::UserId>)
+    )]
     id: Option<ids::UserId>,
+
+    /// retrieves users that are in a specific group
+    #[arg(long, conflicts_with("id"))]
+    group: Option<ids::GroupId>,
 }
 
 fn get(client: &ApiClient, args: GetArgs) -> error::Result {
@@ -80,6 +92,26 @@ fn get(client: &ApiClient, args: GetArgs) -> error::Result {
                 email.email,
                 if email.verified { "verified" } else { "unverified" }
             );
+        }
+    } else if let Some(group) = args.group {
+        let mut builder = QueryGroupUsers::id(group);
+        let mut table = TextTable::with_columns([
+            Column::builder("id").float(Float::Right).build(),
+        ]);
+
+        for result in iterate::Iterate::new(client, &mut builder) {
+            let user = result.context("failed to retrieve group users")?;
+            let mut row = table.add_row();
+            row.set_col(0, user.id.id());
+
+            row.finish(user);
+        }
+
+        if table.is_empty() {
+            println!("no contents");
+        } else {
+            table.print(&PRETTY_OPTIONS)
+                .context("failed to output results to stdout")?;
         }
     } else {
         let mut builder = QueryUsers::new();

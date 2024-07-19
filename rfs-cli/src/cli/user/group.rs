@@ -18,15 +18,15 @@ use crate::util;
 
 #[derive(Debug, Args)]
 pub struct GroupsArgs {
+    #[command(flatten)]
+    get: GetArgs,
+
     #[command(subcommand)]
-    command: GroupsCmds
+    command: Option<GroupsCmds>
 }
 
 #[derive(Debug, Subcommand)]
 enum GroupsCmds {
-    /// retrieves a list of groups or a specific group
-    Get(GetArgs),
-
     /// creates a new group
     Create(CreateArgs),
 
@@ -41,12 +41,15 @@ enum GroupsCmds {
 }
 
 pub fn handle(client: &ApiClient, args: GroupsArgs) -> error::Result {
-    match args.command {
-        GroupsCmds::Get(given) => get(client, given),
-        GroupsCmds::Create(given) => create(client, given),
-        GroupsCmds::Update(given) => update(client, given),
-        GroupsCmds::Delete(given) => delete(client, given),
-        GroupsCmds::Users(given) => handle_users(client, given),
+    if let Some(cmd) = args.command {
+        match cmd {
+            GroupsCmds::Create(given) => create(client, given),
+            GroupsCmds::Update(given) => update(client, given),
+            GroupsCmds::Delete(given) => delete(client, given),
+            GroupsCmds::Users(given) => handle_users(client, given),
+        }
+    } else {
+        get(client, args.get)
     }
 }
 
@@ -55,10 +58,6 @@ struct GetArgs {
     /// id of the group to retrieve
     #[arg(long)]
     id: Option<i64>,
-
-    /// will retrieve all values and not prompt for more
-    #[arg(long)]
-    no_prompt: bool
 }
 
 fn get(client: &ApiClient, args: GetArgs) -> error::Result {
