@@ -13,15 +13,15 @@ use crate::formatting::{TextTable, Column, Float, PRETTY_OPTIONS};
 
 #[derive(Debug, Args)]
 pub struct PasswordArgs {
+    #[command(flatten)]
+    get: GetArgs,
+
     #[command(subcommand)]
-    command: PasswordCmds
+    command: Option<PasswordCmds>,
 }
 
 #[derive(Debug, Subcommand)]
 enum PasswordCmds {
-    /// retrieves a list of known password secrets
-    Get(GetArgs),
-
     /// creates a new password secret
     Update,
 
@@ -30,10 +30,13 @@ enum PasswordCmds {
 }
 
 pub fn handle(client: &ApiClient, args: PasswordArgs) -> error::Result {
-    match args.command {
-        PasswordCmds::Get(given) => get(client, given),
-        PasswordCmds::Update => update(client),
-        PasswordCmds::Remove(given) => remove(client, given),
+    if let Some(cmd) = args.command {
+        match cmd {
+            PasswordCmds::Update => update(client),
+            PasswordCmds::Remove(given) => remove(client, given),
+        }
+    } else {
+        get(client, args.get)
     }
 }
 
@@ -48,13 +51,12 @@ fn get(client: &ApiClient, args: GetArgs) -> error::Result {
     if let Some(version) = args.version {
         let result = RetrievePasswordSecret::version(version)
             .send(client)
-            .context("failed to retrieve password secret")?;
+            .context("failed to retrieve password secret")?
+            .context("password secret not found")?;
 
-        if let Some(payload) = result {
-            println!("{:?}", payload.into_payload());
-        } else {
-            println!("password secret not found");
-        }
+        let payload = result.into_payload();
+
+        println!("version: {} | used by: {}\ncreated: {}", payload.version, payload.in_use, payload.created);
     } else {
         let result = QueryPasswordSecrets::new()
             .send(client)

@@ -13,14 +13,11 @@ use crate::formatting::{TextTable, Column, Float, PRETTY_OPTIONS};
 #[derive(Debug, Args)]
 pub struct SessionArgs {
     #[command(subcommand)]
-    command: SessionCmds
+    command: Option<SessionCmds>,
 }
 
 #[derive(Debug, Subcommand)]
 enum SessionCmds {
-    /// retrieves a list of known session secrets
-    Get,
-
     /// creates a new session secret
     Update,
 
@@ -29,10 +26,13 @@ enum SessionCmds {
 }
 
 pub fn handle(client: &ApiClient, args: SessionArgs) -> error::Result {
-    match args.command {
-        SessionCmds::Get => get(client),
-        SessionCmds::Update => update(client),
-        SessionCmds::Remove => remove(client),
+    if let Some(cmd) = args.command {
+        match cmd {
+            SessionCmds::Update => update(client),
+            SessionCmds::Remove => remove(client),
+        }
+    } else {
+        get(client)
     }
 }
 
