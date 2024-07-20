@@ -1,14 +1,12 @@
 use std::path::PathBuf;
-use std::fs::OpenOptions;
+use std::str::FromStr;
 
 use rfs_api::client::ApiClient;
 use rfs_api::client::auth::session::DropSession;
 use rfs_api::client::users::password::UpdatePassword;
-use clap::{Parser, Subcommand, Args};
+use clap::{Parser, Subcommand};
 
 use crate::error::{self, Context};
-use crate::input;
-use crate::path::{metadata, normalize_from};
 
 mod fs;
 mod user;
@@ -22,19 +20,11 @@ mod connect;
 /// processes. if no command is provided then it will enter interactive mode.
 #[derive(Debug, Parser)]
 struct Cli {
-    /// file that stores session cookies
-    ///
-    /// if a file is not specified then it will attempt to load 
-    /// "rfs_cookies.json" in the current working directory
-    #[arg(long)]
-    cookies: Option<PathBuf>,
-
     /// host name of server
     ///
     /// will be used in a url so the value must be valid for the hostname part
     /// of a url. examples: example.com | 10.0.0.2 | [fd34::2]
-    #[arg(short = 'H', long)]
-    host: Option<String>,
+    host: String,
 
     /// port of server
     ///
@@ -42,14 +32,21 @@ struct Cli {
     #[arg(short, long)]
     port: Option<u16>,
 
-    /// to use https
+    /// to use http
     ///
-    /// will switch to using a secure channel when communicating with a server
-    #[arg(short, long)]
-    secure: bool,
+    /// will switch to using an insecure channel when communicating with a server
+    #[arg(long)]
+    insecure: bool,
+
+    /// file that stores session cookies
+    ///
+    /// if a file is not specified then it will attempt to load 
+    /// "rfs_cookies.json" in the current working directory
+    #[arg(long)]
+    cookies: Option<PathBuf>,
 
     #[command(subcommand)]
-    command: Option<BaseCmds>
+    command: Cmds,
 }
 
 pub fn start() -> error::Result {
@@ -64,70 +61,50 @@ pub fn start() -> error::Result {
     };
 
     let mut client_builder = ApiClient::builder();
-    client_builder.cookie_file(session_file);
 
-    client_builder.secure(args.secure);
-    client_builder.port(args.port);
+    if let Some((host, port)) = host.rsplit_once(':') {
+        let port = u16::from_str(port)
+            .context(format!("invalid port number given in domain. given: \"{}\"", port))?;
 
-    if let Some(host) = args.host {
+        client_builder.port(Some(port));
+
+        if !client_builder.host(host.to_owned()) {
+            return Err(format!(
+                "cannot set host to the value provided. {host}"
+            ).into());
+        }
+    } else {
         if !client_builder.host(host.clone()) {
-            return Err(error::Error::from(format!(
-                "cannot set host to the value provided. {}",
-                host
-            )));
+            return Err(format!(
+                "cannot set host to the value provided. {host}"
+            ).into());
         }
     }
 
-    let mut client = client_builder.build().context("failed to create api client")?;
+    client_builder.cookie_file(session_file);
+    client_builder.secure(!args.insecure);
+
+    if let Some(port) = args.port {
+        client_builder.port(Some(port));
+    }
+
+    let mut client = client_builder.build()
+        .context("failed to create api client")?;
 
     match args.command {
-        Some(cmd) => handle(&mut client, cmd),
-        None => Interactive::handle(&mut client)
-    }
-}
-
-#[derive(Debug, Parser)]
-enum Interactive {
-    #[command(flatten)]
-    Base(BaseCmds),
-    Quit
-}
-
-impl Interactive {
-    fn handle(client: &mut ApiClient) -> error::Result {
-        loop {
-            let given = input::read_stdin(">")?;
-            let trimmed = given.trim();
-
-            let Ok(args_list) = shell_words::split(&trimmed) else {
-                println!("failed to parse command line args");
-                continue;
-            };
-
-            let cmd = match Interactive::try_parse_from(args_list) {
-                Ok(c) => c,
-                Err(err) => {
-                    println!("{}", err);
-                    continue;
-                }
-            };
-
-            let result = match cmd {
-                Interactive::Base(cmd) => handle(client, cmd),
-                Interactive::Quit => break,
-            };
-
-            if let Err(err) = result {
-                println!("{}", err);
-            }
-        }
-
-        Ok(())
+        Cmds::Connect => connect(&mut client),
+        Cmds::Disconnect => disconnect(&mut client),
+        Cmds::Password => password(&mut client),
+        Cmds::Totp(given) => totp::handle(&mut client, given),
+        Cmds::Fs(given) => fs::handle(&mut client, given),
+        Cmds::Users(given) => user::handle(&mut client, given),
+        Cmds::Sec(given) => sec::handle(&mut client, given),
+        Cmds::Ping => ping(&mut client),
     }
 }
 
 #[derive(Debug, Subcommand)]
-enum BaseCmds {
+enum Cmds {
     /// login to the specified server
     #[command(alias = "login")]
     Connect,
@@ -142,9 +119,6 @@ enum BaseCmds {
     /// interacts with data specific to totp 2FA
     Totp(totp::TotpArgs),
 
-    /// create a hash from a specified file
-    Hash(HashArgs),
-
     /// interacts with fs items on a server
     Fs(fs::FsArgs),
 
@@ -156,20 +130,6 @@ enum BaseCmds {
 
     /// pings the server for activity
     Ping,
-}
-
-fn handle(client: &mut ApiClient, command: BaseCmds) -> error::Result {
-    match command {
-        BaseCmds::Connect => connect(client),
-        BaseCmds::Disconnect => disconnect(client),
-        BaseCmds::Password => password(client),
-        BaseCmds::Totp(given) => totp::handle(client, given),
-        BaseCmds::Fs(given) => fs::handle(client, given),
-        BaseCmds::Users(given) => user::handle(client, given),
-        BaseCmds::Sec(given) => sec::handle(client, given),
-        BaseCmds::Hash(given) => hash(given),
-        BaseCmds::Ping => ping(client),
-    }
 }
 
 fn connect(client: &mut ApiClient) -> error::Result {
@@ -214,43 +174,6 @@ fn password(client: &mut ApiClient) -> error::Result {
     UpdatePassword::update_password(current, updated, confirm)
         .send(client)
         .context("failed to update password")?;
-
-    Ok(())
-}
-
-#[derive(Debug, Args)]
-struct HashArgs {
-    /// the desired file to hash
-    #[arg(short, long)]
-    file: PathBuf,
-}
-
-fn hash(args: HashArgs) -> error::Result {
-    let cwd = std::env::current_dir()
-        .context("failed to retrieve cwd")?;
-    let file_path = normalize_from(&cwd, args.file);
-
-    let metadata = metadata(&file_path)
-        .context("failed to retrieve metadata for file")?
-        .context("file not found")?;
-
-    if !metadata.is_file() {
-        return Err(error::Error::new()
-            .context("requested file path is not a file"));
-    }
-
-    let mut hasher = blake3::Hasher::new();
-    let file = OpenOptions::new()
-        .read(true)
-        .open(&file_path)
-        .context("failed to open file for reading")?;
-
-    hasher.update_reader(file)
-        .context("error when reading file to hasher")?;
-
-    let hash = hasher.finalize();
-
-    println!("{hash}");
 
     Ok(())
 }

@@ -35,7 +35,7 @@ pub struct ApiClient {
 impl ApiClient {
     pub fn builder() -> ApiClientBuilder {
         ApiClientBuilder {
-            url: Url::parse("http://localhost/").unwrap(),
+            url: Url::parse("https://localhost/").unwrap(),
             file: None,
             exists: false,
             agent: None
