@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::ffi::OsStr;
+use std::io::Seek;
 
 use rfs_api::client::ApiClient;
 use rfs_api::client::fs::{
@@ -98,7 +99,7 @@ fn ext_mime(ext: &OsStr, fallback: Option<mime::Mime>) -> error::Result<mime::Mi
 #[derive(Debug, Args)]
 struct CreateArgs {
     /// the parent fs item to create the new fs item under
-    #[arg(long, value_parser(util::parse_flake_id::<rfs_lib::ids::FSId>))]
+    #[arg(value_parser(util::parse_flake_id::<rfs_lib::ids::FSId>))]
     parent: rfs_lib::ids::FSId,
 
     /// tags to apply to the fs item
@@ -125,7 +126,6 @@ enum CreateType {
     /// creates a directory
     Dir {
         /// basename of the new directory
-        #[arg(short = 'n', long)]
         basename: String
     }
 }
@@ -159,7 +159,7 @@ fn create(client: &ApiClient, args: CreateArgs) -> error::Result {
 #[derive(Debug, Args)]
 struct UpdateArgs {
     /// the id of the fs item to update
-    #[arg(long, value_parser(util::parse_flake_id::<rfs_lib::ids::FSId>))]
+    #[arg(value_parser(util::parse_flake_id::<rfs_lib::ids::FSId>))]
     id: rfs_lib::ids::FSId,
 
     #[command(flatten)]
@@ -224,8 +224,27 @@ fn update(client: &ApiClient, args: UpdateArgs) -> error::Result {
 #[derive(Debug, Args)]
 struct UploadArgs {
     /// path of the file to upload
-    #[arg(long)]
     path: PathBuf,
+
+    /// upload a hash of the file to the server to validate against
+    #[arg(long)]
+    hash: bool,
+
+    /// manually specify the mime type
+    #[arg(
+        long,
+        conflicts_with("fallback"),
+        value_parser(util::parse_mime)
+    )]
+    mime: Option<mime::Mime>,
+
+    /// fallback mime if one cannot be deduced
+    #[arg(
+        long,
+        conflicts_with("mime"),
+        value_parser(util::parse_mime)
+    )]
+    fallback: Option<mime::Mime>,
 
     #[command(flatten)]
     output_options: OutputOptions,
@@ -239,51 +258,28 @@ enum UploadType {
     /// sends a new file to the server
     New {
         /// parent id to upload the fiel to
-        #[arg(long, value_parser(util::parse_flake_id::<rfs_lib::ids::FSId>))]
+        #[arg(value_parser(util::parse_flake_id::<rfs_lib::ids::FSId>))]
         parent: rfs_lib::ids::FSId,
 
         /// basename of the fs item
         #[arg(short = 'n', long)]
         basename: Option<String>,
-
-        /// manually specify the mime type
-        #[arg(
-            long,
-            conflicts_with("fallback"),
-            value_parser(util::parse_mime)
-        )]
-        mime: Option<mime::Mime>,
-
-        /// fallback mime if one cannot be deduced
-        #[arg(
-            long,
-            conflicts_with("mime"),
-            value_parser(util::parse_mime)
-        )]
-        fallback: Option<mime::Mime>,
     },
     /// updates an existing file on the server
     Existing {
         /// id of fs item to update
-        #[arg(long, value_parser(util::parse_flake_id::<rfs_lib::ids::FSId>))]
+        #[arg(value_parser(util::parse_flake_id::<rfs_lib::ids::FSId>))]
         id: rfs_lib::ids::FSId,
-
-        /// manually specify the mime type
-        #[arg(
-            long,
-            conflicts_with("fallback"),
-            value_parser(util::parse_mime)
-        )]
-        mime: Option<mime::Mime>,
-
-        /// fallback mime if one cannot be deduced
-        #[arg(
-            long,
-            conflicts_with("mime"),
-            value_parser(util::parse_mime)
-        )]
-        fallback: Option<mime::Mime>,
     }
+}
+
+fn get_hash(file: &std::fs::File) -> error::Result<blake3::Hash> {
+    let mut hasher = blake3::Hasher::new();
+
+    hasher.update_reader(file)
+        .context("error when creating hash of file")?;
+
+    Ok(hasher.finalize())
 }
 
 fn upload(client: &ApiClient, args: UploadArgs) -> error::Result {
@@ -298,66 +294,52 @@ fn upload(client: &ApiClient, args: UploadArgs) -> error::Result {
             .context("requested file path is not a file"));
     }
 
-    let file = std::fs::OpenOptions::new()
+    let mut file = std::fs::OpenOptions::new()
         .read(true)
         .open(&file_path)
         .context("failed to open file")?;
 
-    match args.upload_type {
-        UploadType::New { parent, basename, mime, fallback } => {
+    let mut builder = match args.upload_type {
+        UploadType::New { parent, basename } => {
             let basename = basename.unwrap_or(path_basename(&file_path)?
-                .context("no basename was provided and the current file dod not contain a file name")?);
+                .context("no basename was provided and the current file did not contain a file name")?);
 
-            let mut builder = SendReadable::create(parent, basename, file);
-            builder.content_length(metadata.len());
+            SendReadable::create(parent, basename)
+        }
+        UploadType::Existing { id } => {
+            SendReadable::update(id)
+        }
+    };
 
-            if let Some(given) = mime {
-                builder.content_type(given);
-            } else {
-                if let Some(ext) = file_path.extension() {
-                    builder.content_type(ext_mime(ext, fallback)?);
-                } else if let Some(given) = fallback {
-                    builder.content_type(given);
-                } else {
-                    builder.content_type(mime::APPLICATION_OCTET_STREAM);
-                }
-            }
+    builder.content_length(metadata.len());
 
-            let result = builder.send(client)
-                .context("failed to upload file")?
-                .into_payload();
-
-            let mut stdout = std::io::stdout();
-
-            formatting::write_fs_item(&mut stdout, &result, &args.output_options)
-                .context("failed to output to stdout")?;
-        },
-        UploadType::Existing { id, mime, fallback } => {
-            let mut builder = SendReadable::update(id, file);
-            builder.content_length(metadata.len());
-
-            if let Some(given) = mime {
-                builder.content_type(given);
-            } else {
-                if let Some(ext) = file_path.extension() {
-                    builder.content_type(ext_mime(ext, fallback)?);
-                } else if let Some(given) = fallback {
-                    builder.content_type(given);
-                } else {
-                    builder.content_type(mime::APPLICATION_OCTET_STREAM);
-                }
-            }
-
-            let result = builder.send(client)
-                .context("failed to upload file")?
-                .into_payload();
-
-            let mut stdout = std::io::stdout();
-
-            formatting::write_fs_item(&mut stdout, &result, &args.output_options)
-                .context("failed to output to stdout")?;
-        },
+    if let Some(given) = args.mime {
+        builder.content_type(given);
+    } else {
+        if let Some(ext) = file_path.extension() {
+            builder.content_type(ext_mime(ext, args.fallback)?);
+        } else if let Some(given) = args.fallback {
+            builder.content_type(given);
+        } else {
+            builder.content_type(mime::APPLICATION_OCTET_STREAM);
+        }
     }
+
+    if args.hash {
+        builder.hash("blake3", get_hash(&file)?.to_string());
+
+        file.rewind()
+            .context("failed to reset file cursor after hashing")?;
+    }
+
+    let result = builder.send(client, file)
+        .context("failed to upload file")?
+        .into_payload();
+
+    let mut stdout = std::io::stdout();
+
+    formatting::write_fs_item(&mut stdout, &result, &args.output_options)
+        .context("failed to output to stdout")?;
 
     Ok(())
 }
@@ -365,7 +347,7 @@ fn upload(client: &ApiClient, args: UploadArgs) -> error::Result {
 #[derive(Debug, Args)]
 struct DeleteArgs {
     /// id of the fs item to delete
-    #[arg(long, value_parser(util::parse_flake_id::<rfs_lib::ids::FSId>))]
+    #[arg(value_parser(util::parse_flake_id::<rfs_lib::ids::FSId>))]
     id: rfs_lib::ids::FSId,
 }
 

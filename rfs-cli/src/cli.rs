@@ -62,7 +62,7 @@ pub fn start() -> error::Result {
 
     let mut client_builder = ApiClient::builder();
 
-    if let Some((host, port)) = host.rsplit_once(':') {
+    if let Some((host, port)) = args.host.rsplit_once(':') {
         let port = u16::from_str(port)
             .context(format!("invalid port number given in domain. given: \"{}\"", port))?;
 
@@ -74,9 +74,9 @@ pub fn start() -> error::Result {
             ).into());
         }
     } else {
-        if !client_builder.host(host.clone()) {
+        if !client_builder.host(args.host.clone()) {
             return Err(format!(
-                "cannot set host to the value provided. {host}"
+                "cannot set host to the value provided. {}", args.host
             ).into());
         }
     }

@@ -330,35 +330,35 @@ impl CreateDir {
     }
 }
 
-pub struct SendReadable<R> {
+pub struct SendReadable {
     id: ids::FSId,
-    reader: R,
     basename: Option<String>,
     content_type: Option<mime::Mime>,
     content_length: Option<u64>,
+    hash: Option<String>,
 }
 
-impl<R> SendReadable<R> {
-    pub fn create<B>(parent: ids::FSId, basename: B, reader: R) -> SendReadable<R>
+impl SendReadable {
+    pub fn create<B>(parent: ids::FSId, basename: B) -> SendReadable
     where
         B: Into<String>,
     {
         SendReadable {
             id: parent,
-            reader,
             basename: Some(basename.into()),
             content_type: None,
             content_length: None,
+            hash: None,
         }
     }
 
-    pub fn update(id: ids::FSId, reader: R) -> SendReadable<R> {
+    pub fn update(id: ids::FSId) -> SendReadable {
         SendReadable {
             id,
-            reader,
             basename: None,
             content_type: None,
             content_length: None,
+            hash: None,
         }
     }
 
@@ -371,13 +371,23 @@ impl<R> SendReadable<R> {
         self.content_length = Some(length);
         self
     }
-}
 
-impl<R> SendReadable<R>
-where
-    R: std::io::Read + Send + 'static
-{
-    pub fn send(self, client: &ApiClient) -> Result<Payload<Item>, RequestError> {
+    pub fn hash<H,V>(&mut self, hash_type: H, hash_value: V) -> &mut Self
+    where
+        H: Into<String>,
+        V: Into<String>,
+    {
+        let hash_type = hash_type.into();
+        let hash_value = hash_value.into();
+
+        self.hash = Some(format!("{hash_type}:{hash_value}"));
+        self
+    }
+
+    pub fn send<R>(self, client: &ApiClient, reader: R) -> Result<Payload<Item>, RequestError>
+    where
+        R: std::io::Read + Send + 'static
+    {
         let content_type = self.content_type.unwrap_or(mime::APPLICATION_OCTET_STREAM);
         let mut builder = client.put(format!("/api/fs/{}", self.id.id()))
             .header("content-type", content_type.to_string());
@@ -390,7 +400,11 @@ where
             builder = builder.header("x-basename", basename);
         }
 
-        let res = builder.body(Body::new(self.reader)).send()?;
+        if let Some(hash) = self.hash {
+            builder = builder.header("x-hash", hash);
+        }
+
+        let res = builder.body(Body::new(reader)).send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(res.json()?),

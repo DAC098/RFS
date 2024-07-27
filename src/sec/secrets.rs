@@ -16,7 +16,7 @@ use rfs_lib::sec::chacha;
 use rand::RngCore;
 use serde::{Serialize, Deserialize};
 
-use crate::net::error::{Error as NetError};
+use crate::error;
 
 pub const MAX_SESSION_KEYS: usize = 50;
 
@@ -91,11 +91,7 @@ pub enum PMError {
     Wrapper(#[from] WrapperError),
 }
 
-impl From<PMError> for NetError {
-    fn from(err: PMError) -> Self {
-        NetError::new().source(err)
-    }
-}
+error::api::simple_from!(PMError);
 
 #[derive(Debug)]
 pub struct PeppersManager(

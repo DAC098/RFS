@@ -21,10 +21,7 @@ use crate::path::{metadata, normalize_from};
 #[derive(Debug, Args)]
 pub struct DownloadArgs {
     /// the id of the item to retrieve
-    #[arg(
-        long,
-        value_parser(util::parse_flake_id::<ids::FSId>),
-    )]
+    #[arg(value_parser(util::parse_flake_id::<ids::FSId>))]
     id: ids::FSId,
 
     /// the output path for the file

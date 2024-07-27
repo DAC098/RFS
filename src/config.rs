@@ -71,6 +71,20 @@ impl Config {
         }
 
         {
+            let meta = metadata(&settings.tmp).context(
+                "failed to retrieve metadata for settings.tmp"
+            )?.context(
+                "settings.tmp does not exist"
+            )?;
+
+            if !meta.is_dir() {
+                return Err(error::Error::new().context(
+                    "settings.tmp is not a directory"
+                ));
+            }
+        }
+
+        {
             let meta = metadata(&settings.templates.directory).context(
                 "failed to retrieve metadata for settings.templates.directory"
             )?.context(
@@ -190,6 +204,7 @@ impl<'a> Display for DotPath<'a> {
 pub struct Settings {
     pub id: i64,
     pub data: PathBuf,
+    pub tmp: PathBuf,
     pub master_key: String,
     pub listeners: HashMap<String, Listener>,
     pub templates: Templates,
@@ -206,6 +221,10 @@ impl Settings {
 
         if let Some(data) = settings.data {
             self.data = check_path(data, src, dot.push(&"data"), false)?;
+        }
+
+        if let Some(tmp) = settings.tmp {
+            self.tmp = check_path(tmp, src, dot.push(&"tmp"), false)?;
         }
 
         if let Some(master_key) = settings.master_key {
@@ -255,6 +274,7 @@ impl TryDefault for Settings {
         Ok(Settings {
             id: 1,
             data: cwd.join("data"),
+            tmp: cwd.join("tmp"),
             master_key: "rfs_master_key_secret".into(),
             listeners: HashMap::new(),
             templates: Templates::try_default()?,

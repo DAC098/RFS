@@ -46,19 +46,9 @@ where
     I: Display
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        match (&self.inner, &self.cxt, &self.src) {
-            (inner, Some(cxt), Some(err)) => if f.alternate() {
-                write!(f, "{}\ncxt: {}\nerr: {:#?}", inner, cxt, err)
-            } else {
-                write!(f, "{}\ncxt: {}\nerr: {:?}", inner, cxt, err)
-            },
-            (inner, Some(cxt), None) => write!(f, "{}\ncxt: {}", inner, cxt),
-            (inner, None, Some(err)) => if f.alternate() {
-                write!(f, "{}\nerr: {:#?}", inner, err)
-            } else {
-                write!(f, "{}\nerr: {:?}", inner, err)
-            },
-            (inner, None, None) => Display::fmt(inner, f)
+        match (&self.inner, &self.cxt) {
+            (inner, Some(cxt)) => write!(f, "{}\ncxt: {}", inner, cxt),
+            (inner, None) => Display::fmt(inner, f)
         }
     }
 }

@@ -55,6 +55,7 @@ pub enum ApiErrorKind {
     MaxSize,
     FileNotFound,
     InvalidType,
+    InvalidHash,
     NoContentType,
     MimeMismatch,
     NotFile,
@@ -107,6 +108,7 @@ impl From<&ApiErrorKind> for StatusCode {
             ApiErrorKind::NotDirectory |
             ApiErrorKind::MaxSize |
             ApiErrorKind::InvalidType |
+            ApiErrorKind::InvalidHash |
             ApiErrorKind::NoContentType |
             ApiErrorKind::MimeMismatch |
             ApiErrorKind::NotFile |

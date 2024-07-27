@@ -34,10 +34,6 @@ pub async fn from_row_stream(
     let mut tags = TagMap::new();
 
     while let Some(row) = stream.try_next().await? {
-        if tags.len() == tags.capacity() {
-            tags.reserve(5);
-        }
-
         tags.insert(row.get(0), row.get(1));
     }
 

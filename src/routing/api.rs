@@ -18,13 +18,7 @@ async fn handle_error<E>(error: E) -> ApiError
 where
     E: Into<ApiError>
 {
-    let error = error.into();
-
-    if let Some(err) = std::error::Error::source(&error) {
-        tracing::error!("unhandled error when processing request: {err:#?}");
-    }
-
-    error
+    error.into()
 }
 
 pub fn routes() -> Router<ArcShared> {

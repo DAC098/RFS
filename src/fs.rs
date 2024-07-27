@@ -360,8 +360,8 @@ impl Storage {
             id
         );
 
-        match tokio::try_join!(record_query, tags_query) {
-            Ok((Some(row), tags)) => {
+        match tokio::try_join!(record_query, tags_query)? {
+            (Some(row), tags) => {
                 Ok(Some(Storage {
                     id: row.get(0),
                     name: row.get(2),
@@ -373,8 +373,55 @@ impl Storage {
                     deleted: row.get(6),
                 }))
             },
-            Ok((None, _)) => Ok(None),
-            Err(err) => Err(err)
+            (None, _) => Ok(None),
+        }
+    }
+
+    pub async fn from_fs_id(
+        conn: &impl GenericClient,
+        fs_id: &ids::FSId
+    ) -> Result<Option<Self>, PgError> {
+        let record_param: sql::ParamsArray<'_, 1> = [fs_id];
+        let tags_param: sql::ParamsArray<'_, 1> = [fs_id];
+
+        let record_query = conn.query_opt(
+            "\
+            select storage.id, \
+                   storage.user_id, \
+                   storage.name, \
+                   storage.backend, \
+                   storage.created, \
+                   storage.updated, \
+                   storage.deleted \
+            from storage \
+                join fs on storage.id = fs.storage_id \
+            where fs.id = $1",
+            &record_param
+        );
+        let tags_query = conn.query_raw(
+            "\
+            select storage_tags.tag, \
+                   storage_tags.value \
+            from storage_tags \
+                join fs on storage_tags.storage_id = fs.storage_id \
+            where fs.id = $1",
+            tags_param
+        );
+
+        match tokio::try_join!(record_query, tags_query)? {
+            (Some(row), tags) => {
+                Ok(Some(Storage {
+                    id: row.get(0),
+                    name: row.get(2),
+                    user_id: row.get(1),
+                    backend: sql::de_from_sql(row.get(3)),
+                    tags: tags::from_row_stream(tags).await?,
+                    created: row.get(4),
+                    updated: row.get(5),
+                    deleted: row.get(6),
+                }))
+            },
+            (None, _) => Ok(None),
         }
     }
 
@@ -400,20 +447,21 @@ impl From<Storage> for rfs_api::fs::Storage {
 
 // ----------------------------------------------------------------------------
 
+use crate::error::{ApiError, ApiResult};
+use crate::error::api::ApiErrorKind;
 use crate::sec::authn::initiator::Initiator;
-use crate::net;
 
 pub async fn fetch_item(
     conn: &impl GenericClient,
     id: &ids::FSId,
     initiator: &Initiator,
-) -> net::error::Result<Item> {
+) -> ApiResult<Item> {
     let item = Item::retrieve(conn, id)
         .await?
-        .ok_or(net::error::Error::api(net::error::ApiErrorKind::FileNotFound))?;
+        .ok_or(ApiError::from(ApiErrorKind::FileNotFound))?;
 
     if *item.user_id() != initiator.user.id {
-        Err(net::error::Error::api(net::error::ApiErrorKind::PermissionDenied))
+        Err(ApiError::from(ApiErrorKind::PermissionDenied))
     } else {
         Ok(item)
     }
@@ -444,8 +492,17 @@ pub async fn fetch_item_tmp(
 pub async fn fetch_storage(
     conn: &impl GenericClient,
     id: &ids::StorageId
-) -> net::error::Result<Storage> {
+) -> ApiResult<Storage> {
     Storage::retrieve(conn, id)
         .await?
-        .ok_or(net::error::Error::api(net::error::ApiErrorKind::StorageNotFound))
+        .ok_or(ApiError::from(ApiErrorKind::StorageNotFound))
+}
+
+pub async fn fetch_storage_from_fs_id(
+    conn: &impl GenericClient,
+    fs_id: &ids::FSId
+) -> ApiResult<Storage> {
+    Storage::from_fs_id(conn, fs_id)
+        .await?
+        .ok_or(ApiError::from(ApiErrorKind::StorageNotFound))
 }

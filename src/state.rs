@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use deadpool_postgres::Pool;
@@ -8,7 +8,6 @@ use crate::config;
 use crate::template;
 use crate::sec;
 
-
 pub mod ids;
 pub mod db;
 
@@ -16,6 +15,7 @@ pub mod db;
 pub struct Shared {
     assets: PathBuf,
     pages: PathBuf,
+    tmp: PathBuf,
     pool: Pool,
     templates: template::state::Templates,
     sec: sec::state::Sec,
@@ -31,10 +31,11 @@ impl Shared {
         Ok(Shared {
             assets: PathBuf::new(),
             pages: PathBuf::new(),
+            tmp: config.settings.tmp.clone(),
             pool: db::from_config(config)?,
             templates: template::state::Templates::from_config(config)?,
             sec: sec::state::Sec::from_config(config)?,
-            ids: ids::Ids::new(config.settings.id)?
+            ids: ids::Ids::new(config.settings.id)?,
         })
     }
 
@@ -44,6 +45,10 @@ impl Shared {
 
     pub fn pages(&self) -> &PathBuf {
         &self.pages
+    }
+
+    pub fn tmp(&self) -> &Path {
+        &self.tmp
     }
 
     pub fn pool(&self) -> &Pool {

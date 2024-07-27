@@ -66,6 +66,7 @@ pub struct Listener {
 pub struct Settings {
     pub id: Option<i64>,
     pub data: Option<PathBuf>,
+    pub tmp: Option<PathBuf>,
     pub master_key: Option<String>,
 
     pub listeners: Option<HashMap<String, Listener>>,
