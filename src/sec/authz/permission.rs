@@ -93,3 +93,24 @@ pub async fn has_ability(
 
     Ok(result > 0)
 }
+
+use crate::error::{ApiError, ApiResult};
+use crate::error::api::ApiErrorKind;
+use crate::sec::authn::initiator::{Initiator, Mechanism};
+
+pub async fn api_ability(
+    conn: &impl GenericClient,
+    initiator: &Initiator,
+    scope: Scope,
+    ability: Ability,
+) -> ApiResult<()> {
+    match &initiator.mechanism {
+        Mechanism::Session(_) => {
+            if !has_ability(conn, &initiator.user.id, scope, ability).await? {
+                return Err(ApiError::from(ApiErrorKind::PermissionDenied));
+            }
+        }
+    }
+
+    Ok(())
+}

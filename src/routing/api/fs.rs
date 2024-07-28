@@ -66,14 +66,12 @@ async fn retrieve(
 ) -> ApiResult<rfs_api::Payload<Vec<ItemMin>>> {
     let conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::Fs,
-        permission::Ability::Read,
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+        permission::Ability::Read
+    ).await?;
 
     let mut pagination = rfs_api::Pagination::from(&limit);
 
@@ -147,14 +145,12 @@ pub async fn retrieve_id(
 ) -> ApiResult<rfs_api::Payload<rfs_api::fs::Item>> {
     let conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::Fs,
         permission::Ability::Read
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     Ok(rfs_api::Payload::new(fs::fetch_item(&conn, &fs_id, &initiator).await?.into()))
 }
@@ -168,14 +164,12 @@ async fn create_item(
 ) -> ApiResult<(StatusCode, rfs_api::Payload<rfs_api::fs::Item>)> {
     let mut conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::Fs,
         permission::Ability::Write,
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let (item, storage) = tokio::try_join!(
         fs::fetch_item(&conn, &fs_id, &initiator),
@@ -445,14 +439,12 @@ async fn upload_file(
 ) -> ApiResult<rfs_api::Payload<rfs_api::fs::Item>> {
     let mut conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::Fs,
         permission::Ability::Write,
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let (item, storage) = tokio::try_join!(
         fs::fetch_item(&conn, &fs_id, &initiator),
@@ -631,14 +623,12 @@ async fn update_item(
 ) -> ApiResult<rfs_api::Payload<rfs_api::fs::Item>> {
     let mut conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::Fs,
         permission::Ability::Write,
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     if !json.has_work() {
         return Err(ApiError::from(ApiErrorKind::NoWork));
@@ -704,17 +694,17 @@ async fn delete_item(
 ) -> ApiResult<StatusCode> {
     let mut conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::Fs,
         permission::Ability::Write,
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
-    let item = fs::fetch_item(&conn, &fs_id, &initiator).await?;
-    let storage = fs::fetch_storage(&conn, item.storage_id()).await?;
+    let (item, storage) = tokio::try_join!(
+        fs::fetch_item(&conn, &fs_id, &initiator),
+        fs::fetch_storage_from_fs_id(&conn, &fs_id),
+    )?;
 
     match item {
         fs::Item::Root(_root) => {
@@ -897,14 +887,12 @@ async fn retrieve_id_contents(
 ) -> ApiResult<rfs_api::Payload<Vec<ItemMin>>> {
     let conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::Fs,
         permission::Ability::Read,
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let item = fs::Item::retrieve(&conn, &fs_id)
         .await?
@@ -1033,17 +1021,17 @@ async fn download_id(
 ) -> ApiResult<Response<Body>> {
     let conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::Fs,
         permission::Ability::Read
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
-    let item = fs::fetch_item(&conn, &fs_id, &initiator).await?;
-    let storage = fs::fetch_storage(&conn, item.storage_id()).await?;
+    let (item, storage) = tokio::try_join!(
+        fs::fetch_item(&conn, &fs_id, &initiator),
+        fs::fetch_storage_from_fs_id(&conn, &fs_id),
+    )?;
 
     let Ok(file): Result<fs::File, _> = item.try_into() else {
         return Err(ApiError::from(ApiErrorKind::NotFile));
@@ -1054,7 +1042,7 @@ async fn download_id(
         .header("content-disposition", format!("attachment; filename=\"{}\"", file.basename))
         .header("content-type", file.mime.to_string())
         .header("content-length", file.size)
-        .header("x-checksum", format!("blake3:{}", file.hash.to_hex()));
+        .header("x-checksum", format!("blake3:{}", file.hash));
 
     match backend::Pair::match_up(&storage.backend, &file.backend)? {
         backend::Pair::Local((local, node_local)) => {
