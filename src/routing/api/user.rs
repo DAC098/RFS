@@ -63,14 +63,12 @@ async fn retrieve(
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::User,
         permission::Ability::Read
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let mut pagination = rfs_api::Pagination::from(&limit);
 
@@ -132,14 +130,12 @@ async fn create(
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::User,
         permission::Ability::Write,
-    ).await? {
-        return Err(ApiError::api(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     json.validate()?;
 
@@ -210,14 +206,12 @@ async fn retrieve_id(
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::User,
         permission::Ability::Read,
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let user = user::User::retrieve(&conn, &user_id)
         .await?
@@ -243,14 +237,12 @@ async fn update_id(
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::User,
         permission::Ability::Write,
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let mut user = user::User::retrieve(&conn, &user_id)
         .await?
@@ -364,14 +356,12 @@ async fn delete_id(
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::User,
         permission::Ability::Write
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let user = user::User::retrieve(&conn, &user_id)
         .await?

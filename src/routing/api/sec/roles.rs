@@ -24,14 +24,12 @@ pub async fn retrieve(
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         Scope::SecRoles,
         Ability::Read,
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let mut pagination = rfs_api::Pagination::from(&limit);
 
@@ -89,14 +87,12 @@ pub async fn create(
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         Scope::SecRoles,
         Ability::Write
-    ).await? {
-        return Err(ApiError::api(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let transaction = conn.transaction().await?;
 
@@ -202,14 +198,12 @@ pub async fn retrieve_id(
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         Scope::SecRoles,
         Ability::Read,
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let role_params: sql::ParamsArray<1> = [&role_id];
 
@@ -260,14 +254,12 @@ pub async fn update_id(
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         Scope::SecRoles,
         Ability::Write
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied))
-    }
+    ).await?;
 
     let transaction = conn.transaction().await?;
 
@@ -393,14 +385,12 @@ pub async fn delete_id(
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         Scope::SecRoles,
         Ability::Write
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let transaction = conn.transaction().await?;
 
@@ -447,14 +437,12 @@ pub async fn retreive_id_users(
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         Scope::SecRoles,
         Ability::Read
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let mut pagination = rfs_api::Pagination::from(&limit);
     let offset_num = limit.sql_offset(offset);
@@ -521,14 +509,12 @@ pub async fn add_id_users(
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         Scope::SecRoles,
         Ability::Write
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let transaction = conn.transaction().await?;
 
@@ -564,14 +550,12 @@ pub async fn remove_id_users(
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         Scope::SecRoles,
         Ability::Write
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let transaction = conn.transaction().await?;
 
@@ -604,14 +588,12 @@ pub async fn retrieve_id_groups(
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         Scope::SecRoles,
         Ability::Read,
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let mut pagination = rfs_api::Pagination::from(&limit);
     let offset_num = limit.sql_offset(offset);
@@ -678,14 +660,12 @@ pub async fn add_id_groups(
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         Scope::SecRoles,
         Ability::Write,
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let transaction = conn.transaction().await?;
 
@@ -721,14 +701,12 @@ pub async fn remove_id_groups(
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         Scope::SecRoles,
         Ability::Write
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let transaction = conn.transaction().await?;
 

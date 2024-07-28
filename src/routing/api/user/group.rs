@@ -30,14 +30,12 @@ pub async fn retrieve(
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::UserGroup,
         permission::Ability::Read,
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let mut pagination = rfs_api::Pagination::from(&limit);
 
@@ -95,14 +93,12 @@ pub async fn create(
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::UserGroup,
         permission::Ability::Write
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let name = json.name;
     let created = chrono::Utc::now();
@@ -160,14 +156,12 @@ pub async fn retrieve_id(
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::UserGroup,
         permission::Ability::Read,
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let group = user::group::Group::retrieve(&conn, &group_id)
         .await?
@@ -189,14 +183,12 @@ pub async fn update_id(
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::UserGroup,
         permission::Ability::Write,
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let original = user::group::Group::retrieve(&conn, &group_id)
         .await?
@@ -254,14 +246,12 @@ pub async fn delete_id(
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::UserGroup,
         permission::Ability::Write,
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let original = user::group::Group::retrieve(&conn, &group_id)
         .await?
@@ -297,14 +287,12 @@ pub async fn retrieve_users(
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::UserGroup,
         permission::Ability::Read
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let mut pagination = rfs_api::Pagination::from(&limit);
     let offset_num = limit.sql_offset(offset);
@@ -378,14 +366,12 @@ pub async fn add_users(
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::UserGroup,
         permission::Ability::Write,
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     user::group::Group::retrieve(&conn, &group_id)
         .await?
@@ -431,14 +417,12 @@ pub async fn delete_users(
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::UserGroup,
         permission::Ability::Write,
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     user::group::Group::retrieve(&conn, &group_id)
         .await?

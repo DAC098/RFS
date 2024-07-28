@@ -31,14 +31,12 @@ pub async fn retrieve(
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::Storage,
         permission::Ability::Read,
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let result = conn.query_raw(
         "\
@@ -80,14 +78,12 @@ pub async fn create(
 
     let mut conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::Storage,
         permission::Ability::Write,
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let backend = match json.backend {
         CreateConfig::Local { path } => {
@@ -203,14 +199,12 @@ pub async fn retrieve_id(
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::Storage,
         permission::Ability::Read,
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let storage = fs::Storage::retrieve(&conn, &storage_id)
         .await?
@@ -235,14 +229,12 @@ pub async fn update_id(
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::Storage,
         permission::Ability::Write,
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let mut storage = fs::Storage::retrieve(&conn, &storage_id)
         .await?
@@ -330,14 +322,12 @@ pub async fn delete_id(
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::Storage,
         permission::Ability::Write,
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let storage = fs::Storage::retrieve(&conn, &storage_id)
         .await?

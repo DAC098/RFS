@@ -25,14 +25,12 @@ pub async fn password_retrieve(
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::SecSecrets,
         permission::Ability::Read
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let mut known_versions = Vec::new();
 
@@ -61,14 +59,12 @@ pub async fn password_create(
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::SecSecrets,
         permission::Ability::Write
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let data = Key::rand_key_data()?;
     let created = time::utc_now().context("failed to create timestamp")?;
@@ -92,14 +88,12 @@ pub async fn password_retrieve_version(
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::SecSecrets,
         permission::Ability::Read
-    ).await? {
-        return Err(ApiError::api(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let peppers = state.sec().peppers();
 
@@ -172,14 +166,12 @@ pub async fn password_rotate_deletion(
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::SecSecrets,
         permission::Ability::Write,
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let (to_drop, maybe) = password_get_next_avail(&version, state.sec().peppers())?;
 
@@ -289,14 +281,12 @@ pub async fn session_retrieve(
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::SecSecrets,
         permission::Ability::Read,
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let session_keys = state.sec()
         .session_info()
@@ -328,14 +318,12 @@ pub async fn session_create(
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::SecSecrets,
         permission::Ability::Write,
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let wrapper = state.sec().session_info().keys();
     let data = Key::rand_key_data()?;
@@ -368,14 +356,12 @@ pub async fn session_delete(
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
-    if !permission::has_ability(
+    permission::api_ability(
         &conn,
-        &initiator.user.id,
+        &initiator,
         permission::Scope::SecSecrets,
         permission::Ability::Write
-    ).await? {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    ).await?;
 
     let wrapper = state.sec().session_info().keys();
 
