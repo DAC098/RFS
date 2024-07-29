@@ -3,7 +3,8 @@ use snowcloud_cloud::error::Error;
 use snowcloud_cloud::sync::MutexGenerator;
 use snowcloud_cloud::wait::blocking_next_id;
 
-use crate::net::error::{Result as NetResult, Error as NetError};
+use crate::error::ApiResult;
+use crate::error::api::Context;
 
 pub const START_TIME: u64 = 1685862000000;
 
@@ -26,31 +27,22 @@ impl Ids {
         })
     }
 
-    pub fn wait_user_id(&self) -> NetResult<ids::UserId> {
-        let Some(id) = blocking_next_id(&self.user, 5) else {
-            return Err(NetError::new()
-                .source("failed to generatoe user id. no more attempts"));
-        };
-
-        id.map_err(Into::into)
+    pub fn wait_user_id(&self) -> ApiResult<ids::UserId> {
+        blocking_next_id(&self.user, 5)
+            .context("failed to generate user id. no more attempts")?
+            .context("failed to generate user id")
     }
 
-    pub fn wait_storage_id(&self) -> NetResult<ids::StorageId> {
-        let Some(id) = blocking_next_id(&self.storage, 5) else {
-            return Err(NetError::new()
-                .source("failed to generatoe storage id. no more attempts"));
-        };
-
-        id.map_err(Into::into)
+    pub fn wait_storage_id(&self) -> ApiResult<ids::StorageId> {
+        blocking_next_id(&self.storage, 5)
+            .context("failed to generate storage id. no more attempts")?
+            .context("failed to generate storage id")
     }
 
-    pub fn wait_fs_id(&self) -> NetResult<ids::FSId> {
-        let Some(id) = blocking_next_id(&self.fs, 5) else {
-            return Err(NetError::new()
-                .source("failed to generatoe fs id. no more attempts"));
-        };
-
-        id.map_err(Into::into)
+    pub fn wait_fs_id(&self) -> ApiResult<ids::FSId> {
+        blocking_next_id(&self.fs, 5)
+            .context("failed to generate fs id. no more attempts")?
+            .context("failed to generate fs id")
     }
 }
 

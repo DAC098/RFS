@@ -7,7 +7,7 @@ use deadpool_postgres::GenericClient;
 use argon2::Variant;
 use rand::RngCore;
 
-use crate::net::error::Error as NetError;
+use crate::error;
 use crate::sec::secrets::{PeppersManager, PMError};
 use crate::sql;
 
@@ -48,11 +48,7 @@ pub enum PasswordError {
     Db(#[from] PgError)
 }
 
-impl From<PasswordError> for NetError {
-    fn from(err: PasswordError) -> Self {
-        NetError::new().source(err)
-    }
-}
+error::api::simple_from!(PasswordError);
 
 pub fn gen_salt() -> Result<Salt, rand::Error> {
     let mut salt = [0u8; SALT_LEN];

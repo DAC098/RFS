@@ -5,7 +5,8 @@ use axum::http::{StatusCode, HeaderValue, header::InvalidHeaderValue};
 use axum::response::{Response, ResponseParts, IntoResponse, IntoResponseParts};
 use chrono::{DateTime, Utc};
 
-use crate::net::error;
+use crate::error::ApiError;
+use crate::error::api::Context;
 
 pub enum SameSite {
     Strict,
@@ -224,13 +225,11 @@ impl TryFrom<SetCookie> for HeaderValue {
 }
 
 impl IntoResponseParts for SetCookie {
-    type Error = error::Error;
+    type Error = ApiError;
 
     fn into_response_parts(self, mut res: ResponseParts) -> Result<ResponseParts, Self::Error> {
         let value = self.into_header_value()
-            .map_err(|err| error::Error::new()
-                .context("failed to change SetCookie into HeaderValue")
-                .source(err))?;
+            .context("failed to to change SetCookie into HeaderValue")?;
 
         res.headers_mut().insert("set-cookie", value);
 

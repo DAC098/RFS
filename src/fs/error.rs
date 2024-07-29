@@ -1,4 +1,4 @@
-use crate::net::error;
+use crate::error::ApiError;
 
 pub enum StreamError {
     Axum(axum::Error),
@@ -17,7 +17,7 @@ impl From<std::io::Error> for StreamError {
     }
 }
 
-impl From<StreamError> for error::Error {
+impl From<StreamError> for ApiError {
     fn from(err: StreamError) -> Self {
         match err {
             StreamError::Io(err) => err.into(),
@@ -57,7 +57,7 @@ impl From<StreamError> for BuilderError {
     }
 }
 
-impl From<BuilderError> for error::Error {
+impl From<BuilderError> for ApiError {
     fn from(err: BuilderError) -> Self {
         match err {
             BuilderError::Io(err) => err.into(),

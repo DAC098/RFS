@@ -6,11 +6,11 @@ use deadpool_postgres::GenericClient;
 use futures::{TryStream, StreamExt};
 use moka::sync::Cache;
 
-use crate::sec::state;
-use crate::net::error::Error as NetError;
+use crate::error::ApiError;
 use crate::net::cookie::{SameSite, SetCookie};
-use crate::user::User;
+use crate::sec::state;
 use crate::sql;
+use crate::user::User;
 
 pub mod token;
 
@@ -85,13 +85,13 @@ impl From<token::UniqueError> for BuilderError {
     }
 }
 
-impl From<BuilderError> for NetError {
-    fn from(err: BuilderError) -> NetError {
+impl From<BuilderError> for ApiError {
+    fn from(err: BuilderError) -> Self {
         match err {
-            BuilderError::TokenAttempts => NetError::new()
-                .source("ran out of token attempts"),
-            BuilderError::UtcOverflow => NetError::new()
-                .source("date time value overflowed"),
+            BuilderError::TokenAttempts => ApiError::new()
+                .context("ran out of token attempts"),
+            BuilderError::UtcOverflow => ApiError::new()
+                .context("date time value overflowed"),
             BuilderError::Pg(err) => err.into(),
             BuilderError::Rand(err) => err.into(),
         }

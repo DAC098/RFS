@@ -2,7 +2,7 @@ use rand::RngCore;
 use tokio_postgres::{Error as PgError};
 use deadpool_postgres::GenericClient;
 
-use crate::net::error;
+use crate::error::ApiError;
 
 pub const SESSION_ID_BYTES: usize = 48;
 
@@ -15,8 +15,8 @@ pub enum UniqueError {
     Pg(#[from] PgError),
 }
 
-impl From<UniqueError> for error::Error {
-    fn from(err: UniqueError) -> error::Error {
+impl From<UniqueError> for ApiError {
+    fn from(err: UniqueError) -> Self {
         match err {
             UniqueError::Rand(e) => e.into(),
             UniqueError::Pg(e) => e.into(),

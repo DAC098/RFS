@@ -66,8 +66,6 @@ impl From<Config> for rfs_api::fs::backend::Config {
 
 // ----------------------------------------------------------------------------
 
-use crate::net;
-
 pub enum Pair<'a, 'b> {
     Local((&'a ConfigLocal, &'b NodeLocal))
 }
@@ -76,12 +74,7 @@ pub enum Pair<'a, 'b> {
 #[error("provided backends do not match")]
 pub struct MissMatched;
 
-impl From<MissMatched> for net::error::Error {
-    fn from(err: MissMatched) -> Self {
-        net::error::Error::new()
-            .source(err)
-    }
-}
+crate::error::api::simple_from!(MissMatched);
 
 impl<'a, 'b> Pair<'a, 'b> {
     pub fn match_up(config: &'a Config, node: &'b Node) -> Result<Self, MissMatched> {
