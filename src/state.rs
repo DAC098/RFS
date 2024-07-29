@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -13,7 +14,7 @@ pub mod db;
 
 #[derive(Debug)]
 pub struct Shared {
-    assets: PathBuf,
+    assets: Assets,
     pages: PathBuf,
     tmp: PathBuf,
     pool: Pool,
@@ -29,7 +30,10 @@ impl Shared {
         tracing::debug!("creating Shared state");
 
         Ok(Shared {
-            assets: PathBuf::new(),
+            assets: Assets {
+                files: config.settings.assets.files.clone(),
+                directories: config.settings.assets.directories.clone(),
+            },
             pages: PathBuf::new(),
             tmp: config.settings.tmp.clone(),
             pool: db::from_config(config)?,
@@ -39,7 +43,7 @@ impl Shared {
         })
     }
 
-    pub fn assets(&self) -> &PathBuf {
+    pub fn assets(&self) -> &Assets {
         &self.assets
     }
 
@@ -95,4 +99,10 @@ impl AsRef<template::state::Templates> for Shared {
     fn as_ref(&self) -> &template::state::Templates {
         &self.templates
     }
+}
+
+#[derive(Debug)]
+pub struct Assets {
+    pub files: HashMap<String, PathBuf>,
+    pub directories: HashMap<String, PathBuf>,
 }

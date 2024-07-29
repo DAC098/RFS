@@ -1,5 +1,5 @@
 use std::default::Default;
-use std::fmt::{Formatter, Display, Debug, Result as FmtResult};
+use std::fmt::{Write, Formatter, Display, Debug, Result as FmtResult};
 
 mod base;
 
@@ -225,5 +225,33 @@ impl<T> Context<T, ()> for std::option::Option<T> {
                 src: None
             })
         }
+    }
+}
+
+pub fn trace_error<D, E>(prefix: &D, error: &E)
+where
+    D: Display + ?Sized,
+    E: std::error::Error
+{
+    let mut msg_failed = false;
+    let mut msg = format!("0) {error}");
+    let mut count = 1;
+    let mut curr = std::error::Error::source(error);
+
+    while let Some(next) = curr {
+        if let Err(err) = write!(&mut msg, "\n{count}) {next}") {
+            tracing::error!("error when attempting to create error trace\n{err}");
+
+            msg_failed = true;
+
+            break;
+        }
+
+        count += 1;
+        curr = std::error::Error::source(next);
+    }
+
+    if !msg_failed {
+        tracing::error!("{prefix}\n{msg}");
     }
 }
