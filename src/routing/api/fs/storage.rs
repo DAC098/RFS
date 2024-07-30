@@ -1,23 +1,24 @@
 use std::fmt::Write;
 use std::path::PathBuf;
 
-use rfs_lib::ids;
 use rfs_api::fs::{CreateStorage, StorageMin, UpdateStorage};
 use rfs_api::fs::backend::{CreateConfig, UpdateConfig};
+use rfs_lib::ids;
 
+use axum::extract::{Path, State, Query};
 use axum::http::StatusCode;
-use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use futures::TryStreamExt;
 use serde::Deserialize;
 
 use crate::error::{ApiError, ApiResult};
 use crate::error::api::{Context, Detail, ApiErrorKind};
-use crate::state::ArcShared;
+use crate::fs;
+use crate::routing::query::PaginationQuery;
 use crate::sec::authn::initiator;
 use crate::sec::authz::permission;
 use crate::sql;
-use crate::fs;
+use crate::state::ArcShared;
 use crate::tags;
 
 #[derive(Deserialize)]
@@ -28,6 +29,7 @@ pub struct PathParams {
 pub async fn retrieve(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
+    Query(PaginationQuery { limit, offset, last_id }): Query<PaginationQuery<ids::StorageId>>,
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
@@ -38,21 +40,48 @@ pub async fn retrieve(
         permission::Ability::Read,
     ).await?;
 
-    let result = conn.query_raw(
-        "\
-        select storage.id, \
-               storage.name, \
-               storage.user_id, \
-               storage.backend, \
-        from storage \
-        where storage.user_id = $1 \
-        order by storage.id",
-        &[&initiator.user.id]
-    ).await?;
+    let mut pagination = rfs_api::Pagination::from(&limit);
+
+    let result = if let Some(last_id) = last_id {
+        let params: sql::ParamsArray<3> = [&initiator.user.id, &last_id, &limit];
+
+        conn.query_raw(
+            "\
+            select storage.id, \
+                   storage.name, \
+                   storage.user_id, \
+                   storage.backend \
+            from storage \
+            where storage.user_id = $1 and \
+                  storage.id > $2 \
+            order by storage.id \
+            limit $3",
+            params,
+        ).await?
+    } else {
+        pagination.set_offset(offset);
+
+        let offset_num = limit.sql_offset(offset);
+        let params: sql::ParamsArray<3> = [&initiator.user.id, &limit, &offset_num];
+
+        conn.query_raw(
+            "\
+            select storage.id, \
+                   storage.name, \
+                   storage.user_id, \
+                   storage.backend \
+            from storage \
+            where storage.user_id = $1 \
+            order by storage.id \
+            limit $2 \
+            offset $3",
+            params,
+        ).await?
+    };
 
     futures::pin_mut!(result);
 
-    let mut list = Vec::with_capacity(10);
+    let mut list = Vec::new();
 
     while let Some(row) = result.try_next().await? {
         list.push(StorageMin {
@@ -63,7 +92,7 @@ pub async fn retrieve(
         });
     }
 
-    Ok(rfs_api::Payload::new(list))
+    Ok(rfs_api::Payload::from((pagination, list)))
 }
 
 pub async fn create(

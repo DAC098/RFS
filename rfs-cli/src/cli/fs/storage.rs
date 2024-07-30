@@ -1,21 +1,30 @@
 use std::path::PathBuf;
 
-use rfs_api::client::ApiClient;
+use rfs_api::client::{ApiClient, iterate};
 use rfs_api::client::fs::storage::{
+    QueryStorage,
     CreateStorage,
     RetrieveStorage,
     UpdateStorage,
+};
+use rfs_api::fs::{
+    StorageMin,
+    backend,
 };
 
 use clap::{Subcommand, Args};
 
 use crate::error::{self, Context};
 use crate::util;
+use crate::formatting::{self, WriteTags, OutputOptions, TextTable, Column, Float, PRETTY_OPTIONS};
 
 #[derive(Debug, Args)]
 pub struct StorageArgs {
+    #[command(flatten)]
+    get: GetArgs,
+
     #[command(subcommand)]
-    command: StorageCmds
+    command: Option<StorageCmds>
 }
 
 #[derive(Debug, Subcommand)]
@@ -27,10 +36,91 @@ enum StorageCmds {
 }
 
 pub fn handle(client: &ApiClient, args: StorageArgs) -> error::Result {
-    match args.command {
-        StorageCmds::Create(given) => create(client, given),
-        StorageCmds::Update(given) => update(client, given),
+    if let Some(cmd) = args.command {
+        match cmd {
+            StorageCmds::Create(given) => create(client, given),
+            StorageCmds::Update(given) => update(client, given),
+        }
+    } else {
+        get(client, args.get)
     }
+}
+
+fn sort_storage(a: &StorageMin, b: &StorageMin) -> bool {
+    a.name < b.name
+}
+
+#[derive(Debug, Args)]
+struct GetArgs {
+    /// id of the storage item to retrieve
+    #[arg(long, value_parser(util::parse_flake_id::<rfs_lib::ids::StorageId>))]
+    id: Option<rfs_lib::ids::StorageId>,
+
+    #[command(flatten)]
+    output_options: OutputOptions,
+}
+
+fn get(client: &ApiClient, args: GetArgs) -> error::Result {
+    if let Some(id) = args.id {
+        let found = RetrieveStorage::id(id)
+            .send(client)
+            .context("failed to retrieve desired storage")?
+            .context("storage id not found")?
+            .into_payload();
+
+        println!("{} {}", found.name, found.id.id());
+        println!("owner: {}", found.user_id.id());
+        println!("created: {}", formatting::datetime_to_string(&found.created, &args.output_options.ts_format));
+
+        if let Some(updated) = found.updated {
+            println!("updated: {}", formatting::datetime_to_string(&updated, &args.output_options.ts_format));
+        }
+
+        match found.backend {
+            backend::Config::Local(local) => {
+                println!("backend: Local");
+                println!("    path: \"{}\"", local.path.display());
+            }
+        }
+
+        println!("{}", WriteTags::new(&found.tags));
+    } else {
+        let mut builder = QueryStorage::new();
+        let mut table = TextTable::with_columns([
+            Column::builder("id").float(Float::Right).build(),
+            Column::builder("name").build(),
+            Column::builder("type").build(),
+            //Column::builder("mod").float(Float::Right).build(),
+        ]);
+
+        for result in iterate::Iterate::new(client, &mut builder) {
+            let item = result.context("failed to retrieve storage item")?;
+            let mut row = table.add_row();
+
+            //let time = item.updated.as_ref().unwrap_or(&item.created);
+
+            row.set_col(0, item.id.id());
+            row.set_col(1, item.name.clone());
+            //row.set_col(3, formatting::datetime_to_string(&time, &args.output_options.ts_format));
+
+            match &item.backend {
+                backend::Config::Local(_) => {
+                    row.set_col(2, "Local");
+                }
+            }
+
+            row.finish_sort_by(item, sort_storage);
+        }
+
+        if table.is_empty() {
+            println!("no contents");
+        } else {
+            table.print(&PRETTY_OPTIONS)
+                .context("failed to outpu results to stdout")?;
+        }
+    }
+
+    Ok(())
 }
 
 #[derive(Debug, Args)]

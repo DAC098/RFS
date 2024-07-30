@@ -3,8 +3,15 @@ use std::path::PathBuf;
 use rfs_lib::ids;
 
 use crate::client::error::RequestError;
-use crate::client::ApiClient;
-use crate::{Payload, ApiError, ApiErrorKind, Tags};
+use crate::client::{ApiClient, iterate};
+use crate::{
+    Payload,
+    ApiError,
+    ApiErrorKind,
+    Tags,
+    Limit,
+    Offset,
+};
 use crate::fs::{
     CreateStorage as CreateStorageBody,
     UpdateStorage as UpdateStorageBody,
@@ -13,20 +20,89 @@ use crate::fs::{
     backend,
 };
 
-pub struct QueryStorage {}
+pub struct QueryStorage {
+    limit: Option<Limit>,
+    offset: Option<Offset>,
+    last_id: Option<ids::StorageId>,
+}
 
 impl QueryStorage {
     pub fn new() -> Self {
-        QueryStorage {}
+        QueryStorage {
+            limit: None,
+            offset: None,
+            last_id: None,
+        }
     }
 
-    pub fn send(self, client: &ApiClient) -> Result<Payload<Vec<StorageMin>>, RequestError> {
-        let res = client.get("/fs/storage").send()?;
+    pub fn limit<L>(&mut self, limit: L) -> &mut Self
+    where
+        L: Into<Option<Limit>>
+    {
+        self.limit = limit.into();
+        self
+    }
+
+    pub fn offset<O>(&mut self, offset: O) -> &mut Self
+    where
+        O: Into<Option<Offset>>
+    {
+        self.offset = offset.into();
+        self
+    }
+
+    pub fn last_id<I>(&mut self, last_id: I) -> &mut Self
+    where
+        I: Into<Option<ids::StorageId>>
+    {
+        self.last_id = last_id.into();
+        self
+    }
+
+    pub fn send(&self, client: &ApiClient) -> Result<Payload<Vec<StorageMin>>, RequestError> {
+        let mut builder = client.get("/api/fs/storage");
+
+        if let Some(limit) = &self.limit {
+            builder = builder.query(&[("limit", limit)]);
+        }
+
+        if let Some(last_id) = &self.last_id {
+            builder = builder.query(&[("last_id", last_id)]);
+        } else if let Some(offset) = &self.offset {
+            builder = builder.query(&[("offset", offset)]);
+        }
+
+        let res = builder.send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(res.json()?),
             _ => Err(RequestError::Api(res.json()?))
         }
+    }
+}
+
+impl iterate::Pageable for QueryStorage {
+    type Id = ids::StorageId;
+    type Item = StorageMin;
+
+    #[inline]
+    fn get_last_id(item: &Self::Item) -> Option<Self::Id> {
+        Some(item.id.clone())
+    }
+
+    #[inline]
+    fn set_limit(&mut self, limit: Option<Limit>) {
+        self.limit(limit);
+    }
+
+    #[inline]
+    fn set_last_id(&mut self, id: Option<Self::Id>) {
+        self.last_id(id);
+    }
+
+    #[inline]
+    fn send(&self, client: &ApiClient) -> Result<Payload<Vec<Self::Item>>, RequestError> {
+        QueryStorage::send(self, client)
     }
 }
 
@@ -40,7 +116,7 @@ impl RetrieveStorage {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<Option<Payload<Storage>>, RequestError> {
-        let res = client.get(format!("/fs/storage/{}", self.id.id())).send()?;
+        let res = client.get(format!("/api/fs/storage/{}", self.id.id())).send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(res.json()?),
@@ -109,7 +185,7 @@ impl CreateStorage {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<Payload<Storage>, RequestError> {
-        let res = client.post("/fs/storage")
+        let res = client.post("/api/fs/storage")
             .json(&self.body)
             .send()?;
 
@@ -183,7 +259,7 @@ impl UpdateStorage {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<Payload<Storage>, RequestError> {
-        let res = client.put(format!("/fs/storage/{}", self.id.id()))
+        let res = client.put(format!("/api/fs/storage/{}", self.id.id()))
             .json(&self.body)
             .send()?;
 
@@ -204,7 +280,7 @@ impl DeleteStorage {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
-        let res = client.delete(format!("/fs/storage/{}", self.id.id())).send()?;
+        let res = client.delete(format!("/api/fs/storage/{}", self.id.id())).send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(()),

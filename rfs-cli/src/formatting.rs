@@ -169,7 +169,7 @@ impl<'a> Display for WriteTags<'a> {
         write!(f, "tags:")?;
 
         for key in no_value.into_sorted_vec() {
-            write!(f, " {key}\n")?;
+            write!(f, ", {key}")?;
         }
 
         write!(f, "\n")?;

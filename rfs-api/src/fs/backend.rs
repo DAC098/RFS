@@ -8,6 +8,7 @@ pub struct ConfigLocal {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
 pub enum Config {
     Local(ConfigLocal)
 }
@@ -18,6 +19,7 @@ pub struct NodeLocal {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
 pub enum Node {
     Local(NodeLocal)
 }
