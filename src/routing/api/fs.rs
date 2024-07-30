@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::fmt::Write;
 use std::io::ErrorKind as StdIoErrorKind;
-use std::str::FromStr;
 
 use rfs_lib::ids;
 use rfs_api::fs::{
@@ -14,14 +13,13 @@ use rfs_api::fs::{
 use axum::{Router, debug_handler};
 use axum::body::Body;
 use axum::extract::{Path, Query, State};
-use axum::http::{StatusCode, HeaderMap};
+use axum::http::StatusCode;
 use axum::response::Response;
 use axum::routing::get;
 use deadpool_postgres::GenericClient;
-use futures::{StreamExt, TryStreamExt};
+use futures::TryStreamExt;
 use serde::Deserialize;
 use tokio::fs::OpenOptions;
-use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio_util::io::ReaderStream;
 
 use crate::error::{ApiResult, ApiError};
@@ -33,9 +31,9 @@ use crate::sec::authz::permission;
 use crate::sql;
 use crate::state::ArcShared;
 use crate::tags;
-use crate::path;
 
 mod storage;
+mod upload;
 
 pub fn routes() -> Router<ArcShared> {
     Router::new()
@@ -47,7 +45,7 @@ pub fn routes() -> Router<ArcShared> {
             .delete(storage::delete_id))
         .route("/:fs_id", get(retrieve_id)
             .post(create_item)
-            .put(upload_file)
+            .put(upload::upload_file)
             .patch(update_item)
             .delete(delete_item))
         .route("/:fs_id/contents", get(retrieve_id_contents))
@@ -296,323 +294,6 @@ async fn create_item(
     });
 
     Ok((StatusCode::CREATED, rfs_api::Payload::new(rtn.into())))
-}
-
-#[derive(Deserialize)]
-pub struct UploadQuery {
-    basename: Option<String>,
-}
-
-fn get_validation_hash(headers: &HeaderMap) -> ApiResult<Option<blake3::Hash>> {
-    if let Some(hash) = headers.get("x-hash") {
-        let hash_str = hash.to_str()
-            .kind(ApiErrorKind::InvalidHeaderValue)?;
-
-        let (algo, value) = hash_str.rsplit_once(':')
-            .kind(ApiErrorKind::InvalidHeaderValue)?;
-
-        match algo {
-            "blake3" => {
-                let hash = blake3::Hash::from_hex(value)
-                    .kind(ApiErrorKind::InvalidHeaderValue)?;
-
-                Ok(Some(hash))
-            }
-            _ => {
-                return Err(ApiError::from(ApiErrorKind::InvalidHeaderValue));
-            }
-        }
-    } else {
-        Ok(None)
-    }
-}
-
-fn get_basename(headers: &HeaderMap, query: &UploadQuery) -> ApiResult<String> {
-    let found = if let Some(value) = &query.basename {
-        value.clone()
-    } else if let Some(value) = headers.get("x-basename") {
-        value.to_str().kind_context(
-            ApiErrorKind::InvalidHeaderValue,
-            "x-basename contains invalid utf8 characters"
-        )?.to_owned()
-    } else {
-        return Err(ApiError::from((
-            ApiErrorKind::MissingData,
-            Detail::with_key("basename")
-        )));
-    };
-
-    if !rfs_lib::fs::basename_valid(&found) {
-        return Err(ApiError::api((
-            ApiErrorKind::ValidationFailed,
-            Detail::with_key("basename")
-        )));
-    }
-
-    Ok(found)
-}
-
-fn get_mime(headers: &HeaderMap) -> ApiResult<mime::Mime> {
-    if let Some(value) = headers.get("content-type") {
-        let content_type = value.to_str().kind_context(
-            ApiErrorKind::InvalidHeaderValue,
-            "content-type contains invalid utf8 characters"
-        )?;
-
-        mime::Mime::from_str(&content_type).kind_context(
-            ApiErrorKind::InvalidMimeType,
-            "content-type is not a valid mime format"
-        )
-    } else {
-        Err(ApiError::from(ApiErrorKind::NoContentType))
-    }
-}
-
-async fn write_file(
-    id: &ids::FSId,
-    full: &std::path::Path,
-    tmp_dir: &std::path::Path,
-    validate: Option<blake3::Hash>,
-    stream: Body,
-) -> ApiResult<(u64, blake3::Hash)> {
-    let tmp = tmp_dir.join(format!("{}", id.id()));
-    let mut written: usize = 0;
-    let mut hasher = blake3::Hasher::new();
-
-    tracing::debug!("opening tmp file: \"{}\"", tmp.display());
-
-    let file = tokio::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&tmp)
-        .await
-        .context("failed to open tmp file for writing")?;
-    let mut writer = BufWriter::new(file);
-
-    let mut stream = stream.into_data_stream();
-
-    while let Some(result) = stream.next().await {
-        let bytes = result?;
-        let slice = bytes.as_ref();
-
-        hasher.update(slice);
-
-        let wrote = writer.write(slice).await?;
-
-        written = written.checked_add(wrote)
-            .kind(ApiErrorKind::MaxSize)?;
-    }
-
-    writer.flush().await?;
-
-    let size = written.try_into()
-        .kind(ApiErrorKind::MaxSize)?;
-    let hash = hasher.finalize();
-
-    if let Some(validate) = validate {
-        if validate != hash {
-            tokio::fs::remove_file(&tmp)
-                .await
-                .context("failed removing tmp file after failed hash validation")?;
-
-            return Err(ApiError::from(ApiErrorKind::InvalidHash));
-        }
-    }
-
-    tracing::debug!("moving tmp to: \"{}\"", full.display());
-
-    tokio::fs::rename(&tmp, &full)
-        .await
-        .context("failed to move tmp file to full path")?;
-
-    Ok((size, hash))
-}
-
-#[debug_handler]
-async fn upload_file(
-    State(state): State<ArcShared>,
-    initiator: initiator::Initiator,
-    headers: HeaderMap,
-    Path(PathParams { fs_id }): Path<PathParams>,
-    Query(upload_query): Query<UploadQuery>,
-    stream: Body,
-) -> ApiResult<rfs_api::Payload<rfs_api::fs::Item>> {
-    let mut conn = state.pool().get().await?;
-
-    permission::api_ability(
-        &conn,
-        &initiator,
-        permission::Scope::Fs,
-        permission::Ability::Write,
-    ).await?;
-
-    let (item, storage) = tokio::try_join!(
-        fs::fetch_item(&conn, &fs_id, &initiator),
-        fs::fetch_storage_from_fs_id(&conn, &fs_id),
-    )?;
-
-    let mime = get_mime(&headers)?;
-    let maybe_validate = get_validation_hash(&headers)?;
-    let transaction = conn.transaction().await?;
-
-    let rtn = match item.try_into_parent_parts() {
-        Ok((parent, path, container_backend)) => {
-            let id = state.ids().wait_fs_id()?;
-            let user_id = initiator.user.id.clone();
-            let storage_id = storage.id.clone();
-            let created = chrono::Utc::now();
-            let basename = get_basename(&headers, &upload_query)?;
-
-            if fs::Item::name_check(&transaction, &parent, &basename).await?.is_some() {
-                return Err(ApiError::from(ApiErrorKind::AlreadyExists));
-            }
-
-            let size: u64;
-            let hash: blake3::Hash;
-
-            let backend = match backend::Pair::match_up(&storage.backend, &container_backend)? {
-                backend::Pair::Local((local, node_local)) => {
-                    let mut full = local.path.join(&node_local.path);
-                    full.push(&basename);
-
-                    let result = path::metadata(&full)
-                        .context("failed to retrieve metadata for file")?;
-
-                    if result.is_some() {
-                        return Err(ApiError::from((
-                            ApiErrorKind::AlreadyExists,
-                            "an unknown file already exists in this location"
-                        )));
-                    }
-
-                    let result = write_file(&id, &full, state.tmp(), maybe_validate, stream).await?;
-                    size = result.0;
-                    hash = result.1;
-
-                    backend::Node::Local(fs::backend::NodeLocal {
-                        path: full.strip_prefix(&local.path)
-                            .unwrap()
-                            .to_owned()
-                    })
-                }
-            };
-
-            {
-                let pg_backend = sql::ser_to_sql(&backend);
-                let pg_mime_type = mime.type_().as_str();
-                let pg_mime_subtype = mime.subtype().as_str();
-                let pg_hash = hash.as_bytes().as_slice();
-                let pg_size: i64 = TryFrom::try_from(size)
-                    .kind_context(ApiErrorKind::MaxSize, "total bytes written exceeds i64")?;
-
-                let _ = transaction.execute(
-                    "\
-                    insert into fs(\
-                        id, \
-                        user_id, \
-                        storage_id, \
-                        parent, \
-                        basename, \
-                        fs_type, \
-                        fs_path, \
-                        fs_size, \
-                        hash, \
-                        backend, \
-                        mime_type, \
-                        mime_subtype, \
-                        created\
-                    ) values \
-                    ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
-                    &[
-                        &id,
-                        &user_id,
-                        &storage_id,
-                        &parent,
-                        &basename,
-                        &fs::consts::FILE_TYPE,
-                        &path,
-                        &pg_size,
-                        &pg_hash,
-                        &pg_backend,
-                        &pg_mime_type,
-                        &pg_mime_subtype,
-                        &created
-                    ]
-                ).await?;
-            }
-
-            fs::Item::File(fs::File {
-                id,
-                user_id,
-                storage_id,
-                backend,
-                parent,
-                basename,
-                path,
-                mime,
-                size,
-                hash,
-                tags: Default::default(),
-                comment: None,
-                created,
-                updated: None,
-                deleted: None,
-            })
-        }
-        Err(item) => {
-            let mut file = item.into_file();
-            let size: u64;
-            let hash: blake3::Hash;
-            let updated = chrono::Utc::now();
-
-            if mime != file.mime {
-                return Err(ApiError::from(ApiErrorKind::MimeMismatch));
-            }
-
-            match backend::Pair::match_up(&storage.backend, &file.backend)? {
-                backend::Pair::Local((local, node_local)) => {
-                    let full = local.path.join(&node_local.path);
-
-                    let result = path::metadata(&full)
-                        .context("failed to retrieve metadata for file")?;
-
-                    if result.is_none() {
-                        return Err(ApiError::from(ApiErrorKind::FileNotFound));
-                    }
-
-                    let result = write_file(&file.id, &full, state.tmp(), maybe_validate, stream).await?;
-                    size = result.0;
-                    hash = result.1;
-                }
-            };
-
-            {
-                let pg_hash = hash.as_bytes().as_slice();
-                let pg_size: i64 = TryFrom::try_from(size)
-                    .kind_context(ApiErrorKind::MaxSize, "total bytes written exceeds i64")?;
-
-                let _ = transaction.execute(
-                    "\
-                    update fs \
-                    set fs_size = $2, \
-                        hash = $3, \
-                        updated = $4 \
-                    where fs.id = $1",
-                    &[&file.id, &pg_size, &pg_hash, &updated]
-                ).await?;
-            }
-
-            file.updated = Some(updated);
-            file.size = size;
-            file.hash = hash;
-
-            fs::Item::File(file)
-        }
-    };
-
-    transaction.commit().await?;
-
-    Ok(rfs_api::Payload::new(rtn.into()))
 }
 
 async fn update_item(
