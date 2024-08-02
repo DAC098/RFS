@@ -12,6 +12,7 @@ mime = { workspace = true }
 chrono = { workspace = true }
 snowcloud-flake = { workspace = true, features = ["serde", "postgres"] }
 thiserror = { workspace = true }
+nanoid = { workspace = true }
 
 serde_repr = { version = "0.1" }
 email_address = { version = "0.2.4" }

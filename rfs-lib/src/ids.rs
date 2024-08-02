@@ -1,47 +1,23 @@
-use std::fmt::Debug;
+pub const START_TIME: u64 = 168586200000;
+pub const UID_SIZE: usize = 16;
+pub const UID_ALPHABET: [char; 63] = [
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+    '_'
+];
 
-use snowcloud_flake::i64::SingleIdFlake;
-
-pub const START_TIME: u64 = 1685862000000;
-
-pub type UserId = SingleIdFlake<43, 8, 12>;
+pub type UserId = i64;
+pub type UserUid = String;
 pub type GroupId = i64;
+pub type GroupUid = String;
 pub type RoleId = i64;
-pub type FSId = SingleIdFlake<43, 8, 12>;
-pub type StorageId = SingleIdFlake<43, 8, 12>;
-pub type BotId = SingleIdFlake<43, 8, 12>;
-pub type ListenerId = SingleIdFlake<43, 8, 12>;
+pub type RoleUid = String;
+pub type FSId = i64;
+pub type FSUid = String;
+pub type StorageId = i64;
+pub type StorageUid = String;
 
-pub fn from_pg<V, T>(value: V) -> T
-where
-    T: TryFrom<V>,
-    T::Error: Debug,
-{
-    TryFrom::try_from(value)
-        .expect("failed to retrieve id from database")
-}
-
-#[inline]
-pub fn user_id_from_pg(value: i64) -> UserId {
-    from_pg(value)
-}
-
-#[inline]
-pub fn fs_id_from_pg(value: i64) -> FSId {
-    from_pg(value)
-}
-
-#[inline]
-pub fn storage_id_from_pg(value: i64) -> StorageId {
-    from_pg(value)
-}
-
-#[inline]
-pub fn bot_id_from_pg(value: i64) -> BotId {
-    from_pg(value)
-}
-
-#[inline]
-pub fn listener_id_from_pg(value: i64) -> ListenerId {
-    from_pg(value)
+pub fn create_uid() -> String {
+    nanoid::format(nanoid::rngs::default, &UID_ALPHABET, UID_SIZE)
 }
