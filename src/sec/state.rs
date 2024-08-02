@@ -5,6 +5,7 @@ use crate::config;
 
 use super::secrets;
 use super::authn::session::SessionCache;
+use super::authz::permission::Rbac;
 
 #[derive(Debug)]
 pub struct SessionInfo {
@@ -66,6 +67,7 @@ impl SessionInfo {
 pub struct Sec {
     session_info: SessionInfo,
     peppers: secrets::PeppersManager,
+    rbac: Rbac,
 }
 
 impl Sec {
@@ -86,9 +88,12 @@ impl Sec {
             .kind("PepperManagerFailed")
             .context("failed to create PeppersManager")?;
 
+        let rbac = Rbac::new();
+
         Ok(Sec {
             session_info: SessionInfo::from_config(config)?,
-            peppers
+            peppers,
+            rbac
         })
     }
 
@@ -98,6 +103,10 @@ impl Sec {
 
     pub fn peppers(&self) -> &secrets::PeppersManager {
         &self.peppers
+    }
+
+    pub fn rbac(&self) -> &Rbac {
+        &self.rbac
     }
 }
 

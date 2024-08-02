@@ -1,7 +1,7 @@
 use rfs_lib::ids;
 use chrono::{DateTime, Utc};
 use deadpool_postgres::GenericClient;
-use tokio_postgres::{Error as PgError};
+use tokio_postgres::Error as PgError;
 
 pub struct Group {
     pub id: ids::GroupId,

@@ -373,7 +373,9 @@ async fn delete_id(
 
     let transaction = conn.transaction().await?;
 
-    let cache = state.auth().session_info().cache();
+    let session = state.auth().session_info().cache();
+    let rbac = state.sec().rbac();
+
     let session_tokens = session::Session::delete_user_sessions(
         &transaction,
         &user.id,
@@ -383,8 +385,10 @@ async fn delete_id(
     futures::pin_mut!(session_tokens);
 
     while let Some(token) = session_tokens.try_next().await? {
-        cache.remove(&token);
+        session.remove(&token);
     }
+
+    rbac.clear_id(&user.id);
 
     Ok(StatusCode::NO_CONTENT)
 }

@@ -1,9 +1,21 @@
-use rfs_lib::ids;
-use tokio_postgres::{Error as PgError};
-use deadpool_postgres::GenericClient;
-use futures::TryStreamExt;
+use std::collections::{HashMap, HashSet};
+use std::convert::Infallible;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
 
-use crate::sql;
+use axum::extract::FromRequestParts;
+use axum::http::request::Parts;
+use deadpool_postgres::GenericClient;
+use futures::{TryStream, TryStreamExt, StreamExt};
+use moka::sync::Cache;
+use rfs_lib::ids;
+use tokio_postgres::Error as PgError;
+
+use crate::error::{ApiError, ApiResult};
+use crate::error::api::{ApiErrorKind, Context};
+use crate::sec::authn::initiator::{Initiator, Mechanism};
+use crate::state::ArcShared;
 
 pub use rfs_lib::sec::authz::permission::{Ability, Scope};
 
@@ -28,6 +40,16 @@ impl Role {
     }
 }
 
+impl From<Role> for rfs_api::sec::roles::Role {
+    fn from(role: Role) -> Self {
+        rfs_api::sec::roles::Role {
+            id: role.id,
+            name: role.name,
+            permissions: Vec::new(),
+        }
+    }
+}
+
 pub struct Permission {
     pub role_id: ids::RoleId,
     pub ability: Ability,
@@ -35,33 +57,31 @@ pub struct Permission {
 }
 
 impl Permission {
-    pub async fn retrieve_by_role_id(
+    pub async fn stream_by_role_id(
         conn: &impl GenericClient,
         role_id: &ids::RoleId
-    ) -> Result<Vec<Self>, PgError> {
-        let params: sql::ParamsVec = vec![role_id];
-        let query = conn.query_raw(
+    ) -> Result<impl TryStream<Item = Result<Self, PgError>>, PgError> {
+        let result = conn.query_raw(
             "select role_id, ability, scope from authz_permissions where role_id = $1",
-            params
+            &[role_id]
         ).await?;
 
-        futures::pin_mut!(query);
+        Ok(result.map(|row_result| row_result.map(
+            |row| Permission {
+                role_id: row.get(0),
+                ability: row.get(1),
+                scope: row.get(2),
+            }
+        )))
+    }
+}
 
-        let mut list = Vec::new();
-
-        while let Some(row) = query.try_next().await? {
-            let item = Permission {
-                role_id: *role_id,
-                ability: Ability::from_str(row.get(1))
-                    .expect("invalid ability value from database"),
-                scope: Scope::from_str(row.get(2))
-                    .expect("invalid scope value from database")
-            };
-
-            list.push(item);
+impl From<Permission> for rfs_api::sec::roles::Permission {
+    fn from(perm: Permission) -> Self {
+        rfs_api::sec::roles::Permission {
+            scope: perm.scope,
+            ability: perm.ability
         }
-
-        Ok(list)
     }
 }
 
@@ -94,9 +114,135 @@ pub async fn has_ability(
     Ok(result > 0)
 }
 
-use crate::error::{ApiError, ApiResult};
-use crate::error::api::ApiErrorKind;
-use crate::sec::authn::initiator::{Initiator, Mechanism};
+#[derive(Debug)]
+pub struct Abilities(HashMap<Scope, HashSet<Ability>>);
+
+impl Abilities {
+    pub fn has_ability(&self, scope: &Scope, ability: &Ability) -> bool {
+        if let Some(abilities) = self.0.get(scope) {
+            abilities.contains(ability)
+        } else {
+            false
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Rbac {
+    cache: moka::sync::Cache<ids::UserId, Arc<Abilities>>,
+}
+
+impl Rbac {
+    pub fn new() -> Self {
+        Rbac {
+            cache: Cache::builder()
+                .name("rbac")
+                .max_capacity(1_000)
+                .build(),
+        }
+    }
+
+    pub fn clear_id(&self, user_id: &ids::UserId) {
+        self.cache.invalidate(user_id);
+    }
+
+    pub async fn api_ability(
+        &self,
+        conn: &impl GenericClient,
+        initiator: &Initiator,
+        scope: Scope,
+        ability: Ability,
+    ) -> ApiResult<()> {
+        match &initiator.mechanism {
+            Mechanism::Session(_) => {
+                if let Some(abilities) = self.cache.get(&initiator.user.id) {
+                    if !abilities.has_ability(&scope, &ability) {
+                        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
+                    }
+                } else {
+                    let abilities = retrieve_abilities(conn, &initiator.user.id)
+                        .await
+                        .context("failed to retrieve user abilities")?;
+
+                    let result = abilities.has_ability(&scope, &ability);
+
+                    self.cache.insert(initiator.user.id.clone(), Arc::new(abilities));
+
+                    if !result {
+                        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl FromRequestParts<ArcShared> for Rbac {
+    type Rejection = Infallible;
+
+    fn from_request_parts<'life0, 'life1, 'async_trait>(
+        _parts: &'life0 mut Parts,
+        state: &'life1 ArcShared
+    ) -> Pin<Box<dyn Future<Output = Result<Self, Self::Rejection>> + Send + 'async_trait>>
+    where
+        'life0: 'async_trait,
+        'life1: 'async_trait,
+        Self: 'async_trait
+    {
+        let rbac = state.sec().rbac().clone();
+
+        Box::pin(async move {
+            Ok(rbac)
+        })
+    }
+}
+
+pub async fn retrieve_abilities(
+    conn: &impl GenericClient,
+    user_id: &ids::UserId,
+) -> Result<Abilities, PgError> {
+    let result = conn.query_raw(
+        "\
+        select authz_permissions.scope, \
+               authz_permissions.ability \
+        from authz_permissions \
+        join authz_roles on \
+            authz_permissions.role_id = authz_roles.id \
+        left join group_roles on \
+            authz_roles.id = group_roles.role_id \
+        left join groups on \
+            group_roles.group_id = groups.id \
+        left join group_users on \
+            groups.id = group_users.group_id \
+        left join user_roles on \
+            authz_roles.id = user_roles.role_id \
+        where user_roles.user_id = $1 or group_users.user_id = $1 \
+        group by authz_permissions.scope, authz_permissions.ability \
+        order by authz_permissions.scope, authz_permissions.ability",
+        &[user_id]
+    ).await?;
+
+    futures::pin_mut!(result);
+
+    let mut scopes: HashMap<Scope, HashSet<Ability>> = HashMap::new();
+
+    while let Some(row) = result.try_next().await? {
+        let scope = Scope::from_str(row.get(0))
+            .expect("invalid scope value from database");
+        let ability = Ability::from_str(row.get(1))
+            .expect("invalid ability value from database");
+
+        if let Some(abilities) = scopes.get_mut(&scope) {
+            abilities.insert(ability);
+        } else {
+            scopes.insert(scope, HashSet::from([ability]));
+        }
+    }
+
+    Ok(Abilities(scopes))
+}
 
 pub async fn api_ability(
     conn: &impl GenericClient,

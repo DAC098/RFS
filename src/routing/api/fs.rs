@@ -64,7 +64,7 @@ async fn retrieve(
 ) -> ApiResult<rfs_api::Payload<Vec<ItemMin>>> {
     let conn = state.pool().get().await?;
 
-    permission::api_ability(
+    state.sec().rbac().api_ability(
         &conn,
         &initiator,
         permission::Scope::Fs,
@@ -143,11 +143,11 @@ pub async fn retrieve_id(
 ) -> ApiResult<rfs_api::Payload<rfs_api::fs::Item>> {
     let conn = state.pool().get().await?;
 
-    permission::api_ability(
+    state.sec().rbac().api_ability(
         &conn,
         &initiator,
         permission::Scope::Fs,
-        permission::Ability::Read
+        permission::Ability::Read,
     ).await?;
 
     Ok(rfs_api::Payload::new(fs::fetch_item(&conn, &fs_id, &initiator).await?.into()))
@@ -162,7 +162,7 @@ async fn create_item(
 ) -> ApiResult<(StatusCode, rfs_api::Payload<rfs_api::fs::Item>)> {
     let mut conn = state.pool().get().await?;
 
-    permission::api_ability(
+    state.sec().rbac().api_ability(
         &conn,
         &initiator,
         permission::Scope::Fs,
@@ -304,7 +304,7 @@ async fn update_item(
 ) -> ApiResult<rfs_api::Payload<rfs_api::fs::Item>> {
     let mut conn = state.pool().get().await?;
 
-    permission::api_ability(
+    state.sec().rbac().api_ability(
         &conn,
         &initiator,
         permission::Scope::Fs,
@@ -375,7 +375,7 @@ async fn delete_item(
 ) -> ApiResult<StatusCode> {
     let mut conn = state.pool().get().await?;
 
-    permission::api_ability(
+    state.sec().rbac().api_ability(
         &conn,
         &initiator,
         permission::Scope::Fs,
@@ -568,7 +568,7 @@ async fn retrieve_id_contents(
 ) -> ApiResult<rfs_api::Payload<Vec<ItemMin>>> {
     let conn = state.pool().get().await?;
 
-    permission::api_ability(
+    state.sec().rbac().api_ability(
         &conn,
         &initiator,
         permission::Scope::Fs,
@@ -702,7 +702,7 @@ async fn download_id(
 ) -> ApiResult<Response<Body>> {
     let conn = state.pool().get().await?;
 
-    permission::api_ability(
+    state.sec().rbac().api_ability(
         &conn,
         &initiator,
         permission::Scope::Fs,

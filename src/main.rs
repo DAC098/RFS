@@ -9,6 +9,7 @@ use tracing_subscriber::{FmtSubscriber, EnvFilter};
 mod error;
 mod path;
 mod config;
+mod db;
 mod time;
 mod sql;
 mod net;

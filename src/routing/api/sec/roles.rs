@@ -4,27 +4,28 @@ use std::fmt::Write;
 use rfs_lib::ids;
 
 use axum::http::StatusCode;
-use axum::extract::{Path, State, Query};
+use axum::extract::{Path, Query};
 use axum::response::IntoResponse;
-use futures::TryStreamExt;
+use deadpool_postgres::GenericClient;
+use futures::{StreamExt, TryStream, TryStreamExt};
 use serde::Deserialize;
+use tokio_postgres::{Error as PgError};
 
 use crate::error::{ApiError, ApiResult};
 use crate::error::api::{Detail, ApiErrorKind, Context};
-use crate::state::ArcShared;
 use crate::sec::authn::initiator;
-use crate::sec::authz::permission::{self, Role, Permission, Ability, Scope};
+use crate::sec::authz::permission::{Rbac, Role, Permission, Ability, Scope};
 use crate::sql;
+use crate::db;
 use crate::routing::query::PaginationQuery;
 
 pub async fn retrieve(
-    State(state): State<ArcShared>,
+    db::Conn(conn): db::Conn,
+    rbac: Rbac,
     initiator: initiator::Initiator,
     Query(PaginationQuery { limit, offset, last_id }): Query<PaginationQuery<ids::RoleId>>,
 ) -> ApiResult<impl IntoResponse> {
-    let conn = state.pool().get().await?;
-
-    permission::api_ability(
+    rbac.api_ability(
         &conn,
         &initiator,
         Scope::SecRoles,
@@ -81,13 +82,12 @@ pub async fn retrieve(
 }
 
 pub async fn create(
-    State(state): State<ArcShared>,
+    db::Conn(mut conn): db::Conn,
+    rbac: Rbac,
     initiator: initiator::Initiator,
     axum::Json(json): axum::Json<rfs_api::sec::roles::CreateRole>
 ) -> ApiResult<impl IntoResponse> {
-    let mut conn = state.pool().get().await?;
-
-    permission::api_ability(
+    rbac.api_ability(
         &conn,
         &initiator,
         Scope::SecRoles,
@@ -192,69 +192,53 @@ pub struct PathParams {
 }
 
 pub async fn retrieve_id(
-    State(state): State<ArcShared>,
+    db::Conn(conn): db::Conn,
+    rbac: Rbac,
     initiator: initiator::Initiator,
     Path(PathParams { role_id }): Path<PathParams>,
-) -> ApiResult<impl IntoResponse> {
-    let conn = state.pool().get().await?;
-
-    permission::api_ability(
+) -> ApiResult<rfs_api::Payload<rfs_api::sec::roles::Role>> {
+    rbac.api_ability(
         &conn,
         &initiator,
         Scope::SecRoles,
         Ability::Read,
     ).await?;
 
-    let role_params: sql::ParamsArray<1> = [&role_id];
-
-    let (role_result, permissions_result) = match tokio::try_join!(
-        conn.query_opt(
-            "select id, name from authz_roles where id = $1",
-            &role_params
-        ),
-        conn.query_raw(
-            "select role_id, scope, ability from authz_permissions where role_id = $1",
-            [&role_id]
-        )
+    let (role, permissions) = match tokio::try_join!(
+        Role::retrieve(&conn, &role_id),
+        Permission::stream_by_role_id(&conn, &role_id)
     ) {
         Ok((Some(role), permissions)) => (role, permissions),
-        Ok((None, _)) => {
-            return Err(ApiError::from(ApiErrorKind::RoleNotFound));
-        },
-        Err(err) => {
-            return Err(err.into());
-        }
+        Ok((None, _)) => return Err(ApiError::from(ApiErrorKind::RoleNotFound)),
+        Err(err) => return Err(err.into()),
     };
 
-    let mut permissions = Vec::new();
+    let mut rtn: rfs_api::sec::roles::Role = role.into();
 
-    futures::pin_mut!(permissions_result);
+    futures::pin_mut!(permissions);
 
-    while let Some(row) = permissions_result.try_next().await? {
-        permissions.push(rfs_api::sec::roles::Permission {
-            scope: row.get(1),
-            ability: row.get(2),
-        });
+    while let Some(perm) = permissions.try_next().await? {
+        rtn.permissions.push(perm.into());
     }
-
-    let rtn = rfs_api::sec::roles::Role {
-        id: role_result.get(0),
-        name: role_result.get(1),
-        permissions,
-    };
 
     Ok(rfs_api::Payload::new(rtn))
 }
 
+fn map_permission_tuple((scope, ability): (Scope, Ability)) -> rfs_api::sec::roles::Permission {
+    rfs_api::sec::roles::Permission {
+        scope,
+        ability
+    }
+}
+
 pub async fn update_id(
-    State(state): State<ArcShared>,
+    db::Conn(mut conn): db::Conn,
+    rbac: Rbac,
     initiator: initiator::Initiator,
     Path(PathParams { role_id }): Path<PathParams>,
     axum::Json(json): axum::Json<rfs_api::sec::roles::UpdateRole>,
 ) -> ApiResult<impl IntoResponse> {
-    let mut conn = state.pool().get().await?;
-
-    permission::api_ability(
+    rbac.api_ability(
         &conn,
         &initiator,
         Scope::SecRoles,
@@ -353,22 +337,26 @@ pub async fn update_id(
 
     transaction.commit().await?;
 
+    clear_via_role(&rbac, &conn, &role_id).await?;
+
     let permissions = if let Some(changed) = changed_permissions {
         changed.into_iter()
-            .map(|(scope, ability)| rfs_api::sec::roles::Permission {
-                scope,
-                ability
-            })
+            .map(map_permission_tuple)
             .collect()
     } else {
-        Permission::retrieve_by_role_id(&conn, &role_id)
-            .await?
-            .into_iter()
-            .map(|perm| rfs_api::sec::roles::Permission {
-                scope: perm.scope,
-                ability: perm.ability
-            })
-            .collect()
+        let result = Permission::stream_by_role_id(&conn, &role_id)
+            .await
+            .context("failed to retrieve permissions for role")?;
+
+        futures::pin_mut!(result);
+
+        let mut list = Vec::new();
+
+        while let Some(perm) = result.try_next().await? {
+            list.push(perm.into());
+        }
+
+        list
     };
 
     Ok(rfs_api::Payload::new(rfs_api::sec::roles::Role {
@@ -379,13 +367,12 @@ pub async fn update_id(
 }
 
 pub async fn delete_id(
-    State(state): State<ArcShared>,
+    db::Conn(mut conn): db::Conn,
+    rbac: Rbac,
     initiator: initiator::Initiator,
     Path(PathParams { role_id }): Path<PathParams>,
 ) -> ApiResult<impl IntoResponse> {
-    let mut conn = state.pool().get().await?;
-
-    permission::api_ability(
+    rbac.api_ability(
         &conn,
         &initiator,
         Scope::SecRoles,
@@ -426,18 +413,19 @@ pub async fn delete_id(
 
     transaction.commit().await?;
 
+    clear_via_role(&rbac, &conn, &role_id).await?;
+
     Ok(StatusCode::OK)
 }
 
 pub async fn retreive_id_users(
-    State(state): State<ArcShared>,
+    db::Conn(conn): db::Conn,
+    rbac: Rbac,
     initiator: initiator::Initiator,
     Path(PathParams { role_id }): Path<PathParams>,
     Query(PaginationQuery { limit, offset, last_id }): Query<PaginationQuery<ids::UserId>>,
 ) -> ApiResult<impl IntoResponse> {
-    let conn = state.pool().get().await?;
-
-    permission::api_ability(
+    rbac.api_ability(
         &conn,
         &initiator,
         Scope::SecRoles,
@@ -480,12 +468,8 @@ pub async fn retreive_id_users(
 
     let result = match tokio::try_join!(role_fut, users_fut) {
         Ok((Some(_), rows)) => rows,
-        Ok((None, _)) => {
-            return Err(ApiError::from(ApiErrorKind::RoleNotFound));
-        }
-        Err(err) => {
-            return Err(ApiError::from(err));
-        }
+        Ok((None, _)) => return Err(ApiError::from(ApiErrorKind::RoleNotFound)),
+        Err(err) => return Err(ApiError::from(err)),
     };
 
     futures::pin_mut!(result);
@@ -502,14 +486,13 @@ pub async fn retreive_id_users(
 }
 
 pub async fn add_id_users(
-    State(state): State<ArcShared>,
+    db::Conn(mut conn): db::Conn,
+    rbac: Rbac,
     initiator: initiator::Initiator,
     Path(PathParams { role_id }): Path<PathParams>,
     axum::Json(json): axum::Json<rfs_api::sec::roles::AddRoleUser>
 ) -> ApiResult<impl IntoResponse> {
-    let mut conn = state.pool().get().await?;
-
-    permission::api_ability(
+    rbac.api_ability(
         &conn,
         &initiator,
         Scope::SecRoles,
@@ -518,7 +501,7 @@ pub async fn add_id_users(
 
     let transaction = conn.transaction().await?;
 
-    let _role = Role::retrieve(&transaction, &role_id)
+    Role::retrieve(&transaction, &role_id)
         .await?
         .kind(ApiErrorKind::RoleNotFound)?;
 
@@ -539,18 +522,21 @@ pub async fn add_id_users(
 
     transaction.commit().await?;
 
+    for user_id in json.ids {
+        rbac.clear_id(&user_id);
+    }
+
     Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn remove_id_users(
-    State(state): State<ArcShared>,
+    db::Conn(mut conn): db::Conn,
+    rbac: Rbac,
     initiator: initiator::Initiator,
     Path(PathParams { role_id }): Path<PathParams>,
     axum::Json(json): axum::Json<rfs_api::sec::roles::DropRoleUser>,
 ) -> ApiResult<impl IntoResponse> {
-    let mut conn = state.pool().get().await?;
-
-    permission::api_ability(
+    rbac.api_ability(
         &conn,
         &initiator,
         Scope::SecRoles,
@@ -559,7 +545,7 @@ pub async fn remove_id_users(
 
     let transaction = conn.transaction().await?;
 
-    let _role = Role::retrieve(&transaction, &role_id)
+    Role::retrieve(&transaction, &role_id)
         .await?
         .kind(ApiErrorKind::RoleNotFound)?;
 
@@ -577,18 +563,21 @@ pub async fn remove_id_users(
 
     transaction.commit().await?;
 
+    for user_id in json.ids {
+        rbac.clear_id(&user_id);
+    }
+
     Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn retrieve_id_groups(
-    State(state): State<ArcShared>,
+    db::Conn(conn): db::Conn,
+    rbac: Rbac,
     initiator: initiator::Initiator,
     Path(PathParams { role_id }): Path<PathParams>,
     Query(PaginationQuery { limit, offset, last_id }): Query<PaginationQuery<ids::GroupId>>,
 ) -> ApiResult<impl IntoResponse> {
-    let conn = state.pool().get().await?;
-
-    permission::api_ability(
+    rbac.api_ability(
         &conn,
         &initiator,
         Scope::SecRoles,
@@ -631,12 +620,8 @@ pub async fn retrieve_id_groups(
 
     let result = match tokio::try_join!(role_fut, groups_fut) {
         Ok((Some(_), rows)) => rows,
-        Ok((None, _)) => {
-            return Err(ApiError::from(ApiErrorKind::RoleNotFound));
-        }
-        Err(err) => {
-            return Err(ApiError::from(err));
-        }
+        Ok((None, _)) => return Err(ApiError::from(ApiErrorKind::RoleNotFound)),
+        Err(err) => return Err(ApiError::from(err)),
     };
 
     futures::pin_mut!(result);
@@ -653,14 +638,13 @@ pub async fn retrieve_id_groups(
 }
 
 pub async fn add_id_groups(
-    State(state): State<ArcShared>,
+    db::Conn(mut conn): db::Conn,
+    rbac: Rbac,
     initiator: initiator::Initiator,
     Path(PathParams { role_id }): Path<PathParams>,
     axum::Json(json): axum::Json<rfs_api::sec::roles::AddRoleGroup>
 ) -> ApiResult<impl IntoResponse> {
-    let mut conn = state.pool().get().await?;
-
-    permission::api_ability(
+    rbac.api_ability(
         &conn,
         &initiator,
         Scope::SecRoles,
@@ -669,7 +653,7 @@ pub async fn add_id_groups(
 
     let transaction = conn.transaction().await?;
 
-    let _role = Role::retrieve(&transaction, &role_id)
+    Role::retrieve(&transaction, &role_id)
         .await?
         .kind(ApiErrorKind::RoleNotFound)?;
 
@@ -686,7 +670,17 @@ pub async fn add_id_groups(
         on conflict on constraint group_roles_pkey do nothing";
     let params: sql::ParamsArray<2> = [&role_id, &json.ids];
 
-    let _ = transaction.execute(query, &params).await?;
+    transaction.execute(query, &params).await?;
+
+    let users = users_multi_group(&transaction, &json.ids)
+        .await
+        .context("failed to retrieve users attached to groups")?;
+
+    futures::pin_mut!(users);
+
+    while let Some(user) = users.try_next().await? {
+        rbac.clear_id(&user);
+    }
 
     transaction.commit().await?;
 
@@ -694,14 +688,13 @@ pub async fn add_id_groups(
 }
 
 pub async fn remove_id_groups(
-    State(state): State<ArcShared>,
+    db::Conn(mut conn): db::Conn,
+    rbac: Rbac,
     initiator: initiator::Initiator,
     Path(PathParams { role_id }): Path<PathParams>,
     axum::Json(json): axum::Json<rfs_api::sec::roles::DropRoleGroup>,
 ) -> ApiResult<impl IntoResponse> {
-    let mut conn = state.pool().get().await?;
-
-    permission::api_ability(
+    rbac.api_ability(
         &conn,
         &initiator,
         Scope::SecRoles,
@@ -710,7 +703,7 @@ pub async fn remove_id_groups(
 
     let transaction = conn.transaction().await?;
 
-    let _role = Role::retrieve(&transaction, &role_id)
+    Role::retrieve(&transaction, &role_id)
         .await?
         .kind(ApiErrorKind::RoleNotFound)?;
 
@@ -718,7 +711,7 @@ pub async fn remove_id_groups(
         return Err(ApiError::from(ApiErrorKind::NoWork));
     }
 
-    let _ = transaction.execute(
+    transaction.execute(
         "\
         delete from group_roles \
         where role_id = $1 and \
@@ -728,5 +721,96 @@ pub async fn remove_id_groups(
 
     transaction.commit().await?;
 
+    let users = users_multi_group(&conn, &json.ids)
+        .await
+        .context("failed to retrieve users attached to groups")?;
+
+    futures::pin_mut!(users);
+
+    while let Some(user) = users.try_next().await? {
+        rbac.clear_id(&user);
+    }
+
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn users_multi_group(
+    conn: &impl GenericClient,
+    group_ids: &[ids::GroupId]
+) -> Result<impl TryStream<Item = Result<ids::UserId, PgError>>, PgError> {
+    let result = conn.query_raw(
+        "\
+        select distinct on (user_id) user_id \
+        from group_users \
+        where group_id = any($1)",
+        &[group_ids]
+    ).await?;
+
+    Ok(result.map(|row_result| row_result.map(
+        |row| row.get::<usize, ids::UserId>(0)
+    )))
+}
+
+async fn users_via_groups(
+    conn: &impl GenericClient,
+    role_id: &ids::RoleId,
+) -> ApiResult<impl TryStream<Item = Result<ids::UserId, PgError>>> {
+    let result = conn.query_raw(
+        "\
+        select group_users.user_id \
+        from group_users \
+        right join group_roles on \
+            group_users.group_id = group_roles.group_id \
+        left join authz_roles on \
+            group_roles.role_id = authz_roles.id \
+        where authz_roles.id = $1",
+        &[role_id]
+    ).await.context("failed to retrieve group users attahced to role")?;
+
+    Ok(result.map(|row_result| row_result.map(
+        |row| row.get::<usize, ids::UserId>(0)
+    )))
+}
+
+async fn users(
+    conn: &impl GenericClient,
+    role_id: &ids::RoleId
+) -> ApiResult<impl TryStream<Item = Result<ids::UserId, PgError>>> {
+    let result = conn.query_raw(
+        "\
+        select user_roles.user_id \
+        from user_roles \
+        left join authz_roles on \
+            user_roles.role_id = authz_roles.id \
+        where authz_roles.id = $1",
+        &[role_id]
+    ).await.context("failed to retrieve users attached to role")?;
+
+    Ok(result.map(|row_result| row_result.map(
+        |row| row.get::<usize, ids::UserId>(0)
+    )))
+}
+
+async fn clear_via_role(
+    rbac: &Rbac,
+    conn: &impl GenericClient,
+    role_id: &ids::RoleId
+) -> ApiResult<()> {
+    let (users, users_via_groups) = tokio::try_join!(
+        users(conn, role_id),
+        users_via_groups(conn, role_id),
+    )?;
+
+    futures::pin_mut!(users);
+    futures::pin_mut!(users_via_groups);
+
+    while let Some(user_id) = users.try_next().await? {
+        rbac.clear_id(&user_id);
+    }
+
+    while let Some(user_id) = users_via_groups.try_next().await? {
+        rbac.clear_id(&user_id);
+    }
+
+    Ok(())
 }

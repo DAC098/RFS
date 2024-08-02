@@ -30,7 +30,7 @@ pub async fn retrieve(
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
-    permission::api_ability(
+    state.sec().rbac().api_ability(
         &conn,
         &initiator,
         permission::Scope::UserGroup,
@@ -93,7 +93,7 @@ pub async fn create(
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    permission::api_ability(
+    state.sec().rbac().api_ability(
         &conn,
         &initiator,
         permission::Scope::UserGroup,
@@ -156,7 +156,7 @@ pub async fn retrieve_id(
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
-    permission::api_ability(
+    state.sec().rbac().api_ability(
         &conn,
         &initiator,
         permission::Scope::UserGroup,
@@ -183,7 +183,7 @@ pub async fn update_id(
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    permission::api_ability(
+    state.sec().rbac().api_ability(
         &conn,
         &initiator,
         permission::Scope::UserGroup,
@@ -246,7 +246,7 @@ pub async fn delete_id(
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    permission::api_ability(
+    state.sec().rbac().api_ability(
         &conn,
         &initiator,
         permission::Scope::UserGroup,
@@ -259,8 +259,8 @@ pub async fn delete_id(
 
     let transaction = conn.transaction().await?;
 
-    let _group_users = transaction.execute(
-        "delete from group_users where group_id = $1",
+    let group_users = transaction.query(
+        "delete from group_users where group_id = $1 returning user_id",
         &[&group_id]
     ).await?;
 
@@ -270,6 +270,14 @@ pub async fn delete_id(
     ).await?;
 
     transaction.commit().await?;
+
+    let rbac = state.sec().rbac();
+
+    for row in group_users {
+        let id = row.get(0);
+
+        rbac.clear_id(&id);
+    }
 
     Ok(rfs_api::Payload::new(rfs_api::users::groups::Group {
         id: original.id,
@@ -287,7 +295,7 @@ pub async fn retrieve_users(
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
-    permission::api_ability(
+    state.sec().rbac().api_ability(
         &conn,
         &initiator,
         permission::Scope::UserGroup,
@@ -366,7 +374,7 @@ pub async fn add_users(
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    permission::api_ability(
+    state.sec().rbac().api_ability(
         &conn,
         &initiator,
         permission::Scope::UserGroup,
@@ -402,9 +410,15 @@ pub async fn add_users(
 
     let transaction = conn.transaction().await?;
 
-    let _ = transaction.execute(query.as_str(), params.as_slice()).await?;
+    transaction.execute(query.as_str(), params.as_slice()).await?;
 
     transaction.commit().await?;
+
+    let rbac = state.sec().rbac();
+
+    for user_id in json.ids {
+        rbac.clear_id(&user_id);
+    }
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -417,7 +431,7 @@ pub async fn delete_users(
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    permission::api_ability(
+    state.sec().rbac().api_ability(
         &conn,
         &initiator,
         permission::Scope::UserGroup,
@@ -443,6 +457,12 @@ pub async fn delete_users(
     ).await?;
 
     transaction.commit().await?;
+
+    let rbac = state.sec().rbac();
+
+    for user_id in json.ids {
+        rbac.clear_id(&user_id);
+    }
 
     Ok(StatusCode::NO_CONTENT)
 }

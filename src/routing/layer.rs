@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::pin::Pin;
 use std::future::Future;
 
-use axum::http::{Request, Response};
+use axum::http::{Request, Response, Extensions};
 use axum::body::Body;
 use pin_project::pin_project;
 use tokio::time::Sleep;
@@ -16,7 +16,7 @@ use tracing::Span;
 use crate::error;
 
 pub fn make_span_with(request: &Request<Body>) -> Span {
-    let req_id = RequestId::try_get(request).expect("missing request id");
+    let req_id = RequestId::from_request(request).expect("missing request id");
 
     tracing::info_span!(
         "REQ",
@@ -57,8 +57,12 @@ pub struct RequestId {
 }
 
 impl RequestId {
-    pub fn try_get<'a, B>(req: &'a Request<B>) -> Option<&'a Self> {
-        req.extensions().get()
+    pub fn from_request<'a, B>(req: &'a Request<B>) -> Option<&'a Self> {
+        Self::from_extensions(req.extensions())
+    }
+
+    pub fn from_extensions<'a>(extensions: &'a Extensions) -> Option<&'a Self> {
+        extensions.get()
     }
 
     pub fn id(&self) -> &u64 {
