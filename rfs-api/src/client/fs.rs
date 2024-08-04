@@ -22,16 +22,16 @@ use crate::fs::{
 pub mod storage;
 
 pub struct RetrieveItem {
-    id: ids::FSId,
+    uid: ids::FSUid,
 }
 
 impl RetrieveItem {
-    pub fn id(id: ids::FSId) -> Self {
-        RetrieveItem { id }
+    pub fn uid(uid: ids::FSUid) -> Self {
+        RetrieveItem { uid }
     }
 
     pub fn send(self, client: &ApiClient) -> Result<Option<Payload<Item>>, RequestError> {
-        let res = client.get(format!("/api/fs/{}", self.id.id())).send()?;
+        let res = client.get(format!("/api/fs/{}", self.uid)).send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(Some(res.json()?)),
@@ -52,7 +52,7 @@ impl RetrieveItem {
 pub struct RetrieveRoots {
     limit: Option<Limit>,
     offset: Option<Offset>,
-    last_id: Option<ids::FSId>,
+    last_id: Option<ids::FSUid>,
 }
 
 impl RetrieveRoots {
@@ -82,7 +82,7 @@ impl RetrieveRoots {
 
     pub fn last_id<I>(&mut self, last_id: I) -> &mut Self
     where
-        I: Into<Option<ids::FSId>>
+        I: Into<Option<ids::FSUid>>
     {
         self.last_id = last_id.into();
         self
@@ -111,15 +111,15 @@ impl RetrieveRoots {
 }
 
 impl iterate::Pageable for RetrieveRoots {
-    type Id = ids::FSId;
+    type Id = ids::FSUid;
     type Item = ItemMin;
 
     #[inline]
     fn get_last_id(item: &Self::Item) -> Option<Self::Id> {
         Some(match item {
-            ItemMin::Root(root) => root.id.clone(),
-            ItemMin::Directory(dir) => dir.id.clone(),
-            ItemMin::File(file) => file.id.clone(),
+            ItemMin::Root(root) => root.uid.clone(),
+            ItemMin::Directory(dir) => dir.uid.clone(),
+            ItemMin::File(file) => file.uid.clone(),
         })
     }
 
@@ -140,16 +140,16 @@ impl iterate::Pageable for RetrieveRoots {
 }
 
 pub struct RetrieveContents {
-    id: ids::FSId,
+    uid: ids::FSUid,
     limit: Option<Limit>,
     offset: Option<Offset>,
-    last_id: Option<ids::FSId>,
+    last_id: Option<ids::FSUid>,
 }
 
 impl RetrieveContents {
-    pub fn id(id: ids::FSId) -> Self {
+    pub fn uid(uid: ids::FSUid) -> Self {
         RetrieveContents {
-            id,
+            uid,
             limit: None,
             offset: None,
             last_id: None,
@@ -174,14 +174,14 @@ impl RetrieveContents {
 
     pub fn last_id<I>(&mut self, last_id: I) -> &mut Self
     where
-        I: Into<Option<ids::FSId>>
+        I: Into<Option<ids::FSUid>>
     {
         self.last_id = last_id.into();
         self
     }
 
     pub fn send(&self, client: &ApiClient) -> Result<Payload<Vec<ItemMin>>, RequestError> {
-        let mut builder = client.get(format!("/api/fs/{}/contents", self.id.id()));
+        let mut builder = client.get(format!("/api/fs/{}/contents", self.uid));
 
         if let Some(limit) = &self.limit {
             builder = builder.query(&[("limit", limit)]);
@@ -203,15 +203,15 @@ impl RetrieveContents {
 }
 
 impl iterate::Pageable for RetrieveContents {
-    type Id = ids::FSId;
+    type Id = ids::FSUid;
     type Item = ItemMin;
 
     #[inline]
     fn get_last_id(item: &Self::Item) -> Option<Self::Id> {
         Some(match item {
-            ItemMin::Root(root) => root.id.clone(),
-            ItemMin::Directory(dir) => dir.id.clone(),
-            ItemMin::File(file) => file.id.clone(),
+            ItemMin::Root(root) => root.uid.clone(),
+            ItemMin::Directory(dir) => dir.uid.clone(),
+            ItemMin::File(file) => file.uid.clone(),
         })
     }
 
@@ -232,16 +232,16 @@ impl iterate::Pageable for RetrieveContents {
 }
 
 pub struct DownloadItem {
-    id: ids::FSId
+    uid: ids::FSUid
 }
 
 impl DownloadItem {
-    pub fn id(id: ids::FSId) -> Self {
-        DownloadItem { id }
+    pub fn uid(uid: ids::FSUid) -> Self {
+        DownloadItem { uid }
     }
 
     pub fn send(&self, client: &ApiClient) -> Result<Response, RequestError> {
-        let res = client.get(format!("/api/fs/{}/download", self.id.id()))
+        let res = client.get(format!("/api/fs/{}/download", self.uid))
             .send()?;
 
         match res.status() {
@@ -252,12 +252,12 @@ impl DownloadItem {
 }
 
 pub struct CreateDir {
-    parent: ids::FSId,
+    parent: ids::FSUid,
     body: CreateDirBody
 }
 
 impl CreateDir {
-    pub fn basename<B>(parent: ids::FSId, basename: B) -> Self
+    pub fn basename<B>(parent: ids::FSUid, basename: B) -> Self
     where
         B: Into<String>
     {
@@ -317,9 +317,7 @@ impl CreateDir {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<Payload<Item>, RequestError> {
-        //self.body.assert_ok()?;
-
-        let res = client.post(format!("/api/fs/{}", self.parent.id()))
+        let res = client.post(format!("/api/fs/{}", self.parent))
             .json(&self.body)
             .send()?;
 
@@ -331,7 +329,7 @@ impl CreateDir {
 }
 
 pub struct SendReadable {
-    id: ids::FSId,
+    uid: ids::FSUid,
     basename: Option<String>,
     content_type: Option<mime::Mime>,
     content_length: Option<u64>,
@@ -339,12 +337,12 @@ pub struct SendReadable {
 }
 
 impl SendReadable {
-    pub fn create<B>(parent: ids::FSId, basename: B) -> SendReadable
+    pub fn create<B>(parent: ids::FSUid, basename: B) -> SendReadable
     where
         B: Into<String>,
     {
         SendReadable {
-            id: parent,
+            uid: parent,
             basename: Some(basename.into()),
             content_type: None,
             content_length: None,
@@ -352,9 +350,9 @@ impl SendReadable {
         }
     }
 
-    pub fn update(id: ids::FSId) -> SendReadable {
+    pub fn update(uid: ids::FSUid) -> SendReadable {
         SendReadable {
-            id,
+            uid,
             basename: None,
             content_type: None,
             content_length: None,
@@ -389,7 +387,7 @@ impl SendReadable {
         R: std::io::Read + Send + 'static
     {
         let content_type = self.content_type.unwrap_or(mime::APPLICATION_OCTET_STREAM);
-        let mut builder = client.put(format!("/api/fs/{}", self.id.id()))
+        let mut builder = client.put(format!("/api/fs/{}", self.uid))
             .header("content-type", content_type.to_string());
 
         if let Some(length) = self.content_length {
@@ -414,14 +412,14 @@ impl SendReadable {
 }
 
 pub struct UpdateMetadata {
-    id: ids::FSId,
+    uid: ids::FSUid,
     body: UpdateMetadataBody
 }
 
 impl UpdateMetadata {
-    pub fn id(id: ids::FSId) -> Self {
+    pub fn uid(uid: ids::FSUid) -> Self {
         UpdateMetadata {
-            id,
+            uid,
             body: UpdateMetadataBody {
                 tags: None,
                 comment: None
@@ -475,7 +473,7 @@ impl UpdateMetadata {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<Payload<Item>, RequestError> {
-        let res = client.patch(format!("/api/fs/{}", self.id.id()))
+        let res = client.patch(format!("/api/fs/{}", self.uid))
             .json(&self.body)
             .send()?;
 
@@ -487,16 +485,16 @@ impl UpdateMetadata {
 }
 
 pub struct DeleteItem {
-    id: ids::FSId
+    uid: ids::FSUid
 }
 
 impl DeleteItem {
-    pub fn id(id: ids::FSId) -> Self {
-        DeleteItem { id }
+    pub fn uid(uid: ids::FSUid) -> Self {
+        DeleteItem { uid }
     }
 
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
-        let res = client.delete(format!("/api/fs/{}", self.id.id())).send()?;
+        let res = client.delete(format!("/api/fs/{}", self.uid)).send()?;
 
         match res.status() {
             reqwest::StatusCode::NO_CONTENT => Ok(()),

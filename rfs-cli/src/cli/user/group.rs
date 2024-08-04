@@ -1,3 +1,4 @@
+use rfs_lib::ids;
 use rfs_api::client::{ApiClient, iterate};
 use rfs_api::client::users::groups::{
     QueryGroups,
@@ -14,7 +15,6 @@ use clap::{Subcommand, Args};
 
 use crate::error::{self, Context};
 use crate::formatting::{TextTable, Column, Float, PRETTY_OPTIONS};
-use crate::util;
 
 #[derive(Debug, Args)]
 pub struct GroupsArgs {
@@ -55,14 +55,14 @@ pub fn handle(client: &ApiClient, args: GroupsArgs) -> error::Result {
 
 #[derive(Debug, Args)]
 struct GetArgs {
-    /// id of the group to retrieve
+    /// uid of the group to retrieve
     #[arg(long)]
-    id: Option<i64>,
+    uid: Option<ids::GroupUid>,
 }
 
 fn get(client: &ApiClient, args: GetArgs) -> error::Result {
-    if let Some(group_id) = args.id {
-        let result = RetrieveGroup::id(group_id)
+    if let Some(uid) = args.uid {
+        let result = RetrieveGroup::uid(uid)
             .send(client)
             .context("failed to retrieve group")?;
 
@@ -74,14 +74,14 @@ fn get(client: &ApiClient, args: GetArgs) -> error::Result {
     } else {
         let mut builder = QueryGroups::new();
         let mut table = TextTable::with_columns([
-            Column::builder("id").float(Float::Right).build(),
+            Column::builder("uid").float(Float::Right).build(),
             Column::builder("name").build(),
         ]);
 
         for result in iterate::Iterate::new(client, &mut builder) {
             let group = result.context("failed to retrieve groups")?;
             let mut row = table.add_row();
-            row.set_col(0, group.id);
+            row.set_col(0, group.uid.clone());
             row.set_col(1, group.name.clone());
             row.finish(group);
         }
@@ -117,9 +117,9 @@ fn create(client: &ApiClient, args: CreateArgs) -> error::Result {
 
 #[derive(Debug, Args)]
 struct UpdateArgs {
-    /// id of the group to update
+    /// uid of the group to update
     #[arg(long)]
-    id: i64,
+    uid: ids::GroupUid,
 
     /// updates group name
     #[arg(short, long)]
@@ -127,7 +127,7 @@ struct UpdateArgs {
 }
 
 fn update(client: &ApiClient, args: UpdateArgs) -> error::Result {
-    let result = UpdateGroup::id(args.id, args.name)
+    let result = UpdateGroup::uid(args.uid, args.name)
         .send(client)
         .context("failed to update group")?
         .into_payload();
@@ -139,13 +139,13 @@ fn update(client: &ApiClient, args: UpdateArgs) -> error::Result {
 
 #[derive(Debug, Args)]
 struct DeleteArgs {
-    /// id of the group to delete
+    /// uid of the group to delete
     #[arg(long)]
-    id: i64
+    uid: ids::GroupUid
 }
 
 fn delete(client: &ApiClient, args: DeleteArgs) -> error::Result {
-    let result = DeleteGroup::id(args.id)
+    let result = DeleteGroup::uid(args.uid)
         .send(client)
         .context("failed to delete group")?
         .into_payload();
@@ -186,9 +186,9 @@ fn handle_users(client: &ApiClient, args: UsersArgs) -> error::Result {
 
 #[derive(Debug, Args)]
 struct GetUsersArgs {
-    /// id of the group
+    /// uid of the group
     #[arg(long)]
-    id: i64,
+    uid: ids::GroupUid,
 
     /// will retrieve all values and not prompt for more
     #[arg(long)]
@@ -196,15 +196,15 @@ struct GetUsersArgs {
 }
 
 fn get_users(client: &ApiClient, args: GetUsersArgs) -> error::Result {
-    let mut builder = QueryGroupUsers::id(args.id);
+    let mut builder = QueryGroupUsers::uid(args.uid);
     let mut table = TextTable::with_columns([
-        Column::builder("id").float(Float::Right).build(),
+        Column::builder("uid").float(Float::Right).build(),
     ]);
 
     for result in iterate::Iterate::new(client, &mut builder) {
         let user = result.context("failed to retrieve group users")?;
         let mut row = table.add_row();
-        row.set_col(0, user.id.id());
+        row.set_col(0, user.uid.clone());
         row.finish(user);
     }
 
@@ -220,17 +220,17 @@ fn get_users(client: &ApiClient, args: GetUsersArgs) -> error::Result {
 
 #[derive(Debug, Args)]
 struct AddUsersArgs {
-    /// id of the group
+    /// uid of the group
     #[arg(long)]
-    id: i64,
+    uid: ids::GroupUid,
 
     /// id of the user to add
-    #[arg(short, long = "user", value_parser(util::parse_flake_id::<rfs_lib::ids::UserId>))]
-    users: Vec<rfs_lib::ids::UserId>,
+    #[arg(short, long = "user")]
+    users: Vec<ids::UserUid>,
 }
 
 fn add_users(client: &ApiClient, args: AddUsersArgs) -> error::Result {
-    let mut builder = AddUsers::id(args.id);
+    let mut builder = AddUsers::uid(args.uid);
     builder.add_iter(args.users);
     builder.send(client)
         .context("failed to add users to group")?;
@@ -240,17 +240,17 @@ fn add_users(client: &ApiClient, args: AddUsersArgs) -> error::Result {
 
 #[derive(Debug, Args)]
 struct DropUsersArgs {
-    /// id of the group
+    /// uid of the group
     #[arg(long)]
-    id: i64,
+    uid: ids::GroupUid,
 
     /// id of the user to drop
-    #[arg(short, long = "user", value_parser(util::parse_flake_id::<rfs_lib::ids::UserId>))]
-    users: Vec<rfs_lib::ids::UserId>
+    #[arg(short, long = "user")]
+    users: Vec<rfs_lib::ids::UserUid>
 }
 
 fn drop_users(client: &ApiClient, args: DropUsersArgs) -> error::Result {
-    let mut builder = DropUsers::id(args.id);
+    let mut builder = DropUsers::uid(args.uid);
     builder.add_iter(args.users);
     builder.send(client)
         .context("failed to drop users from group")?;

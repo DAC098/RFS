@@ -11,17 +11,13 @@ use rfs_api::client::fs::{
 use clap::Args;
 
 use crate::error::{self, Context};
-use crate::util;
 use crate::formatting::{self, OutputOptions, TextTable, Column, Float, PRETTY_OPTIONS};
 
 #[derive(Debug, Args)]
 pub struct GetArgs {
-    /// the id of the item to retrieve
-    #[arg(
-        long,
-        value_parser(util::parse_flake_id::<ids::FSId>)
-    )]
-    id: Option<ids::FSId>,
+    /// the uid of the item to retrieve
+    #[arg(long)]
+    uid: Option<ids::FSUid>,
 
     /// will not retrieve the contents of the specified file item
     #[arg(long)]
@@ -35,7 +31,7 @@ fn sort_item(a: &ItemMin, b: &ItemMin) -> bool {
     match (a, b) {
         (ItemMin::Root(a_root), ItemMin::Root(b_root)) =>
             match a_root.basename.cmp(&b_root.basename) {
-                Ordering::Equal => a_root.id.id() < b_root.id.id(),
+                Ordering::Equal => a_root.uid < b_root.uid,
                 Ordering::Less => false,
                 Ordering::Greater => true,
         }
@@ -43,7 +39,7 @@ fn sort_item(a: &ItemMin, b: &ItemMin) -> bool {
         (ItemMin::Root(_a_root), ItemMin::File(_b_file)) => false,
         (ItemMin::Directory(a_dir), ItemMin::Directory(b_dir)) =>
             match a_dir.basename.cmp(&b_dir.basename) {
-                Ordering::Equal => a_dir.id.id() < b_dir.id.id(),
+                Ordering::Equal => a_dir.uid < b_dir.uid,
                 Ordering::Less => false,
                 Ordering::Greater => true,
             }
@@ -51,7 +47,7 @@ fn sort_item(a: &ItemMin, b: &ItemMin) -> bool {
         (ItemMin::Directory(_a_dir), ItemMin::File(_b_file)) => false,
         (ItemMin::File(a_file), ItemMin::File(b_file)) =>
             match a_file.basename.cmp(&b_file.basename) {
-                Ordering::Equal => a_file.id.id() < b_file.id.id(),
+                Ordering::Equal => a_file.uid < b_file.uid,
                 Ordering::Less => false,
                 Ordering::Greater => true,
             }
@@ -60,11 +56,11 @@ fn sort_item(a: &ItemMin, b: &ItemMin) -> bool {
     }
 }
 
-fn retrieve_id(client: &ApiClient, id: ids::FSId, args: GetArgs) -> error::Result {
+fn retrieve_id(client: &ApiClient, uid: ids::FSUid, args: GetArgs) -> error::Result {
     let mut ignore_contents = false;
     let mut stdout = std::io::stdout();
 
-    let result = RetrieveItem::id(id.clone())
+    let result = RetrieveItem::uid(uid.clone())
         .send(client)
         .context("failed to retrieve the fs item")?
         .context("desired fs item was not found")?
@@ -88,10 +84,10 @@ fn retrieve_id(client: &ApiClient, id: ids::FSId, args: GetArgs) -> error::Resul
     }
 
     if !args.no_contents && !ignore_contents {
-        let mut builder = RetrieveContents::id(id);
+        let mut builder = RetrieveContents::uid(uid);
         let mut table = TextTable::with_columns([
             Column::builder("type").build(),
-            Column::builder("id").float(Float::Right).build(),
+            Column::builder("uid").float(Float::Right).build(),
             Column::builder("storage id").float(Float::Right).build(),
             Column::builder("size").float(Float::Right).build(),
             Column::builder("name").build(),
@@ -107,8 +103,8 @@ fn retrieve_id(client: &ApiClient, id: ids::FSId, args: GetArgs) -> error::Resul
                     let time = root.updated.as_ref().unwrap_or(&root.created);
 
                     row.set_col(0, "root");
-                    row.set_col(1, root.id.id());
-                    row.set_col(2, root.storage_id.id());
+                    row.set_col(1, root.uid.clone());
+                    row.set_col(2, root.storage_uid.clone());
                     row.set_col(4, root.basename.clone());
                     row.set_col(5, formatting::datetime_to_string(&time, &args.output_options.ts_format));
                 }
@@ -116,8 +112,8 @@ fn retrieve_id(client: &ApiClient, id: ids::FSId, args: GetArgs) -> error::Resul
                     let time = dir.updated.as_ref().unwrap_or(&dir.created);
 
                     row.set_col(0, "dir");
-                    row.set_col(1, dir.id.id());
-                    row.set_col(2, dir.storage_id.id());
+                    row.set_col(1, dir.uid.clone());
+                    row.set_col(2, dir.storage_uid.clone());
                     row.set_col(4, dir.basename.clone());
                     row.set_col(5, formatting::datetime_to_string(&time, &args.output_options.ts_format));
                 }
@@ -125,8 +121,8 @@ fn retrieve_id(client: &ApiClient, id: ids::FSId, args: GetArgs) -> error::Resul
                     let time = file.updated.as_ref().unwrap_or(&file.created);
 
                     row.set_col(0, "file");
-                    row.set_col(1, file.id.id());
-                    row.set_col(2, file.storage_id.id());
+                    row.set_col(1, file.uid.clone());
+                    row.set_col(2, file.storage_uid.clone());
                     row.set_col(3, formatting::bytes_to_unit(file.size, &args.output_options.size_format));
                     row.set_col(4, file.basename.clone());
                     row.set_col(5, formatting::datetime_to_string(&time, &args.output_options.ts_format));
@@ -150,7 +146,7 @@ fn retrieve_id(client: &ApiClient, id: ids::FSId, args: GetArgs) -> error::Resul
 fn retrieve_roots(client: &ApiClient, args: GetArgs) -> error::Result {
     let mut builder = RetrieveRoots::new();
     let mut table = TextTable::with_columns([
-        Column::builder("id").float(Float::Right).build(),
+        Column::builder("uid").float(Float::Right).build(),
         Column::builder("name").build(),
         Column::builder("mod").float(Float::Right).build(),
     ]);
@@ -163,7 +159,7 @@ fn retrieve_roots(client: &ApiClient, args: GetArgs) -> error::Result {
             ItemMin::Root(root) => {
                 let time = root.updated.as_ref().unwrap_or(&root.created);
 
-                row.set_col(0, root.id.id());
+                row.set_col(0, root.uid.clone());
                 row.set_col(1, root.basename.clone());
                 row.set_col(2, formatting::datetime_to_string(&time, &args.output_options.ts_format));
             }
@@ -189,8 +185,8 @@ fn retrieve_roots(client: &ApiClient, args: GetArgs) -> error::Result {
 }
 
 pub fn get(client: &ApiClient, mut args: GetArgs) -> error::Result {
-    if let Some(id) = args.id.take() {
-        retrieve_id(client, id, args)
+    if let Some(uid) = args.uid.take() {
+        retrieve_id(client, uid, args)
     } else {
         retrieve_roots(client, args)
     }

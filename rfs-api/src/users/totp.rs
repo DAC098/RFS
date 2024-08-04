@@ -16,7 +16,7 @@ pub struct Totp {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TotpRecovery {
-    pub user_id: ids::UserId,
+    pub user_uid: ids::UserUid,
     pub key: String,
     pub hash: String,
     pub used: bool

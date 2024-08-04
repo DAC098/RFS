@@ -23,7 +23,7 @@ use crate::fs::{
 pub struct QueryStorage {
     limit: Option<Limit>,
     offset: Option<Offset>,
-    last_id: Option<ids::StorageId>,
+    last_id: Option<ids::StorageUid>,
 }
 
 impl QueryStorage {
@@ -53,7 +53,7 @@ impl QueryStorage {
 
     pub fn last_id<I>(&mut self, last_id: I) -> &mut Self
     where
-        I: Into<Option<ids::StorageId>>
+        I: Into<Option<ids::StorageUid>>
     {
         self.last_id = last_id.into();
         self
@@ -82,12 +82,12 @@ impl QueryStorage {
 }
 
 impl iterate::Pageable for QueryStorage {
-    type Id = ids::StorageId;
+    type Id = ids::StorageUid;
     type Item = StorageMin;
 
     #[inline]
     fn get_last_id(item: &Self::Item) -> Option<Self::Id> {
-        Some(item.id.clone())
+        Some(item.uid.clone())
     }
 
     #[inline]
@@ -107,16 +107,16 @@ impl iterate::Pageable for QueryStorage {
 }
 
 pub struct RetrieveStorage {
-    id: ids::StorageId
+    uid: ids::StorageUid
 }
 
 impl RetrieveStorage {
-    pub fn id(id: ids::StorageId) -> Self {
-        RetrieveStorage { id }
+    pub fn uid(uid: ids::StorageUid) -> Self {
+        RetrieveStorage { uid }
     }
 
     pub fn send(self, client: &ApiClient) -> Result<Option<Payload<Storage>>, RequestError> {
-        let res = client.get(format!("/api/fs/storage/{}", self.id.id())).send()?;
+        let res = client.get(format!("/api/fs/storage/{}", self.uid)).send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(res.json()?),
@@ -197,14 +197,14 @@ impl CreateStorage {
 }
 
 pub struct UpdateStorage {
-    id: ids::StorageId,
+    uid: ids::StorageUid,
     body: UpdateStorageBody
 }
 
 impl UpdateStorage {
-    pub fn local(id: ids::StorageId) -> Self {
+    pub fn local(uid: ids::StorageUid) -> Self {
         UpdateStorage {
-            id,
+            uid,
             body: UpdateStorageBody {
                 name: None,
                 backend: None,
@@ -259,7 +259,7 @@ impl UpdateStorage {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<Payload<Storage>, RequestError> {
-        let res = client.put(format!("/api/fs/storage/{}", self.id.id()))
+        let res = client.put(format!("/api/fs/storage/{}", self.uid))
             .json(&self.body)
             .send()?;
 
@@ -271,16 +271,16 @@ impl UpdateStorage {
 }
 
 pub struct DeleteStorage {
-    id: ids::StorageId
+    uid: ids::StorageUid
 }
 
 impl DeleteStorage {
-    pub fn id(id: ids::StorageId) -> Self {
-        DeleteStorage { id }
+    pub fn uid(uid: ids::StorageUid) -> Self {
+        DeleteStorage { uid }
     }
 
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
-        let res = client.delete(format!("/api/fs/storage/{}", self.id.id())).send()?;
+        let res = client.delete(format!("/api/fs/storage/{}", self.uid)).send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(()),

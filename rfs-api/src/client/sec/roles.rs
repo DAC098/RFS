@@ -27,7 +27,7 @@ use crate::sec::roles::{
 pub struct QueryRoles {
     limit: Option<Limit>,
     offset: Option<Offset>,
-    last_id: Option<ids::RoleId>,
+    last_id: Option<ids::RoleUid>,
 }
 
 impl QueryRoles {
@@ -57,7 +57,7 @@ impl QueryRoles {
 
     pub fn last_id<I>(&mut self, last_id: I) -> &mut Self
     where
-        I: Into<Option<ids::RoleId>>
+        I: Into<Option<ids::RoleUid>>
     {
         self.last_id = last_id.into();
         self
@@ -86,12 +86,12 @@ impl QueryRoles {
 }
 
 impl iterate::Pageable for QueryRoles {
-    type Id = ids::RoleId;
+    type Id = ids::RoleUid;
     type Item = RoleListItem;
 
     #[inline]
     fn get_last_id(item: &Self::Item) -> Option<Self::Id> {
-        Some(item.id.clone())
+        Some(item.uid.clone())
     }
 
     #[inline]
@@ -111,16 +111,16 @@ impl iterate::Pageable for QueryRoles {
 }
 
 pub struct RetrieveRole {
-    id: ids::RoleId
+    uid: ids::RoleUid
 }
 
 impl RetrieveRole {
-    pub fn id(id: ids::RoleId) -> Self {
-        RetrieveRole { id }
+    pub fn uid(uid: ids::RoleUid) -> Self {
+        RetrieveRole { uid }
     }
 
     pub fn send(self, client: &ApiClient) -> Result<Option<Payload<Role>>, RequestError> {
-        let res = client.get(format!("/api/sec/roles/{}", self.id)).send()?;
+        let res = client.get(format!("/api/sec/roles/{}", self.uid)).send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(Some(res.json()?)),
@@ -139,16 +139,16 @@ impl RetrieveRole {
 }
 
 pub struct QueryRoleUsers {
-    id: ids::RoleId,
+    uid: ids::RoleUid,
     limit: Option<Limit>,
     offset: Option<Offset>,
-    last_id: Option<ids::UserId>,
+    last_id: Option<ids::UserUid>,
 }
 
 impl QueryRoleUsers {
-    pub fn id(id: ids::RoleId) -> Self {
+    pub fn uid(uid: ids::RoleUid) -> Self {
         QueryRoleUsers {
-            id,
+            uid,
             limit: None,
             offset: None,
             last_id: None,
@@ -173,14 +173,14 @@ impl QueryRoleUsers {
 
     pub fn last_id<I>(&mut self, last_id: I) -> &mut Self
     where
-        I: Into<Option<ids::UserId>>
+        I: Into<Option<ids::UserUid>>
     {
         self.last_id = last_id.into();
         self
     }
 
     pub fn send(&self, client: &ApiClient) -> Result<Payload<Vec<RoleUser>>, RequestError> {
-        let mut builder = client.get(format!("/api/sec/roles/{}/users", self.id));
+        let mut builder = client.get(format!("/api/sec/roles/{}/users", self.uid));
 
         if let Some(limit) = &self.limit {
             builder = builder.query(&[("limit", limit)]);
@@ -202,12 +202,12 @@ impl QueryRoleUsers {
 }
 
 impl iterate::Pageable for QueryRoleUsers {
-    type Id = ids::UserId;
+    type Id = ids::UserUid;
     type Item = RoleUser;
 
     #[inline]
     fn get_last_id(item: &Self::Item) -> Option<Self::Id> {
-        Some(item.id.clone())
+        Some(item.uid.clone())
     }
 
     #[inline]
@@ -227,16 +227,16 @@ impl iterate::Pageable for QueryRoleUsers {
 }
 
 pub struct QueryRoleGroups {
-    id: ids::RoleId,
+    uid: ids::RoleUid,
     limit: Option<Limit>,
     offset: Option<Offset>,
-    last_id: Option<ids::GroupId>,
+    last_id: Option<ids::GroupUid>,
 }
 
 impl QueryRoleGroups {
-    pub fn id(id: ids::RoleId) -> Self {
+    pub fn uid(uid: ids::RoleUid) -> Self {
         QueryRoleGroups {
-            id,
+            uid,
             limit: None,
             offset: None,
             last_id: None,
@@ -261,14 +261,14 @@ impl QueryRoleGroups {
 
     pub fn last_id<I>(&mut self, last_id: I) -> &mut Self
     where
-        I: Into<Option<ids::GroupId>>
+        I: Into<Option<ids::GroupUid>>
     {
         self.last_id = last_id.into();
         self
     }
 
     pub fn send(&self, client: &ApiClient) -> Result<Payload<Vec<RoleGroup>>, RequestError> {
-        let mut builder = client.get(format!("/api/sec/roles/{}/groups", self.id));
+        let mut builder = client.get(format!("/api/sec/roles/{}/groups", self.uid));
 
         if let Some(limit) = &self.limit {
             builder = builder.query(&[("limit", limit)]);
@@ -290,12 +290,12 @@ impl QueryRoleGroups {
 }
 
 impl iterate::Pageable for QueryRoleGroups {
-    type Id = ids::GroupId;
+    type Id = ids::GroupUid;
     type Item = RoleGroup;
 
     #[inline]
     fn get_last_id(item: &Self::Item) -> Option<Self::Id> {
-        Some(item.id.clone())
+        Some(item.uid.clone())
     }
 
     #[inline]
@@ -366,14 +366,14 @@ impl CreateRole {
 }
 
 pub struct UpdateRole {
-    id: ids::RoleId,
+    uid: ids::RoleUid,
     body: UpdateRoleBody
 }
 
 impl UpdateRole {
-    pub fn id(id: ids::RoleId) -> Self {
+    pub fn uid(uid: ids::RoleUid) -> Self {
         UpdateRole {
-            id,
+            uid,
             body: UpdateRoleBody {
                 name: None,
                 permissions: None
@@ -421,7 +421,7 @@ impl UpdateRole {
     pub fn send(self, client: &ApiClient) -> Result<Payload<Role>, RequestError> {
         self.body.assert_ok()?;
 
-        let res = client.patch(format!("/api/sec/roles/{}", self.id))
+        let res = client.patch(format!("/api/sec/roles/{}", self.uid))
             .json(&self.body)
             .send()?;
 
@@ -433,16 +433,16 @@ impl UpdateRole {
 }
 
 pub struct DeleteRole {
-    id: ids::RoleId,
+    uid: ids::RoleUid,
 }
 
 impl DeleteRole {
-    pub fn id(id: ids::RoleId) -> Self {
-        DeleteRole { id }
+    pub fn uid(uid: ids::RoleUid) -> Self {
+        DeleteRole { uid }
     }
 
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
-        let res = client.delete(format!("/api/sec/roles/{}", self.id)).send()?;
+        let res = client.delete(format!("/api/sec/roles/{}", self.uid)).send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(()),
@@ -452,31 +452,31 @@ impl DeleteRole {
 }
 
 pub struct AddRoleUsers {
-    id: ids::RoleId,
+    uid: ids::RoleUid,
     body: AddRoleUserBody
 }
 
 impl AddRoleUsers {
-    pub fn id(id: ids::RoleId) -> Self {
+    pub fn uid(uid: ids::RoleUid) -> Self {
         AddRoleUsers {
-            id,
+            uid,
             body: AddRoleUserBody {
-                ids: Vec::new()
+                uids: Vec::new()
             }
         }
     }
 
-    pub fn add_id(&mut self, id: ids::UserId) -> &mut Self {
-        self.body.ids.push(id);
+    pub fn add_id(&mut self, uid: ids::UserUid) -> &mut Self {
+        self.body.uids.push(uid);
         self
     }
 
     pub fn add_iter_id<I>(&mut self, iter: I) -> &mut Self
     where
-        I: IntoIterator<Item = ids::UserId>
+        I: IntoIterator<Item = ids::UserUid>
     {
         for item in iter {
-            self.body.ids.push(item);
+            self.body.uids.push(item);
         }
 
         self
@@ -485,7 +485,7 @@ impl AddRoleUsers {
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
         self.body.assert_ok()?;
 
-        let res = client.post(format!("/api/sec/roles/{}/users", self.id))
+        let res = client.post(format!("/api/sec/roles/{}/users", self.uid))
             .json(&self.body)
             .send()?;
 
@@ -497,31 +497,31 @@ impl AddRoleUsers {
 }
 
 pub struct DropRoleUsers {
-    id: ids::RoleId,
+    uid: ids::RoleUid,
     body: DropRoleUserBody
 }
 
 impl DropRoleUsers {
-    pub fn id(id: ids::RoleId) -> Self {
+    pub fn uid(uid: ids::RoleUid) -> Self {
         DropRoleUsers {
-            id,
+            uid,
             body: DropRoleUserBody {
-                ids: Vec::new()
+                uids: Vec::new()
             }
         }
     }
 
-    pub fn add_id(&mut self, id: ids::UserId) -> &mut Self {
-        self.body.ids.push(id);
+    pub fn add_id(&mut self, uid: ids::UserUid) -> &mut Self {
+        self.body.uids.push(uid);
         self
     }
 
     pub fn add_iter_id<I>(&mut self, iter: I) -> &mut Self
     where
-        I: IntoIterator<Item = ids::UserId>
+        I: IntoIterator<Item = ids::UserUid>
     {
         for item in iter {
-            self.body.ids.push(item);
+            self.body.uids.push(item);
         }
 
         self
@@ -530,7 +530,7 @@ impl DropRoleUsers {
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
         self.body.assert_ok()?;
 
-        let res = client.delete(format!("/api/sec/roles/{}/users", self.id))
+        let res = client.delete(format!("/api/sec/roles/{}/users", self.uid))
             .json(&self.body)
             .send()?;
 
@@ -542,31 +542,31 @@ impl DropRoleUsers {
 }
 
 pub struct AddRoleGroups {
-    id: ids::RoleId,
+    uid: ids::RoleUid,
     body: AddRoleGroupBody
 }
 
 impl AddRoleGroups {
-    pub fn id(id: ids::RoleId) -> Self {
+    pub fn uid(uid: ids::RoleUid) -> Self {
         AddRoleGroups {
-            id,
+            uid,
             body: AddRoleGroupBody {
-                ids: Vec::new()
+                uids: Vec::new()
             }
         }
     }
 
-    pub fn add_id(&mut self, id: ids::GroupId) -> &mut Self {
-        self.body.ids.push(id);
+    pub fn add_id(&mut self, id: ids::GroupUid) -> &mut Self {
+        self.body.uids.push(id);
         self
     }
 
     pub fn add_iter_id<I>(&mut self, iter: I) -> &mut Self
     where
-        I: IntoIterator<Item = ids::GroupId>
+        I: IntoIterator<Item = ids::GroupUid>
     {
         for item in iter {
-            self.body.ids.push(item);
+            self.body.uids.push(item);
         }
 
         self
@@ -575,7 +575,7 @@ impl AddRoleGroups {
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
         self.body.assert_ok()?;
 
-        let res = client.post(format!("/api/sec/roles/{}/groups", self.id))
+        let res = client.post(format!("/api/sec/roles/{}/groups", self.uid))
             .json(&self.body)
             .send()?;
 
@@ -587,31 +587,31 @@ impl AddRoleGroups {
 }
 
 pub struct DropRoleGroups {
-    id: ids::RoleId,
+    uid: ids::RoleUid,
     body: DropRoleGroupBody
 }
 
 impl DropRoleGroups {
-    pub fn id(id: ids::RoleId) -> Self {
+    pub fn uid(uid: ids::RoleUid) -> Self {
         DropRoleGroups {
-            id,
+            uid,
             body: DropRoleGroupBody {
-                ids: Vec::new()
+                uids: Vec::new()
             }
         }
     }
 
-    pub fn add_id(&mut self, id: ids::GroupId) -> &mut Self {
-        self.body.ids.push(id);
+    pub fn add_id(&mut self, uid: ids::GroupUid) -> &mut Self {
+        self.body.uids.push(uid);
         self
     }
 
     pub fn add_iter_id<I>(&mut self, iter: I) -> &mut Self
     where
-        I: IntoIterator<Item = ids::GroupId>
+        I: IntoIterator<Item = ids::GroupUid>
     {
         for item in iter {
-            self.body.ids.push(item);
+            self.body.uids.push(item);
         }
 
         self
@@ -620,7 +620,7 @@ impl DropRoleGroups {
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
         self.body.assert_ok()?;
 
-        let res = client.delete(format!("/api/sec/roles/{}/groups", self.id))
+        let res = client.delete(format!("/api/sec/roles/{}/groups", self.uid))
             .json(&self.body)
             .send()?;
 

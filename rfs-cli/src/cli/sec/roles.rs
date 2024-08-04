@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use rfs_lib::ids;
 use rfs_api::client::ApiClient;
 use rfs_api::client::iterate;
 use rfs_api::client::sec::roles::{
@@ -20,7 +21,6 @@ use rfs_lib::sec::authz::permission::{Scope, Ability};
 use clap::{Subcommand, Args};
 
 use crate::error::{self, Context};
-use crate::util;
 use crate::formatting::{TextTable, Column, Float, PRETTY_OPTIONS};
 
 #[derive(Debug, Args)]
@@ -66,14 +66,14 @@ pub fn handle(client: &ApiClient, args: RolesArgs) -> error::Result {
 
 #[derive(Debug, Args)]
 struct GetArgs {
-    /// id of the role to retrieve
+    /// uid of the role to retrieve
     #[arg(long)]
-    id: Option<rfs_lib::ids::RoleId>,
+    uid: Option<ids::RoleUid>,
 }
 
 fn get(client: &ApiClient, args: GetArgs) -> error::Result {
-    if let Some(id) = args.id {
-        let result = RetrieveRole::id(id)
+    if let Some(uid) = args.uid {
+        let result = RetrieveRole::uid(uid)
             .send(client)
             .context("failed to retrieve role")?;
 
@@ -84,7 +84,7 @@ fn get(client: &ApiClient, args: GetArgs) -> error::Result {
                 Column::builder("ability").build()
             ]);
 
-            println!("id: {}\nname: \"{}\"", inner.id, inner.name);
+            println!("uid: {}\nname: \"{}\"", inner.uid, inner.name);
 
             for perm in inner.permissions {
                 let mut row = table.add_row();
@@ -104,14 +104,14 @@ fn get(client: &ApiClient, args: GetArgs) -> error::Result {
     } else {
         let mut builder = QueryRoles::new();
         let mut table = TextTable::with_columns([
-            Column::builder("id").float(Float::Right).build(),
+            Column::builder("uid").float(Float::Right).build(),
             Column::builder("name").build(),
         ]);
 
         for result in iterate::Iterate::new(client, &mut builder) {
             let role = result.context("failed to retrieve roles")?;
             let mut row = table.add_row();
-            row.set_col(0, role.id);
+            row.set_col(0, role.uid.clone());
             row.set_col(1, role.name.clone());
 
             row.finish(role);
@@ -171,7 +171,7 @@ fn create(client: &ApiClient, args: CreateArgs) -> error::Result {
 struct UpdateArgs {
     /// id of the role to update
     #[arg(long)]
-    id: rfs_lib::ids::RoleId,
+    uid: ids::RoleUid,
 
     /// updates name of role
     #[arg(short, long)]
@@ -203,7 +203,7 @@ struct UpdateArgs {
 }
 
 fn update(client: &ApiClient, args: UpdateArgs) -> error::Result {
-    let result = RetrieveRole::id(args.id)
+    let result = RetrieveRole::uid(args.uid.clone())
         .send(client)
         .context("failed to retrieve role")?;
 
@@ -216,7 +216,7 @@ fn update(client: &ApiClient, args: UpdateArgs) -> error::Result {
         payload.into_payload()
     };
 
-    let mut builder = UpdateRole::id(args.id);
+    let mut builder = UpdateRole::uid(args.uid);
 
     if let Some(name) = args.name {
         builder.name(name);
@@ -253,11 +253,11 @@ fn update(client: &ApiClient, args: UpdateArgs) -> error::Result {
 struct DeleteArgs {
     /// id of the role to delete
     #[arg(long)]
-    id: rfs_lib::ids::RoleId,
+    uid: ids::RoleUid,
 }
 
 fn delete(client: &ApiClient, args: DeleteArgs) -> error::Result {
-    DeleteRole::id(args.id)
+    DeleteRole::uid(args.uid)
         .send(client)
         .context("failed to delete role")?;
 
@@ -299,11 +299,11 @@ fn handle_users(client: &ApiClient, args: UsersArgs) -> error::Result {
 struct GetUsersArgs {
     /// id of the role
     #[arg(long)]
-    id: rfs_lib::ids::RoleId,
+    uid: ids::RoleUid,
 }
 
 fn get_users(client: &ApiClient, args: GetUsersArgs) -> error::Result {
-    let mut builder = QueryRoleUsers::id(args.id);
+    let mut builder = QueryRoleUsers::uid(args.uid);
     let mut table = TextTable::with_columns([
         Column::builder("id").float(Float::Right).build(),
     ]);
@@ -311,7 +311,7 @@ fn get_users(client: &ApiClient, args: GetUsersArgs) -> error::Result {
     for result in iterate::Iterate::new(client, &mut builder) {
         let user = result.context("failed to retrieve group users")?;
         let mut row = table.add_row();
-        row.set_col(0, user.id.id());
+        row.set_col(0, user.uid.clone());
 
         row.finish(user);
     }
@@ -330,15 +330,15 @@ fn get_users(client: &ApiClient, args: GetUsersArgs) -> error::Result {
 struct AddUsersArgs {
     /// id fof the role
     #[arg(long)]
-    id: rfs_lib::ids::RoleId,
+    uid: ids::RoleUid,
 
     /// user ids to add
-    #[arg(long, value_parser(util::parse_flake_id::<rfs_lib::ids::UserId>))]
-    user: Vec<rfs_lib::ids::UserId>,
+    #[arg(long)]
+    user: Vec<ids::UserUid>,
 }
 
 fn add_users(client: &ApiClient, args: AddUsersArgs) -> error::Result {
-    let mut builder = AddRoleUsers::id(args.id);
+    let mut builder = AddRoleUsers::uid(args.uid);
     builder.add_iter_id(args.user);
     builder.send(client)
         .context("failed to add users to role")?;
@@ -350,15 +350,15 @@ fn add_users(client: &ApiClient, args: AddUsersArgs) -> error::Result {
 struct DropUsersArgs {
     /// id of the role
     #[arg(long)]
-    id: rfs_lib::ids::RoleId,
+    uid: ids::RoleUid,
 
     /// user ids to drop
-    #[arg(long, value_parser(util::parse_flake_id::<rfs_lib::ids::UserId>))]
-    user: Vec<rfs_lib::ids::UserId>
+    #[arg(long)]
+    user: Vec<ids::UserUid>
 }
 
 fn drop_users(client: &ApiClient, args: DropUsersArgs) -> error::Result {
-    let mut builder = DropRoleUsers::id(args.id);
+    let mut builder = DropRoleUsers::uid(args.uid);
     builder.add_iter_id(args.user);
     builder.send(client)
         .context("failed to drop users from role")?;
@@ -399,21 +399,21 @@ fn handle_groups(client: &ApiClient, args: GroupsArgs) -> error::Result {
 
 #[derive(Debug, Args)]
 struct GetGroupsArgs {
-    /// id of the role
+    /// uid of the role
     #[arg(long)]
-    id: rfs_lib::ids::RoleId,
+    uid: ids::RoleUid,
 }
 
 fn get_groups(client: &ApiClient, args: GetGroupsArgs) -> error::Result {
-    let mut builder = QueryRoleGroups::id(args.id);
+    let mut builder = QueryRoleGroups::uid(args.uid);
     let mut table = TextTable::with_columns([
-        Column::builder("id").float(Float::Right).build(),
+        Column::builder("uid").float(Float::Right).build(),
     ]);
 
     for result in iterate::Iterate::new(client, &mut builder) {
         let group = result.context("failed to retrieve role groups")?;
         let mut row = table.add_row();
-        row.set_col(0, group.id);
+        row.set_col(0, group.uid.clone());
 
         row.finish(group);
     }
@@ -432,15 +432,15 @@ fn get_groups(client: &ApiClient, args: GetGroupsArgs) -> error::Result {
 struct AddGroupsArgs {
     /// id of the role
     #[arg(long)]
-    id: rfs_lib::ids::RoleId,
+    uid: ids::RoleUid,
 
     /// groups to add
     #[arg(long)]
-    group: Vec<rfs_lib::ids::GroupId>
+    group: Vec<ids::GroupUid>
 }
 
 fn add_groups(client: &ApiClient, args: AddGroupsArgs) -> error::Result {
-    let mut builder = AddRoleGroups::id(args.id);
+    let mut builder = AddRoleGroups::uid(args.uid);
     builder.add_iter_id(args.group);
     builder.send(client)
         .context("failed to add groups to role")?;
@@ -450,17 +450,17 @@ fn add_groups(client: &ApiClient, args: AddGroupsArgs) -> error::Result {
 
 #[derive(Debug, Args)]
 struct DropGroupsArgs {
-    /// id of role
+    /// uid of role
     #[arg(long)]
-    id: rfs_lib::ids::RoleId,
+    uid: ids::RoleUid,
 
     /// groups to drop
     #[arg(long)]
-    group: Vec<rfs_lib::ids::GroupId>
+    group: Vec<ids::GroupUid>
 }
 
 fn drop_groups(client: &ApiClient, args: DropGroupsArgs) -> error::Result {
-    let mut builder = DropRoleGroups::id(args.id);
+    let mut builder = DropRoleGroups::uid(args.uid);
     builder.add_iter_id(args.group);
     builder.send(client)
         .context("failed to drop groups from role")?;
