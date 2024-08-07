@@ -299,11 +299,11 @@ fn handle_users(client: &ApiClient, args: UsersArgs) -> error::Result {
 struct GetUsersArgs {
     /// id of the role
     #[arg(long)]
-    uid: ids::RoleUid,
+    uid: Option<ids::RoleUid>,
 }
 
 fn get_users(client: &ApiClient, args: GetUsersArgs) -> error::Result {
-    let mut builder = QueryRoleUsers::uid(args.uid);
+    let mut builder = QueryRoleUsers::uid(args.uid.unwrap());
     let mut table = TextTable::with_columns([
         Column::builder("id").float(Float::Right).build(),
     ]);
@@ -401,11 +401,11 @@ fn handle_groups(client: &ApiClient, args: GroupsArgs) -> error::Result {
 struct GetGroupsArgs {
     /// uid of the role
     #[arg(long)]
-    uid: ids::RoleUid,
+    uid: Option<ids::RoleUid>,
 }
 
 fn get_groups(client: &ApiClient, args: GetGroupsArgs) -> error::Result {
-    let mut builder = QueryRoleGroups::uid(args.uid);
+    let mut builder = QueryRoleGroups::uid(args.uid.unwrap());
     let mut table = TextTable::with_columns([
         Column::builder("uid").float(Float::Right).build(),
     ]);

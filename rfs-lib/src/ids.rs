@@ -1,3 +1,9 @@
+use std::fmt::{Display, Formatter, Result as FmtResult};
+use std::str::FromStr;
+
+use postgres_types::{ToSql, FromSql};
+use serde::{Serialize, Deserialize};
+
 pub const START_TIME: u64 = 168586200000;
 pub const UID_SIZE: usize = 16;
 pub const UID_ALPHABET: [char; 63] = [
@@ -7,17 +13,283 @@ pub const UID_ALPHABET: [char; 63] = [
     '_'
 ];
 
-pub type UserId = i64;
-pub type UserUid = String;
-pub type GroupId = i64;
-pub type GroupUid = String;
-pub type RoleId = i64;
-pub type RoleUid = String;
-pub type FSId = i64;
-pub type FSUid = String;
-pub type StorageId = i64;
-pub type StorageUid = String;
+#[derive(Debug, thiserror::Error)]
+#[error("provided integer is less than or equal to zero")]
+pub struct InvalidIdInteger;
 
-pub fn create_uid() -> String {
-    nanoid::format(nanoid::rngs::default, &UID_ALPHABET, UID_SIZE)
+#[derive(Debug, thiserror::Error)]
+#[error("provided string contains invalid characters or is less than or equal to zero")]
+pub struct InvalidIdString;
+
+macro_rules! id_type {
+    ($name:ident) => {
+        #[derive(
+            Debug,
+            Clone, Copy,
+            PartialEq, Eq, PartialOrd, Ord, Hash,
+            ToSql, FromSql,
+            Serialize, Deserialize,
+        )]
+        #[postgres(transparent)]
+        #[serde(try_from = "i64", into = "i64")]
+        pub struct $name(i64);
+
+        impl $name {
+            pub fn new(value: i64) -> Result<Self, InvalidIdInteger> {
+                if value <= 0 {
+                    Err(InvalidIdInteger)
+                } else {
+                    Ok($name(value))
+                }
+            }
+
+            pub fn inner(&self) -> &i64 {
+                &self.0
+            }
+        }
+
+        impl TryFrom<i64> for $name {
+            type Error = InvalidIdInteger;
+
+            fn try_from(value: i64) -> Result<Self, Self::Error> {
+                $name::new(value)
+            }
+        }
+
+        impl From<$name> for i64 {
+            fn from(value: $name) -> Self {
+                value.0
+            }
+        }
+
+        impl Display for $name {
+            fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+                Display::fmt(&self.0, f)
+            }
+        }
+
+        impl FromStr for $name {
+            type Err = InvalidIdString;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                if let Ok(int) = FromStr::from_str(s) {
+                    if int <= 0 {
+                        Err(InvalidIdString)
+                    } else {
+                        Ok($name(int))
+                    }
+                } else {
+                    Err(InvalidIdString)
+                }
+            }
+        }
+    }
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("provided string contains invalid characters or invalid length")]
+pub struct InvalidUidString;
+
+macro_rules! uid_type {
+    ($name:ident) => {
+        #[derive(
+            Debug,
+            Clone,
+            PartialEq, Eq, PartialOrd, Ord, Hash,
+            ToSql, FromSql,
+            Serialize, Deserialize,
+        )]
+        #[postgres(transparent)]
+        #[serde(try_from = "String", into = "String")]
+        pub struct $name(String);
+
+        impl $name {
+            fn check(given: &str) -> bool {
+                let mut count: usize = 0;
+
+                for ch in given.chars() {
+                    if !(ch == '_' || ch.is_ascii_alphanumeric()) {
+                        return false;
+                    }
+
+                    count += 1;
+                }
+
+                if count != UID_SIZE {
+                    return false;
+                }
+
+                true
+            }
+
+            pub fn gen() -> Self {
+                $name(nanoid::format(nanoid::rngs::default, &UID_ALPHABET, UID_SIZE))
+            }
+
+            pub fn new(given: String) -> Result<Self, InvalidUidString> {
+                if !Self::check(&given) {
+                    Err(InvalidUidString)
+                } else {
+                    Ok($name(given))
+                }
+            }
+
+            pub fn inner(&self) -> &str {
+                &self.0
+            }
+        }
+
+        impl TryFrom<String> for $name {
+            type Error = InvalidUidString;
+
+            fn try_from(value: String) -> Result<Self, Self::Error> {
+                if !Self::check(&value) {
+                    Err(InvalidUidString)
+                } else {
+                    Ok($name(value))
+                }
+            }
+        }
+
+        impl From<$name> for String {
+            fn from(value: $name) -> Self {
+                value.0
+            }
+        }
+
+        impl Display for $name {
+            fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+                Display::fmt(&self.0, f)
+            }
+        }
+
+        impl FromStr for $name {
+            type Err = InvalidUidString;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                if !Self::check(s) {
+                    Err(InvalidUidString)
+                } else {
+                    Ok($name(s.to_owned()))
+                }
+            }
+        }
+    }
+}
+
+macro_rules! set_type {
+    ($name:ident, $local:ty, $uid:ty) => {
+        #[derive(Debug, Clone)]
+        pub struct $name {
+            local: $local,
+            uid: $uid,
+        }
+
+        impl $name {
+            pub fn new(local: $local, uid: $uid) -> Self {
+                $name { local, uid }
+            }
+
+            pub fn local(&self) -> &$local {
+                &self.local
+            }
+
+            pub fn uid(&self) -> &$uid {
+                &self.uid
+            }
+
+            pub fn into_local(self) -> $local {
+                self.local
+            }
+
+            pub fn into_uid(self) -> $uid {
+                self.uid
+            }
+        }
+
+        impl std::cmp::PartialEq for $name {
+            fn eq(&self, other: &Self) -> bool {
+                self.local.eq(&other.local)
+            }
+        }
+
+        impl std::cmp::Eq for $name {}
+
+        impl std::cmp::PartialOrd for $name {
+            fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+                self.local.partial_cmp(&other.local)
+            }
+        }
+
+        impl std::cmp::Ord for $name {
+            fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+                self.local.cmp(&other.local)
+            }
+        }
+
+        impl std::cmp::PartialEq<$local> for $name {
+            fn eq(&self, other: &$local) -> bool {
+                self.local.eq(other)
+            }
+        }
+
+        impl std::cmp::PartialEq<$uid> for $name {
+            fn eq(&self, other: &$uid) -> bool {
+                self.uid.eq(other)
+            }
+        }
+
+        impl From<$name> for $local {
+            fn from(value: $name) -> $local {
+                value.local
+            }
+        }
+
+        impl From<$name> for $uid {
+            fn from(value: $name) -> $uid {
+                value.uid
+            }
+        }
+
+        impl From<($local, $uid)> for $name {
+            fn from((local, uid): ($local, $uid)) -> Self {
+                $name { local, uid }
+            }
+        }
+
+        impl std::hash::Hash for $name {
+            fn hash<H>(&self, state: &mut H)
+            where
+                H: std::hash::Hasher
+            {
+                self.local.hash(state);
+            }
+        }
+
+        impl Display for $name {
+            fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+                write!(f, "local: {} uid: {}", self.local, self.uid)
+            }
+        }
+    }
+}
+
+id_type!(UserId);
+uid_type!(UserUid);
+set_type!(UserSet, UserId, UserUid);
+
+id_type!(GroupId);
+uid_type!(GroupUid);
+set_type!(GroupSet, GroupId, GroupUid);
+
+id_type!(RoleId);
+uid_type!(RoleUid);
+set_type!(RoleSet, RoleId, RoleUid);
+
+id_type!(FSId);
+uid_type!(FSUid);
+set_type!(FSSet, FSId, FSUid);
+
+id_type!(StorageId);
+uid_type!(StorageUid);
+set_type!(StorageSet, StorageId, StorageUid);

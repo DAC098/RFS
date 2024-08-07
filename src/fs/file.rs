@@ -7,10 +7,10 @@ use super::{traits, backend};
 
 #[derive(Debug)]
 pub struct File {
-    pub id: ids::FSId,
-    pub user_id: ids::UserId,
-    pub storage_id: ids::StorageId,
-    pub parent: ids::FSId,
+    pub id: ids::FSSet,
+    pub user: ids::UserSet,
+    pub storage: ids::StorageSet,
+    pub parent: ids::FSSet,
     pub path: String,
     pub basename: String,
     pub mime: mime::Mime,
@@ -33,10 +33,10 @@ impl File {
 impl From<File> for rfs_api::fs::File {
     fn from(file: File) -> Self {
         rfs_api::fs::File {
-            id: file.id,
-            user_id: file.user_id,
-            storage_id: file.storage_id,
-            parent: file.parent,
+            uid: file.id.into_uid(),
+            user_uid: file.user.into_uid(),
+            storage_uid: file.storage.into_uid(),
+            parent: file.parent.into_uid(),
             basename: file.basename,
             path: file.path,
             size: file.size,
@@ -54,19 +54,19 @@ impl From<File> for rfs_api::fs::File {
 
 impl traits::Common for File {
     fn id(&self) -> &ids::FSId {
-        &self.id
+        self.id.local()
     }
 
     fn parent(&self) -> Option<&ids::FSId> {
-        Some(&self.parent)
+        Some(self.parent.local())
     }
 
     fn user_id(&self) -> &ids::UserId {
-        &self.user_id
+        self.user.local()
     }
 
     fn storage_id(&self) -> &ids::StorageId {
-        &self.storage_id
+        self.storage.local()
     }
 
     fn full_path(&self) -> String {

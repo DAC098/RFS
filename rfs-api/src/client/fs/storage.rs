@@ -259,7 +259,7 @@ impl UpdateStorage {
     }
 
     pub fn send(self, client: &ApiClient) -> Result<Payload<Storage>, RequestError> {
-        let res = client.put(format!("/api/fs/storage/{}", self.uid))
+        let res = client.patch(format!("/api/fs/storage/{}", self.uid))
             .json(&self.body)
             .send()?;
 

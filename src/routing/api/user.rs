@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use rfs_lib::ids::{self, UserId};
+use rfs_lib::ids;
 use rfs_api::Validator;
 
 use axum::Router;
@@ -26,7 +26,7 @@ mod totp;
 
 #[derive(Deserialize)]
 struct PathParams {
-    user_id: ids::UserId
+    user_uid: ids::UserUid
 }
 
 pub fn routes() -> Router<ArcShared> {
@@ -35,10 +35,10 @@ pub fn routes() -> Router<ArcShared> {
             .post(create))
         .route("/group", get(group::retrieve)
             .post(group::create))
-        .route("/group/:group_id", get(group::retrieve_id)
+        .route("/group/:group_uid", get(group::retrieve_id)
             .patch(group::update_id)
             .delete(group::delete_id))
-        .route("/group/:group_id/users", get(group::retrieve_users)
+        .route("/group/:group_uid/users", get(group::retrieve_users)
             .post(group::add_users)
             .delete(group::delete_users))
         .route("/password", post(password::update))
@@ -51,7 +51,7 @@ pub fn routes() -> Router<ArcShared> {
         .route("/totp/recovery/:key_id", get(totp::retrieve_recovery_key)
             .patch(totp::update_recovery_key)
             .delete(totp::delete_recovery_key))
-        .route("/:user_id", get(retrieve_id)
+        .route("/:user_uid", get(retrieve_id)
             .patch(update_id)
             .delete(delete_id))
 }
@@ -59,7 +59,7 @@ pub fn routes() -> Router<ArcShared> {
 async fn retrieve(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Query(PaginationQuery { limit, offset, last_id }): Query<PaginationQuery<UserId>>,
+    Query(PaginationQuery { limit, offset, last_id }): Query<PaginationQuery<ids::UserUid>>,
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
@@ -77,12 +77,14 @@ async fn retrieve(
 
         conn.query_raw(
             "\
-            select id, \
-                   username, \
-                   email, \
-                   email_verified \
+            select uid, \
+                   username \
             from users \
-            where users.id > $1 \
+            where users.id > (\
+                select users.id \
+                from users \
+                where users.uid = $1\
+            ) \
             order by users.id \
             limit $2",
             params
@@ -95,10 +97,8 @@ async fn retrieve(
 
         conn.query_raw(
             "\
-            select id, \
-                   username, \
-                   email, \
-                   email_verified \
+            select uid, \
+                   username \
             from users \
             order by users.id \
             limit $1 \
@@ -113,7 +113,7 @@ async fn retrieve(
 
     while let Some(row) = result.try_next().await? {
         let item = rfs_api::users::ListItem {
-            id: row.get(0),
+            uid: row.get(0),
             username: row.get(1),
         };
 
@@ -139,7 +139,7 @@ async fn create(
 
     json.validate()?;
 
-    let id = state.ids().wait_user_id()?;
+    let uid = ids::UserUid::gen();
     let username = json.username;
 
     let transaction = conn.transaction().await?;
@@ -175,12 +175,17 @@ async fn create(
         None
     };
 
-    transaction.execute(
-        "insert into users (id, username, email) values ($1, $2, $3)",
-        &[&id, &username, &email]
+    let row = transaction.query_one(
+        "\
+        insert into users (uid, username, email) \
+        values ($1, $2, $3) \
+        returning id",
+        &[&uid, &username, &email]
     ).await?;
 
-    let _ = authn::password::Password::create(&transaction, &id, json.password, state.sec().peppers()).await?;
+    let id = row.get(0);
+
+    authn::password::Password::create(&transaction, &id, json.password, state.sec().peppers()).await?;
 
     transaction.commit().await?;
 
@@ -192,7 +197,7 @@ async fn create(
     Ok((
         StatusCode::CREATED,
         rfs_api::Payload::new(rfs_api::users::User {
-            id,
+            uid,
             username,
             email
         })
@@ -202,7 +207,7 @@ async fn create(
 async fn retrieve_id(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Path(PathParams { user_id }): Path<PathParams>,
+    Path(PathParams { user_uid }): Path<PathParams>,
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
@@ -213,7 +218,7 @@ async fn retrieve_id(
         permission::Ability::Read,
     ).await?;
 
-    let user = user::User::retrieve(&conn, &user_id)
+    let user = user::User::retrieve_uid(&conn, &user_uid)
         .await?
         .kind(ApiErrorKind::UserNotFound)?;
 
@@ -223,7 +228,7 @@ async fn retrieve_id(
     });
 
     Ok(rfs_api::Payload::new(rfs_api::users::User {
-        id: user.id,
+        uid: user.id.into(),
         username: user.username,
         email
     }))
@@ -232,7 +237,7 @@ async fn retrieve_id(
 async fn update_id(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Path(PathParams { user_id }): Path<PathParams>,
+    Path(PathParams { user_uid }): Path<PathParams>,
     axum::Json(json): axum::Json<rfs_api::users::UpdateUser>,
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
@@ -244,7 +249,7 @@ async fn update_id(
         permission::Ability::Write,
     ).await?;
 
-    let mut user = user::User::retrieve(&conn, &user_id)
+    let mut user = user::User::retrieve_uid(&conn, &user_uid)
         .await?
         .kind(ApiErrorKind::UserNotFound)?;
 
@@ -258,7 +263,7 @@ async fn update_id(
         let mut use_comma = false;
         let mut update_query = String::from("update users set");
         let mut update_params = sql::ParamsVec::with_capacity(2);
-        update_params.push(&user_id);
+        update_params.push(user.id.local());
 
         if let Some(username) = json.username {
             use_comma = true;
@@ -271,7 +276,7 @@ async fn update_id(
             };
 
             if let Some(found_id) = user::check_username(&transaction, &username).await? {
-                if found_id != user_id {
+                if found_id != *user.id.local() {
                     return Err(ApiError::from((
                         ApiErrorKind::AlreadyExists,
                         Detail::with_key("username")
@@ -304,7 +309,7 @@ async fn update_id(
                 };
 
                 if let Some(found_id) = user::check_email(&transaction, &email).await? {
-                    if found_id != user_id {
+                    if found_id != *user.id.local() {
                         return Err(ApiError::from((
                             ApiErrorKind::AlreadyExists,
                             Detail::with_key("email")
@@ -343,7 +348,7 @@ async fn update_id(
     });
 
     Ok(rfs_api::Payload::new(rfs_api::users::User {
-        id: user.id,
+        uid: user.id.into_uid(),
         username: user.username,
         email
     }))
@@ -352,7 +357,7 @@ async fn update_id(
 async fn delete_id(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Path(PathParams { user_id }): Path<PathParams>,
+    Path(PathParams { user_uid }): Path<PathParams>,
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
@@ -363,11 +368,11 @@ async fn delete_id(
         permission::Ability::Write
     ).await?;
 
-    let user = user::User::retrieve(&conn, &user_id)
+    let user = user::User::retrieve_uid(&conn, &user_uid)
         .await?
         .kind(ApiErrorKind::UserNotFound)?;
 
-    if user.id == user_id {
+    if *user.id.uid() == user_uid {
         return Err(ApiError::from(ApiErrorKind::NoOp));
     }
 
@@ -376,7 +381,7 @@ async fn delete_id(
     let cache = state.auth().session_info().cache();
     let session_tokens = session::Session::delete_user_sessions(
         &transaction,
-        &user.id,
+        user.id.local(),
         None,
     ).await?;
 

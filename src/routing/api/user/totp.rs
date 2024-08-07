@@ -23,7 +23,7 @@ pub async fn retrieve(
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
-    let totp = totp::Totp::retrieve(&conn, &initiator.user.id)
+    let totp = totp::Totp::retrieve(&conn, &initiator.user.id.local())
         .await?
         .kind(ApiErrorKind::TotpNotFound)?;
 
@@ -44,7 +44,7 @@ pub async fn create(
 
     json.validate()?;
 
-    if let Some(_existing) = totp::Totp::retrieve(&conn, &initiator.user.id).await? {
+    if let Some(_existing) = totp::Totp::retrieve(&conn, initiator.user.id.local()).await? {
         return Err(ApiError::from(ApiErrorKind::AlreadyExists));
     }
 
@@ -64,7 +64,7 @@ pub async fn create(
             insert into auth_totp (user_id, algo, secret, digits, step) values \
             ($1, $2, $3, $4, $5)",
             &[
-                &initiator.user.id,
+                initiator.user.id.local(),
                 &pg_algo,
                 &secret.as_slice(),
                 &(digits as i32),
@@ -96,7 +96,7 @@ pub async fn update(
 
     json.validate()?;
 
-    let mut totp = totp::Totp::retrieve(&conn, &initiator.user.id)
+    let mut totp = totp::Totp::retrieve(&conn, initiator.user.id.local())
         .await?
         .kind(ApiErrorKind::TotpNotFound)?;
 
@@ -139,7 +139,7 @@ pub async fn delete(
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    let record = totp::Totp::retrieve(&conn, &initiator.user.id)
+    let record = totp::Totp::retrieve(&conn, initiator.user.id.local())
         .await?
         .kind(ApiErrorKind::TotpNotFound)?;
 
@@ -149,7 +149,7 @@ pub async fn delete(
 
     transaction.execute(
         "delete from auth_totp_hash where user_id = $1",
-        &[&initiator.user.id]
+        &[initiator.user.id.local()]
     ).await?;
 
     transaction.commit().await?;
@@ -165,13 +165,12 @@ pub async fn retrieve_recovery(
 
     let result = conn.query_raw(
         "\
-        select auth_totp_hash.user_id, \
-               auth_totp_hash.key, \
+        select auth_totp_hash.key, \
                auth_totp_hash.hash, \
                auth_totp_hash.used \
         from auth_totp_hash \
         where auth_totp_hash.user_id = $1",
-        &[&initiator.user.id]
+        &[initiator.user.id.local()]
     ).await?;
 
     futures::pin_mut!(result);
@@ -180,10 +179,10 @@ pub async fn retrieve_recovery(
 
     while let Some(row) = result.try_next().await? {
         rtn.push(rfs_api::users::totp::TotpRecovery {
-            user_id: row.get(0),
-            key: row.get(1),
-            hash: row.get(2),
-            used: row.get(3),
+            user_uid: initiator.user.id.uid().clone(),
+            key: row.get(0),
+            hash: row.get(1),
+            used: row.get(2),
         });
     }
 
@@ -199,7 +198,7 @@ pub async fn create_recovery(
 
     json.validate()?;
 
-    if totp::recovery::key_exists(&conn, &initiator.user.id, &json.key).await? {
+    if totp::recovery::key_exists(&conn, initiator.user.id.local(), &json.key).await? {
         return Err(ApiError::from(ApiErrorKind::AlreadyExists));
     }
 
@@ -211,7 +210,7 @@ pub async fn create_recovery(
         "\
         insert into auth_totp_hash (user_id, key, hash, used) values \
         ($1, $2, $3, false)",
-        &[&initiator.user.id, &json.key, &hash]
+        &[initiator.user.id.local(), &json.key, &hash]
     ).await?;
 
     transaction.commit().await?;
@@ -219,7 +218,7 @@ pub async fn create_recovery(
     Ok((
         StatusCode::CREATED,
         rfs_api::Payload::new(rfs_api::users::totp::TotpRecovery {
-            user_id: initiator.user.id.clone(),
+            user_uid: initiator.user.id.into_uid(),
             key: json.key,
             hash,
             used: false
@@ -234,12 +233,12 @@ pub async fn retrieve_recovery_key(
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
-    let hash = totp::recovery::Hash::retrieve_key(&conn, &initiator.user.id, &key_id)
+    let hash = totp::recovery::Hash::retrieve_key(&conn, initiator.user.id.local(), &key_id)
         .await?
         .kind(ApiErrorKind::TotpRecoveryNotFound)?;
 
     Ok(rfs_api::Payload::new(rfs_api::users::totp::TotpRecovery {
-        user_id: hash.user_id,
+        user_uid: initiator.user.id.into_uid(),
         key: hash.key.into(),
         hash: hash.hash.into(),
         used: hash.used.into(),
@@ -256,12 +255,12 @@ pub async fn update_recovery_key(
 
     json.validate()?;
 
-    let mut hash = totp::recovery::Hash::retrieve_key(&conn, &initiator.user.id, &key_id)
+    let mut hash = totp::recovery::Hash::retrieve_key(&conn, initiator.user.id.local(), &key_id)
         .await?
         .kind(ApiErrorKind::NotFound)?;
 
     if let Some(new_key) = json.key {
-        if totp::recovery::key_exists(&conn, &initiator.user.id, &new_key).await? {
+        if totp::recovery::key_exists(&conn, initiator.user.id.local(), &new_key).await? {
             return Err(ApiError::from(ApiErrorKind::AlreadyExists));
         }
 
@@ -279,7 +278,7 @@ pub async fn update_recovery_key(
     transaction.commit().await?;
 
     Ok(rfs_api::Payload::new(rfs_api::users::totp::TotpRecovery {
-        user_id: hash.user_id,
+        user_uid: initiator.user.id.into_uid(),
         key: hash.key.into(),
         hash: hash.hash.into(),
         used: hash.used.into(),
@@ -293,7 +292,7 @@ pub async fn delete_recovery_key(
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    let hash = totp::recovery::Hash::retrieve_key(&conn, &initiator.user.id, &key_id)
+    let hash = totp::recovery::Hash::retrieve_key(&conn, initiator.user.id.local(), &key_id)
         .await?
         .kind(ApiErrorKind::TotpRecoveryNotFound)?;
 

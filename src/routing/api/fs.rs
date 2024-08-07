@@ -40,21 +40,21 @@ pub fn routes() -> Router<ArcShared> {
         .route("/", get(retrieve))
         .route("/storage", get(storage::retrieve)
             .post(storage::create))
-        .route("/storage/:storage_id", get(storage::retrieve_id)
+        .route("/storage/:storage_uid", get(storage::retrieve_id)
             .patch(storage::update_id)
             .delete(storage::delete_id))
-        .route("/:fs_id", get(retrieve_id)
+        .route("/:fs_uid", get(retrieve_id)
             .post(create_item)
             .put(upload::upload_file)
             .patch(update_item)
             .delete(delete_item))
-        .route("/:fs_id/contents", get(retrieve_id_contents))
-        .route("/:fs_id/download", get(download_id))
+        .route("/:fs_uid/contents", get(retrieve_id_contents))
+        .route("/:fs_uid/download", get(download_id))
 }
 
 #[derive(Deserialize)]
 pub struct PathParams {
-    fs_id: ids::FSId,
+    fs_uid: ids::FSUid,
 }
 
 async fn retrieve(
@@ -74,19 +74,32 @@ async fn retrieve(
     let mut pagination = rfs_api::Pagination::from(&limit);
 
     let result = if let Some(last_id) = last_id {
-        let params: sql::ParamsVec = vec![&initiator.user.id, &last_id, &fs::consts::ROOT_TYPE, &limit];
+        let params: sql::ParamsVec = vec![
+            initiator.user.id.local(),
+            &last_id,
+            &fs::consts::ROOT_TYPE,
+            &limit
+        ];
 
         conn.query_raw(
             "\
-            select fs.id, \
-                   fs.user_id, \
-                   fs.storage_id, \
+            select fs.uid, \
+                   users.uid, \
+                   storage.uid, \
                    fs.basename, \
                    fs.created, \
                    fs.updated \
             from fs \
+            left join users on \
+                fs.user_id = users.id \
+            left join storage on \
+                fs.storage_id = storage.id \
             where fs.user_id = $1 and \
-                  fs.id > $2 and \
+                  fs.id > (\
+                      select fs.id \
+                      from fs \
+                      where fs.uid = $2\
+                  ) and \
                   fs.fs_type = $3 \
             order by fs.id \
             limit $4",
@@ -96,17 +109,21 @@ async fn retrieve(
         pagination.set_offset(offset);
 
         let offset_num = limit.sql_offset(offset);
-        let params: sql::ParamsVec = vec![&initiator.user.id, &fs::consts::ROOT_TYPE, &limit, &offset_num];
+        let params: sql::ParamsVec = vec![initiator.user.id.local(), &fs::consts::ROOT_TYPE, &limit, &offset_num];
 
         conn.query_raw(
             "\
-            select fs.id, \
-                   fs.user_id, \
-                   fs.storage_id, \
+            select fs.uid, \
+                   users.uid, \
+                   storage.uid, \
                    fs.basename, \
                    fs.created, \
                    fs.updated \
             from fs \
+            left join users on \
+                fs.user_id = users.id \
+            left join storage on \
+                fs.storage_id = storage.id \
             where fs.user_id = $1 and \
                   fs.fs_type = $2 \
             order by fs.id \
@@ -122,9 +139,9 @@ async fn retrieve(
 
     while let Some(row) = result.try_next().await? {
         let item = ItemMin::Root(RootMin {
-            id: row.get(0),
-            user_id: row.get(1),
-            storage_id: row.get(2),
+            uid: row.get(0),
+            user_uid: row.get(1),
+            storage_uid: row.get(2),
             basename: row.get(3),
             created: row.get(4),
             updated: row.get(5),
@@ -139,7 +156,7 @@ async fn retrieve(
 pub async fn retrieve_id(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Path(PathParams { fs_id }): Path<PathParams>,
+    Path(PathParams { fs_uid }): Path<PathParams>,
 ) -> ApiResult<rfs_api::Payload<rfs_api::fs::Item>> {
     let conn = state.pool().get().await?;
 
@@ -150,14 +167,16 @@ pub async fn retrieve_id(
         permission::Ability::Read
     ).await?;
 
-    Ok(rfs_api::Payload::new(fs::fetch_item(&conn, &fs_id, &initiator).await?.into()))
+    tracing::debug!("looking up fs_uid: {fs_uid}");
+
+    Ok(rfs_api::Payload::new(fs::fetch_item_uid(&conn, &fs_uid, &initiator).await?.into()))
 }
 
 #[debug_handler]
 async fn create_item(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Path(PathParams { fs_id }): Path<PathParams>,
+    Path(PathParams { fs_uid }): Path<PathParams>,
     axum::Json(json): axum::Json<rfs_api::fs::CreateDir>,
 ) -> ApiResult<(StatusCode, rfs_api::Payload<rfs_api::fs::Item>)> {
     let mut conn = state.pool().get().await?;
@@ -170,14 +189,14 @@ async fn create_item(
     ).await?;
 
     let (item, storage) = tokio::try_join!(
-        fs::fetch_item(&conn, &fs_id, &initiator),
-        fs::fetch_storage_from_fs_id(&conn, &fs_id),
+        fs::fetch_item_uid(&conn, &fs_uid, &initiator),
+        fs::fetch_storage_from_fs_uid(&conn, &fs_uid),
     )?;
 
     let transaction = conn.transaction().await?;
-    let id = state.ids().wait_fs_id()?;
-    let user_id = initiator.user.id.clone();
-    let storage_id = storage.id.clone();
+    let uid = ids::FSUid::gen();
+    let user = initiator.user.id.clone();
+    let storage_id_set = storage.id.clone();
     let created = chrono::Utc::now();
     let basename = json.basename;
 
@@ -205,7 +224,7 @@ async fn create_item(
         return Err(ApiError::from(ApiErrorKind::InvalidType));
     };
 
-    if fs::Item::name_check(&transaction, &parent, &basename).await?.is_some() {
+    if fs::Item::name_check(&transaction, parent.local(), &basename).await?.is_some() {
         return Err(ApiError::from(ApiErrorKind::AlreadyExists));
     }
 
@@ -228,13 +247,13 @@ async fn create_item(
 
     tracing::debug!("directory backend: {backend:#?}");
 
-    {
+    let id: ids::FSId = {
         let pg_backend = sql::ser_to_sql(&backend);
 
-        let _ = transaction.execute(
+        let row = transaction.query_one(
             "\
             insert into fs(\
-                id, \
+                uid, \
                 user_id, \
                 storage_id, \
                 parent, \
@@ -245,12 +264,13 @@ async fn create_item(
                 comment, \
                 created\
             ) values \
-            ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+            ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) \
+            returning id",
             &[
-                &id,
-                &user_id,
-                &storage_id,
-                &parent,
+                &uid,
+                user.local(),
+                storage_id_set.local(),
+                parent.local(),
                 &basename,
                 &fs::consts::DIR_TYPE,
                 &path,
@@ -259,7 +279,9 @@ async fn create_item(
                 &created
             ]
         ).await?;
-    }
+
+        row.get(0)
+    };
 
     let tags = if let Some(tags) = json.tags {
         if !tags::validate_map(&tags) {
@@ -279,9 +301,9 @@ async fn create_item(
     transaction.commit().await?;
 
     let rtn = fs::Item::Directory(fs::Directory {
-        id,
-        user_id,
-        storage_id,
+        id: ids::FSSet::new(id, uid),
+        user,
+        storage: storage_id_set,
         backend,
         parent,
         basename,
@@ -299,7 +321,7 @@ async fn create_item(
 async fn update_item(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Path(PathParams { fs_id }): Path<PathParams>,
+    Path(PathParams { fs_uid }): Path<PathParams>,
     axum::Json(json): axum::Json<rfs_api::fs::UpdateMetadata>,
 ) -> ApiResult<rfs_api::Payload<rfs_api::fs::Item>> {
     let mut conn = state.pool().get().await?;
@@ -315,15 +337,16 @@ async fn update_item(
         return Err(ApiError::from(ApiErrorKind::NoWork));
     }
 
-    let mut item = fs::fetch_item(&conn, &fs_id, &initiator).await?;
+    let mut item = fs::fetch_item_uid(&conn, &fs_uid, &initiator).await?;
 
     let transaction = conn.transaction().await?;
 
     {
+        let local_id = *item.id().local();
         let updated = chrono::Utc::now();
         let mut update_query = String::from("update fs set updated = $2");
         let mut update_params = sql::ParamsVec::with_capacity(2);
-        update_params.push(&fs_id);
+        update_params.push(&local_id);
         update_params.push(&updated);
 
         if let Some(comment) = &json.comment {
@@ -356,7 +379,7 @@ async fn update_item(
             &transaction,
             "fs_tags",
             "fs_id",
-            &fs_id,
+            item.id().local(),
             &tags
         ).await?;
 
@@ -371,7 +394,7 @@ async fn update_item(
 async fn delete_item(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Path(PathParams { fs_id }): Path<PathParams>,
+    Path(PathParams { fs_uid }): Path<PathParams>,
 ) -> ApiResult<StatusCode> {
     let mut conn = state.pool().get().await?;
 
@@ -383,8 +406,8 @@ async fn delete_item(
     ).await?;
 
     let (item, storage) = tokio::try_join!(
-        fs::fetch_item(&conn, &fs_id, &initiator),
-        fs::fetch_storage_from_fs_id(&conn, &fs_id),
+        fs::fetch_item_uid(&conn, &fs_uid, &initiator),
+        fs::fetch_storage_from_fs_uid(&conn, &fs_uid),
     )?;
 
     match item {
@@ -411,7 +434,7 @@ async fn delete_file(
 
     transaction.execute(
         "delete from fs where id = $1",
-        &[&file.id]
+        &[file.id.local()]
     ).await?;
 
     match backend::Pair::match_up(&storage.backend, &file.backend)? {
@@ -461,7 +484,7 @@ async fn delete_dir(
                  parent, \
                  fs_type, \
                  id",
-        &[&directory.id]
+        &[directory.id.local()]
     ).await?;
 
     futures::pin_mut!(results);
@@ -479,7 +502,7 @@ async fn delete_dir(
         let level: i32 = row.get(4);
 
         if skip_parents.contains(&id) {
-            tracing::debug!("skipping fs item. id: {}", id.id());
+            tracing::debug!("skipping fs item. id: {id}");
 
             skipped.push(id);
             skip_parents.insert(parent);
@@ -488,7 +511,7 @@ async fn delete_dir(
         }
 
         let Ok(pair) = backend::Pair::match_up(&storage.backend, &backend) else {
-            tracing::error!("failed to delete item. backend miss-match. id: {}", id.id());
+            tracing::error!("failed to delete item. backend miss-match. id: {id}");
 
             failed.push(id);
             skip_parents.insert(parent);
@@ -500,7 +523,7 @@ async fn delete_dir(
             backend::Pair::Local((local, node_local)) => {
                 let full_path = local.path.join(&node_local.path);
 
-                tracing::debug!("deleting id: {}\ndepth: {level}\npath: {}", id.id(), full_path.display());
+                tracing::debug!("deleting id: {id}\ndepth: {level}\npath: {}", full_path.display());
 
                 match fs_type {
                     fs::consts::FILE_TYPE => {
@@ -510,7 +533,7 @@ async fn delete_dir(
                                     deleted.push(id);
                                 }
                                 _ => {
-                                    tracing::error!("failed to delete file. id: {} path: {} {err}", id.id(), full_path.display());
+                                    tracing::error!("failed to delete file. id: {id} path: {} {err}", full_path.display());
 
                                     failed.push(id);
                                     skip_parents.insert(parent);
@@ -527,7 +550,7 @@ async fn delete_dir(
                                     deleted.push(id);
                                 }
                                 _ => {
-                                    tracing::error!("failed to delete directory. id: {} path: {} {err}", id.id(), full_path.display());
+                                    tracing::error!("failed to delete directory. id: {id} path: {} {err}", full_path.display());
 
                                     failed.push(id);
                                     skip_parents.insert(parent);
@@ -538,7 +561,7 @@ async fn delete_dir(
                         }
                     }
                     _ => {
-                        tracing::debug!("unhandled file type. id: {} type: {fs_type}", id.id());
+                        tracing::debug!("unhandled file type. id: {id} type: {fs_type}");
 
                         skipped.push(id);
                         skip_parents.insert(parent);
@@ -563,8 +586,8 @@ async fn delete_dir(
 async fn retrieve_id_contents(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Path(PathParams { fs_id }): Path<PathParams>,
-    Query(PaginationQuery { limit, offset, last_id }): Query<PaginationQuery<ids::FSId>>,
+    Path(PathParams { fs_uid }): Path<PathParams>,
+    Query(PaginationQuery { limit, offset, last_id }): Query<PaginationQuery<ids::FSUid>>,
 ) -> ApiResult<rfs_api::Payload<Vec<ItemMin>>> {
     let conn = state.pool().get().await?;
 
@@ -575,13 +598,7 @@ async fn retrieve_id_contents(
         permission::Ability::Read,
     ).await?;
 
-    let item = fs::Item::retrieve(&conn, &fs_id)
-        .await?
-        .kind(ApiErrorKind::FileNotFound)?;
-
-    if *item.user_id() != initiator.user.id {
-        return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-    }
+    let item = fs::fetch_item_uid(&conn, &fs_uid, &initiator).await?;
 
     let container = item.as_container()
         .kind(ApiErrorKind::NotDirectory)?;
@@ -593,10 +610,10 @@ async fn retrieve_id_contents(
 
         conn.query_raw(
             "\
-            select fs.id, \
-                   fs.user_id, \
-                   fs.storage_id, \
-                   fs.parent, \
+            select fs.uid, \
+                   users.uid, \
+                   storage.uid, \
+                   fs_parent.uid, \
                    fs.basename, \
                    fs.fs_type, \
                    fs.fs_path, \
@@ -606,7 +623,17 @@ async fn retrieve_id_contents(
                    fs.created, \
                    fs.updated \
             from fs \
-            where fs.parent = $1 and fs.id > $2 \
+            left join users on \
+                fs.user_id = users.id \
+            left join storage on \
+                fs.storage_id = storage.id \
+            left join fs as fs_parent on \
+                fs.parent = fs_parent.id \
+            where fs.parent = $1 and fs.id > (\
+                select fs.id \
+                from fs \
+                where fs.uid = $2\
+            ) \
             order by fs.id \
             limit $3",
             params
@@ -619,10 +646,10 @@ async fn retrieve_id_contents(
 
         conn.query_raw(
             "\
-            select fs.id, \
-                   fs.user_id, \
-                   fs.storage_id, \
-                   fs.parent, \
+            select fs.uid, \
+                   users.uid, \
+                   storage.uid, \
+                   fs_parent.uid, \
                    fs.basename, \
                    fs.fs_type, \
                    fs.fs_path, \
@@ -632,6 +659,12 @@ async fn retrieve_id_contents(
                    fs.created, \
                    fs.updated \
             from fs \
+            left join users on \
+                fs.user_id = users.id \
+            left join storage on \
+                fs.storage_id = storage.id \
+            left join fs as fs_parent on \
+                fs.parent = fs_parent.id \
             where fs.parent = $1 \
             order by fs.id \
             limit $2 \
@@ -650,9 +683,9 @@ async fn retrieve_id_contents(
         let item = match fs_type {
             fs::consts::ROOT_TYPE => {
                 ItemMin::Root(RootMin {
-                    id: row.get(0),
-                    user_id: row.get(1),
-                    storage_id: row.get(2),
+                    uid: row.get(0),
+                    user_uid: row.get(1),
+                    storage_uid: row.get(2),
                     basename: row.get(4),
                     created: row.get(10),
                     updated: row.get(11),
@@ -660,9 +693,9 @@ async fn retrieve_id_contents(
             }
             fs::consts::FILE_TYPE => {
                 ItemMin::File(FileMin {
-                    id: row.get(0),
-                    user_id: row.get(1),
-                    storage_id: row.get(2),
+                    uid: row.get(0),
+                    user_uid: row.get(1),
+                    storage_uid: row.get(2),
                     parent: row.get(3),
                     basename: row.get(4),
                     path: row.get(6),
@@ -674,9 +707,9 @@ async fn retrieve_id_contents(
             }
             fs::consts::DIR_TYPE => {
                 ItemMin::Directory(DirectoryMin {
-                    id: row.get(0),
-                    user_id: row.get(1),
-                    storage_id: row.get(2),
+                    uid: row.get(0),
+                    user_uid: row.get(1),
+                    storage_uid: row.get(2),
                     parent: row.get(3),
                     basename: row.get(4),
                     path: row.get(6),
@@ -698,7 +731,7 @@ async fn retrieve_id_contents(
 async fn download_id(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Path(PathParams { fs_id }): Path<PathParams>,
+    Path(PathParams { fs_uid }): Path<PathParams>,
 ) -> ApiResult<Response<Body>> {
     let conn = state.pool().get().await?;
 
@@ -710,8 +743,8 @@ async fn download_id(
     ).await?;
 
     let (item, storage) = tokio::try_join!(
-        fs::fetch_item(&conn, &fs_id, &initiator),
-        fs::fetch_storage_from_fs_id(&conn, &fs_id),
+        fs::fetch_item_uid(&conn, &fs_uid, &initiator),
+        fs::fetch_storage_from_fs_uid(&conn, &fs_uid),
     )?;
 
     let Ok(file): Result<fs::File, _> = item.try_into() else {

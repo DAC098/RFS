@@ -7,11 +7,11 @@ use super::{traits, backend};
 
 #[derive(Debug)]
 pub struct Directory {
-    pub id: ids::FSId,
-    pub user_id: ids::UserId,
-    pub storage_id: ids::StorageId,
+    pub id: ids::FSSet,
+    pub user: ids::UserSet,
+    pub storage: ids::StorageSet,
     pub backend: backend::Node,
-    pub parent: ids::FSId,
+    pub parent: ids::FSSet,
     pub basename: String,
     pub path: String,
     pub tags: tags::TagMap,
@@ -30,11 +30,11 @@ impl Directory {
 impl From<Directory> for rfs_api::fs::Directory {
     fn from(dir: Directory) -> Self {
         rfs_api::fs::Directory {
-            id: dir.id,
-            user_id: dir.user_id,
-            storage_id: dir.storage_id,
+            uid: dir.id.into_uid(),
+            user_uid: dir.user.into_uid(),
+            storage_uid: dir.storage.into_uid(),
             backend: dir.backend.into(),
-            parent: dir.parent,
+            parent: dir.parent.into_uid(),
             basename: dir.basename,
             path: dir.path,
             tags: dir.tags,
@@ -48,19 +48,19 @@ impl From<Directory> for rfs_api::fs::Directory {
 
 impl traits::Common for Directory {
     fn id(&self) -> &ids::FSId {
-        &self.id
+        self.id.local()
     }
 
     fn parent(&self) -> Option<&ids::FSId> {
-        Some(&self.parent)
+        Some(self.parent.local())
     }
 
     fn user_id(&self) -> &ids::UserId {
-        &self.user_id
+        self.user.local()
     }
 
-    fn storage_id(&self) -> &ids::FSId {
-        &self.storage_id
+    fn storage_id(&self) -> &ids::StorageId {
+       self.storage.local()
     }
 
     fn full_path(&self) -> String {

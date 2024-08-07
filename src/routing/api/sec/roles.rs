@@ -20,7 +20,7 @@ use crate::routing::query::PaginationQuery;
 pub async fn retrieve(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Query(PaginationQuery { limit, offset, last_id }): Query<PaginationQuery<ids::RoleId>>,
+    Query(PaginationQuery { limit, offset, last_id }): Query<PaginationQuery<ids::RoleUid>>,
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
@@ -38,8 +38,8 @@ pub async fn retrieve(
 
         conn.query_raw(
             "\
-            select id, \
-                   name \
+            select authz_roles.uid, \
+                   authz_roles.name \
             from authz_roles \
             where authz_roles.id > $1 \
             order by authz_roles.id \
@@ -54,7 +54,7 @@ pub async fn retrieve(
 
         conn.query_raw(
             "\
-            select authz_roles.id, \
+            select authz_roles.uid, \
                    authz_roles.name \
             from authz_roles \
             order by authz_roles.id \
@@ -70,7 +70,7 @@ pub async fn retrieve(
 
     while let Some(row) = result.try_next().await? {
         let item = rfs_api::sec::roles::RoleListItem {
-            id: row.get(0),
+            uid: row.get(0),
             name: row.get(1),
         };
 
@@ -95,13 +95,14 @@ pub async fn create(
     ).await?;
 
     let transaction = conn.transaction().await?;
+    let uid = ids::RoleUid::gen();
 
     let result = match transaction.query_one(
         "\
-        insert into authz_roles (name) \
-        values ($1) \
+        insert into authz_roles (uid, name) \
+        values ($1, $2) \
         returning id",
-        &[&json.name]
+        &[&uid, &json.name]
     ).await {
         Ok(r) => r,
         Err(err) => {
@@ -126,7 +127,7 @@ pub async fn create(
         return Ok((
             StatusCode::CREATED,
             rfs_api::Payload::new(rfs_api::sec::roles::Role {
-                id: role_id,
+                uid,
                 name: json.name,
                 permissions: Vec::new()
             })
@@ -179,7 +180,7 @@ pub async fn create(
     Ok((
         StatusCode::CREATED,
         rfs_api::Payload::new(rfs_api::sec::roles::Role {
-            id: role_id,
+            uid,
             name: json.name,
             permissions
         })
@@ -188,13 +189,13 @@ pub async fn create(
 
 #[derive(Deserialize)]
 pub struct PathParams {
-    role_id: i64
+    role_uid: ids::RoleUid
 }
 
 pub async fn retrieve_id(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Path(PathParams { role_id }): Path<PathParams>,
+    Path(PathParams { role_uid }): Path<PathParams>,
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
@@ -205,16 +206,21 @@ pub async fn retrieve_id(
         Ability::Read,
     ).await?;
 
-    let role_params: sql::ParamsArray<1> = [&role_id];
+    let role_params: sql::ParamsArray<1> = [&role_uid];
 
     let (role_result, permissions_result) = match tokio::try_join!(
         conn.query_opt(
-            "select id, name from authz_roles where id = $1",
+            "select uid, name from authz_roles where uid = $1",
             &role_params
         ),
         conn.query_raw(
-            "select role_id, scope, ability from authz_permissions where role_id = $1",
-            [&role_id]
+            "\
+            select scope, \
+                   ability \
+            from authz_permissions \
+                join authz_roles on authz_permissions.role_id = authz_roles.id \
+            where authz_roles.uid = $1",
+            [&role_uid]
         )
     ) {
         Ok((Some(role), permissions)) => (role, permissions),
@@ -232,13 +238,13 @@ pub async fn retrieve_id(
 
     while let Some(row) = permissions_result.try_next().await? {
         permissions.push(rfs_api::sec::roles::Permission {
-            scope: row.get(1),
-            ability: row.get(2),
+            scope: row.get(0),
+            ability: row.get(1),
         });
     }
 
     let rtn = rfs_api::sec::roles::Role {
-        id: role_result.get(0),
+        uid: role_result.get(0),
         name: role_result.get(1),
         permissions,
     };
@@ -249,7 +255,7 @@ pub async fn retrieve_id(
 pub async fn update_id(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Path(PathParams { role_id }): Path<PathParams>,
+    Path(PathParams { role_uid }): Path<PathParams>,
     axum::Json(json): axum::Json<rfs_api::sec::roles::UpdateRole>,
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
@@ -263,7 +269,7 @@ pub async fn update_id(
 
     let transaction = conn.transaction().await?;
 
-    let original = Role::retrieve(&transaction, &role_id)
+    let original = Role::retrieve_uid(&transaction, &role_uid)
         .await?
         .kind(ApiErrorKind::RoleNotFound)?;
 
@@ -277,7 +283,7 @@ pub async fn update_id(
             update authz_roles \
             set name = $2 \
             where id = $1",
-            &[&role_id, &name]
+            &[original.id.local(), &name]
         ).await {
             Ok(_) => {},
             Err(err) => {
@@ -306,7 +312,7 @@ pub async fn update_id(
         // key so we cannot easily reference a specific row to drop.
         transaction.execute(
             "delete from authz_permissions where role_id = $1",
-            &[&role_id]
+            &[original.id.local()]
         ).await?;
 
         if permissions.len() == 0 {
@@ -315,7 +321,7 @@ pub async fn update_id(
             let mut first = true;
             let mut provided: HashSet<(Scope, Ability)> = HashSet::new();
             let mut query = String::from("insert into authz_permissions (role_id, scope, ability) values");
-            let mut params: sql::ParamsVec = vec![&role_id];
+            let mut params: sql::ParamsVec = vec![original.id.local()];
 
             for given in permissions {
                 let pair = (given.scope.clone(), given.ability.clone());
@@ -361,7 +367,7 @@ pub async fn update_id(
             })
             .collect()
     } else {
-        Permission::retrieve_by_role_id(&conn, &role_id)
+        Permission::retrieve_by_role_id(&conn, original.id.local())
             .await?
             .into_iter()
             .map(|perm| rfs_api::sec::roles::Permission {
@@ -372,7 +378,7 @@ pub async fn update_id(
     };
 
     Ok(rfs_api::Payload::new(rfs_api::sec::roles::Role {
-        id: role_id,
+        uid: role_uid,
         name,
         permissions,
     }))
@@ -381,7 +387,7 @@ pub async fn update_id(
 pub async fn delete_id(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Path(PathParams { role_id }): Path<PathParams>,
+    Path(PathParams { role_uid }): Path<PathParams>,
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
@@ -394,11 +400,11 @@ pub async fn delete_id(
 
     let transaction = conn.transaction().await?;
 
-    let _original = Role::retrieve(&transaction, &role_id)
+    let original = Role::retrieve_uid(&transaction, &role_uid)
         .await?
         .kind(ApiErrorKind::RoleNotFound)?;
 
-    let query_params: sql::ParamsArray<1> = [&role_id];
+    let query_params: sql::ParamsArray<1> = [original.id.local()];
 
     let result = tokio::try_join!(
         transaction.execute(
@@ -432,8 +438,8 @@ pub async fn delete_id(
 pub async fn retreive_id_users(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Path(PathParams { role_id }): Path<PathParams>,
-    Query(PaginationQuery { limit, offset, last_id }): Query<PaginationQuery<ids::UserId>>,
+    Path(PathParams { role_uid }): Path<PathParams>,
+    Query(PaginationQuery { limit, offset, last_id }): Query<PaginationQuery<ids::UserUid>>,
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
@@ -454,28 +460,39 @@ pub async fn retreive_id_users(
     if let Some(last_id) = last_id {
         maybe_last_id = last_id;
 
-        params = [&role_id, &maybe_last_id, &limit];
+        params = [&role_uid, &maybe_last_id, &limit];
         query = "\
-            select user_roles.user_id \
+            select users.uid \
             from user_roles \
-            where user_roles.role_id = $1 and \
-                  user_roles.user_id > $2 \
+            left join users on \
+                user_roles.user_id = users.id \
+            left join authz_roles on \
+                user_roles.role_id = authz_roles.id \
+            where authz_roles.uid = $1 and \
+                  user_roles.user_id > (\
+                select users.id \
+                from users \
+                where users.uid = $2) \
             order by user_roles.user_id \
             limit $3";
     } else {
         pagination.set_offset(offset);
 
-        params = [&role_id, &limit, &offset_num];
+        params = [&role_uid, &limit, &offset_num];
         query = "\
-            select user_roles.user_id \
+            select users.uid \
             from user_roles \
-            where user_roles.role_id = $1 \
+            left join users on \
+                user_roles.user_id = users.id \
+            left join authz_roles on \
+                user_roles.role_id = authz_roles.id \
+            where authz_roles.uid = $1
             order by user_roles.user_id \
             limit $2 \
             offset $3";
     }
 
-    let role_fut = Role::retrieve(&conn, &role_id);
+    let role_fut = Role::retrieve_uid(&conn, &role_uid);
     let users_fut = conn.query_raw(query, params);
 
     let result = match tokio::try_join!(role_fut, users_fut) {
@@ -494,7 +511,7 @@ pub async fn retreive_id_users(
 
     while let Some(row) = result.try_next().await? {
         users.push(rfs_api::sec::roles::RoleUser {
-            id: row.get(0)
+            uid: row.get(0)
         });
     }
 
@@ -504,7 +521,7 @@ pub async fn retreive_id_users(
 pub async fn add_id_users(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Path(PathParams { role_id }): Path<PathParams>,
+    Path(PathParams { role_uid }): Path<PathParams>,
     axum::Json(json): axum::Json<rfs_api::sec::roles::AddRoleUser>
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
@@ -518,11 +535,11 @@ pub async fn add_id_users(
 
     let transaction = conn.transaction().await?;
 
-    let _role = Role::retrieve(&transaction, &role_id)
+    let role = Role::retrieve_uid(&transaction, &role_uid)
         .await?
         .kind(ApiErrorKind::RoleNotFound)?;
 
-    if json.ids.len() == 0 {
+    if json.uids.len() == 0 {
         return Err(ApiError::from(ApiErrorKind::NoWork));
     }
 
@@ -531,9 +548,9 @@ pub async fn add_id_users(
         select $1 as role_id, \
                users.id as user_id \
         from users \
-        where users.id = any($2) \
+        where users.uid = any($2) \
         on conflict on constraint user_roles_pkey do nothing";
-    let params: sql::ParamsArray<2> = [&role_id, &json.ids];
+    let params: sql::ParamsArray<2> = [role.id.local(), &json.uids];
 
     let _ = transaction.execute(query, &params).await?;
 
@@ -545,7 +562,7 @@ pub async fn add_id_users(
 pub async fn remove_id_users(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Path(PathParams { role_id }): Path<PathParams>,
+    Path(PathParams { role_uid }): Path<PathParams>,
     axum::Json(json): axum::Json<rfs_api::sec::roles::DropRoleUser>,
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
@@ -559,20 +576,22 @@ pub async fn remove_id_users(
 
     let transaction = conn.transaction().await?;
 
-    let _role = Role::retrieve(&transaction, &role_id)
+    let role = Role::retrieve_uid(&transaction, &role_uid)
         .await?
         .kind(ApiErrorKind::RoleNotFound)?;
 
-    if json.ids.len() == 0 {
+    if json.uids.len() == 0 {
         return Err(ApiError::from(ApiErrorKind::NoWork));
     }
 
     let _ = transaction.execute(
         "\
         delete from user_roles \
+        using users \
         where role_id = $1 and \
-              user_id = any($2)",
-        &[&role_id, &json.ids]
+              user_id = users.id and \
+              users.uid = any($2)",
+        &[role.id.local(), &json.uids]
     ).await?;
 
     transaction.commit().await?;
@@ -583,8 +602,8 @@ pub async fn remove_id_users(
 pub async fn retrieve_id_groups(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Path(PathParams { role_id }): Path<PathParams>,
-    Query(PaginationQuery { limit, offset, last_id }): Query<PaginationQuery<ids::GroupId>>,
+    Path(PathParams { role_uid }): Path<PathParams>,
+    Query(PaginationQuery { limit, offset, last_id }): Query<PaginationQuery<ids::GroupUid>>,
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
@@ -605,28 +624,39 @@ pub async fn retrieve_id_groups(
     if let Some(last_id) = last_id {
         maybe_last_id = last_id;
 
-        params = [&role_id, &maybe_last_id, &limit];
+        params = [&role_uid, &maybe_last_id, &limit];
         query = "\
-            select group_roles.group_id \
+            select groups.uid \
             from group_roles \
-            where group_roles.role_id = $1 and \
-                  group_roles.group_id > $2 \
+            left join groups on \
+                group_roles.group_id = groups.id \
+            left join authz_roles on \
+                group_roles.role_id = authz_roles.id \
+            where authz_roles.uid = $1 and \
+                  group_roles.group_id > (\
+                      select group.id \
+                      from groups \
+                      where groups.uid = $2) \
             order by group_roles.group_id \
             limit $3";
     } else {
         pagination.set_offset(offset);
 
-        params = [&role_id, &limit, &offset_num];
+        params = [&role_uid, &limit, &offset_num];
         query = "\
-            select group_roles.group_id \
+            select groups.uid \
             from group_roles \
-            where group_roles.role_id = $1
+            left join groups on \
+                group_roles.group_id = groups.id \
+            left join authz_roles on \
+                group_roles.role_id = authz_roles.id \
+            where authz_roles.uid = $1 \
             order by group_roles.group_id \
             limit $2 \
             offset $3";
     }
 
-    let role_fut = Role::retrieve(&conn, &role_id);
+    let role_fut = Role::retrieve_uid(&conn, &role_uid);
     let groups_fut = conn.query_raw(query, params);
 
     let result = match tokio::try_join!(role_fut, groups_fut) {
@@ -645,7 +675,7 @@ pub async fn retrieve_id_groups(
 
     while let Some(row) = result.try_next().await? {
         groups.push(rfs_api::sec::roles::RoleGroup {
-            id: row.get(0)
+            uid: row.get(0)
         });
     }
 
@@ -655,7 +685,7 @@ pub async fn retrieve_id_groups(
 pub async fn add_id_groups(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Path(PathParams { role_id }): Path<PathParams>,
+    Path(PathParams { role_uid }): Path<PathParams>,
     axum::Json(json): axum::Json<rfs_api::sec::roles::AddRoleGroup>
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
@@ -669,11 +699,11 @@ pub async fn add_id_groups(
 
     let transaction = conn.transaction().await?;
 
-    let _role = Role::retrieve(&transaction, &role_id)
+    let role = Role::retrieve_uid(&transaction, &role_uid)
         .await?
         .kind(ApiErrorKind::RoleNotFound)?;
 
-    if json.ids.len() == 0 {
+    if json.uids.len() == 0 {
         return Err(ApiError::from(ApiErrorKind::NoWork));
     }
 
@@ -682,11 +712,11 @@ pub async fn add_id_groups(
         select $1 as role_id, \
                groups.id as group_id \
         from groups \
-        where groups.id = any($2) \
+        where groups.uid = any($2) \
         on conflict on constraint group_roles_pkey do nothing";
-    let params: sql::ParamsArray<2> = [&role_id, &json.ids];
+    let params: sql::ParamsArray<2> = [role.id.local(), &json.uids];
 
-    let _ = transaction.execute(query, &params).await?;
+    transaction.execute(query, &params).await?;
 
     transaction.commit().await?;
 
@@ -696,7 +726,7 @@ pub async fn add_id_groups(
 pub async fn remove_id_groups(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Path(PathParams { role_id }): Path<PathParams>,
+    Path(PathParams { role_uid }): Path<PathParams>,
     axum::Json(json): axum::Json<rfs_api::sec::roles::DropRoleGroup>,
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
@@ -710,20 +740,22 @@ pub async fn remove_id_groups(
 
     let transaction = conn.transaction().await?;
 
-    let _role = Role::retrieve(&transaction, &role_id)
+    let role = Role::retrieve_uid(&transaction, &role_uid)
         .await?
         .kind(ApiErrorKind::RoleNotFound)?;
 
-    if json.ids.len() == 0 {
+    if json.uids.len() == 0 {
         return Err(ApiError::from(ApiErrorKind::NoWork));
     }
 
-    let _ = transaction.execute(
+    transaction.execute(
         "\
         delete from group_roles \
+        using groups \
         where role_id = $1 and \
-              group_id = any($2)",
-        &[&role_id, &json.ids]
+              group_id = groups.id and \
+              groups.uid = any($2)",
+        &[role.id.local(), &json.uids]
     ).await?;
 
     transaction.commit().await?;

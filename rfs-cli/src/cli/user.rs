@@ -70,7 +70,7 @@ struct GetArgs {
     uid: Option<ids::UserUid>,
 
     /// retrieves users that are in a specific group
-    #[arg(long, conflicts_with("id"))]
+    #[arg(long, conflicts_with("uid"))]
     group: Option<ids::GroupUid>,
 }
 
