@@ -23,13 +23,13 @@ use crate::tags;
 
 #[derive(Deserialize)]
 pub struct PathParams {
-    storage_id: ids::StorageId,
+    storage_uid: ids::StorageUid,
 }
 
 pub async fn retrieve(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Query(PaginationQuery { limit, offset, last_id }): Query<PaginationQuery<ids::StorageId>>,
+    Query(PaginationQuery { limit, offset, last_id }): Query<PaginationQuery<ids::StorageUid>>,
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
@@ -43,17 +43,22 @@ pub async fn retrieve(
     let mut pagination = rfs_api::Pagination::from(&limit);
 
     let result = if let Some(last_id) = last_id {
-        let params: sql::ParamsArray<3> = [&initiator.user.id, &last_id, &limit];
+        let params: sql::ParamsArray<3> = [initiator.user.id.local(), &last_id, &limit];
 
         conn.query_raw(
             "\
-            select storage.id, \
+            select storage.uid, \
                    storage.name, \
-                   storage.user_id, \
+                   users.uid, \
                    storage.backend \
             from storage \
+                join users on storage.user_id = users.id \
             where storage.user_id = $1 and \
-                  storage.id > $2 \
+                  storage.id > (\
+                      select storage.id \
+                      from storage \
+                      where storage.uid = $2\
+                  ) \
             order by storage.id \
             limit $3",
             params,
@@ -62,15 +67,16 @@ pub async fn retrieve(
         pagination.set_offset(offset);
 
         let offset_num = limit.sql_offset(offset);
-        let params: sql::ParamsArray<3> = [&initiator.user.id, &limit, &offset_num];
+        let params: sql::ParamsArray<3> = [initiator.user.id.local(), &limit, &offset_num];
 
         conn.query_raw(
             "\
-            select storage.id, \
+            select storage.uid, \
                    storage.name, \
-                   storage.user_id, \
+                   users.uid, \
                    storage.backend \
             from storage \
+                join users on storage.user_id = users.id \
             where storage.user_id = $1 \
             order by storage.id \
             limit $2 \
@@ -85,9 +91,9 @@ pub async fn retrieve(
 
     while let Some(row) = result.try_next().await? {
         list.push(StorageMin {
-            id: row.get(0),
+            uid: row.get(0),
             name: row.get(1),
-            user_id: row.get(2),
+            user_uid: row.get(2),
             backend: sql::de_from_sql(row.get(3)),
         });
     }
@@ -146,7 +152,7 @@ pub async fn create(
 
     let transaction = conn.transaction().await?;
 
-    let id = state.ids().wait_storage_id()?;
+    let uid = ids::StorageUid::gen();
     let created = chrono::Utc::now();
 
     if !rfs_lib::fs::storage::name_valid(&json.name) {
@@ -163,27 +169,30 @@ pub async fn create(
         )));
     }
 
-    {
+    let id = {
         let pg_backend = sql::ser_to_sql(&backend);
 
-        transaction.execute(
+        let result = transaction.query_one(
             "\
-            insert into storage (id, user_id, name, backend, created) values \
-            ($1, $2, $3, $4, $5)",
-            &[&id, &initiator.user.id, &json.name, &pg_backend, &created]
+            insert into storage (uid, user_id, name, backend, created) values \
+            ($1, $2, $3, $4, $5) \
+            returning id",
+            &[&uid, initiator.user.id.local(), &json.name, &pg_backend, &created]
         ).await?;
 
-        if !tags::validate_map(&json.tags) {
-            return Err(ApiError::from(ApiErrorKind::InvalidTags));
-        }
+        result.get(0)
+    };
 
-        tags::create_tags(&transaction, "storage_tags", "storage_id", &id, &json.tags).await?;
+    if !tags::validate_map(&json.tags) {
+        return Err(ApiError::from(ApiErrorKind::InvalidTags));
     }
 
+    tags::create_tags(&transaction, "storage_tags", "storage_id", &id, &json.tags).await?;
+
     let storage = fs::Storage {
-        id,
+        id: ids::StorageSet::new(id, uid),
         name: json.name,
-        user_id: initiator.user.id.clone(),
+        user: initiator.user.id.clone(),
         backend,
         tags: json.tags,
         created,
@@ -192,7 +201,7 @@ pub async fn create(
     };
 
     let created = chrono::Utc::now();
-    let id = state.ids().wait_fs_id()?;
+    let uid = ids::FSUid::gen();
     let backend = fs::backend::Node::Local(fs::backend::NodeLocal {
         path: PathBuf::new()
     });
@@ -202,12 +211,12 @@ pub async fn create(
 
         transaction.execute(
             "\
-            insert into fs (id, user_id, storage_id, basename, fs_type, backend, created) values \
+            insert into fs (uid, user_id, storage_id, basename, fs_type, backend, created) values \
             ($1, $2, $3, $4, $5, $6, $7)",
             &[
-                &id,
-                &initiator.user.id,
-                &storage.id,
+                &uid,
+                initiator.user.id.local(),
+                storage.id.local(),
                 &storage.name,
                 &fs::consts::ROOT_TYPE,
                 &pg_backend,
@@ -224,7 +233,7 @@ pub async fn create(
 pub async fn retrieve_id(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Path(PathParams { storage_id }): Path<PathParams>,
+    Path(PathParams { storage_uid }): Path<PathParams>,
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
@@ -235,7 +244,7 @@ pub async fn retrieve_id(
         permission::Ability::Read,
     ).await?;
 
-    let storage = fs::Storage::retrieve(&conn, &storage_id)
+    let storage = fs::Storage::retrieve_uid(&conn, &storage_uid)
         .await?
         .kind(ApiErrorKind::StorageNotFound)?;
 
@@ -243,7 +252,7 @@ pub async fn retrieve_id(
         return Err(ApiError::from(ApiErrorKind::StorageNotFound));
     }
 
-    if storage.user_id != initiator.user.id {
+    if storage.user != initiator.user.id {
         return Err(ApiError::from(ApiErrorKind::PermissionDenied));
     }
 
@@ -253,7 +262,7 @@ pub async fn retrieve_id(
 pub async fn update_id(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Path(PathParams { storage_id }): Path<PathParams>,
+    Path(PathParams { storage_uid }): Path<PathParams>,
     axum::Json(json): axum::Json<UpdateStorage>,
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
@@ -265,7 +274,7 @@ pub async fn update_id(
         permission::Ability::Write,
     ).await?;
 
-    let mut storage = fs::Storage::retrieve(&conn, &storage_id)
+    let mut storage = fs::Storage::retrieve_uid(&conn, &storage_uid)
         .await?
         .kind(ApiErrorKind::StorageNotFound)?;
 
@@ -273,7 +282,7 @@ pub async fn update_id(
         return Err(ApiError::from(ApiErrorKind::StorageNotFound));
     }
 
-    if storage.user_id != initiator.user.id {
+    if storage.user != initiator.user.id {
         return Err(ApiError::from(ApiErrorKind::PermissionDenied));
     }
 
@@ -282,12 +291,13 @@ pub async fn update_id(
     }
 
     let transaction = conn.transaction().await?;
+    let local_id = *storage.id.local();
 
     if json.name.is_some() || json.backend.is_some() {
         let updated = chrono::Utc::now();
         let mut update_query = String::from("update storage set updated = $2");
         let mut update_params = sql::ParamsVec::with_capacity(2);
-        update_params.push(&storage_id);
+        update_params.push(&local_id);
         update_params.push(&updated);
 
         if let Some(name) = json.name {
@@ -299,7 +309,7 @@ pub async fn update_id(
             };
 
             if let Some(found_id) = fs::Storage::name_check(&transaction, &name).await? {
-                if found_id != storage_id {
+                if found_id != local_id {
                     return Err(ApiError::from((
                         ApiErrorKind::AlreadyExists,
                         Detail::with_key("name")
@@ -332,7 +342,7 @@ pub async fn update_id(
             &transaction,
             "storage_tags",
             "storage_id",
-            &storage_id,
+            &local_id,
             &tags
         ).await?;
 
@@ -347,7 +357,7 @@ pub async fn update_id(
 pub async fn delete_id(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Path(PathParams { storage_id }): Path<PathParams>,
+    Path(PathParams { storage_uid }): Path<PathParams>,
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
@@ -358,11 +368,11 @@ pub async fn delete_id(
         permission::Ability::Write,
     ).await?;
 
-    let storage = fs::Storage::retrieve(&conn, &storage_id)
+    let storage = fs::Storage::retrieve_uid(&conn, &storage_uid)
         .await?
         .kind(ApiErrorKind::StorageNotFound)?;
 
-    if storage.user_id != initiator.user.id {
+    if storage.user != initiator.user.id {
         return Err(ApiError::from(ApiErrorKind::PermissionDenied));
     }
 
@@ -373,13 +383,13 @@ pub async fn delete_id(
     // soft delete fs items
     let _ = transaction.execute(
         "update fs set deleted = $2 where storage_id = $1",
-        &[&storage_id, &deleted]
+        &[storage.id.local(), &deleted]
     ).await?;
 
     // soft delete storage item
     let _ = transaction.execute(
         "update storage set deleted = $2 where storage_id = $1",
-        &[&storage_id, &deleted]
+        &[storage.id.local(), &deleted]
     ).await?;
 
     Ok(StatusCode::OK)

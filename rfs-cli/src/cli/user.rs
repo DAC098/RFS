@@ -15,7 +15,6 @@ use rfs_api::users::ListItem;
 use clap::{Subcommand, Args};
 
 use crate::error::{self, Context};
-use crate::util;
 use crate::formatting::{TextTable, Column, Float, PRETTY_OPTIONS};
 
 mod group;
@@ -55,7 +54,7 @@ pub fn handle(client: &ApiClient, args: UsersArgs) -> error::Result {
 
 fn sort_user(a: &ListItem, b: &ListItem) -> bool {
     match b.username.cmp(&a.username) {
-        Ordering::Equal => b.id.id() < a.id.id(),
+        Ordering::Equal => b.uid < a.uid,
         Ordering::Less => true,
         Ordering::Greater => false,
     }
@@ -66,25 +65,24 @@ struct GetArgs {
     /// retrieves information about a single user
     #[arg(
         long,
-        conflicts_with("group"),
-        value_parser(util::parse_flake_id::<ids::UserId>)
+        conflicts_with("group")
     )]
-    id: Option<ids::UserId>,
+    uid: Option<ids::UserUid>,
 
     /// retrieves users that are in a specific group
-    #[arg(long, conflicts_with("id"))]
-    group: Option<ids::GroupId>,
+    #[arg(long, conflicts_with("uid"))]
+    group: Option<ids::GroupUid>,
 }
 
 fn get(client: &ApiClient, args: GetArgs) -> error::Result {
-    if let Some(id) = args.id {
-        let user = RetrieveUser::id(id)
+    if let Some(uid) = args.uid {
+        let user = RetrieveUser::uid(uid)
             .send(client)
             .context("failed to retrieve user")?
             .context("user not found")?
             .into_payload();
 
-        println!("{} {}", user.id.id(), user.username);
+        println!("{} {}", user.uid, user.username);
 
         if let Some(email) = user.email {
             println!(
@@ -94,15 +92,15 @@ fn get(client: &ApiClient, args: GetArgs) -> error::Result {
             );
         }
     } else if let Some(group) = args.group {
-        let mut builder = QueryGroupUsers::id(group);
+        let mut builder = QueryGroupUsers::uid(group);
         let mut table = TextTable::with_columns([
-            Column::builder("id").float(Float::Right).build(),
+            Column::builder("uid").float(Float::Right).build(),
         ]);
 
         for result in iterate::Iterate::new(client, &mut builder) {
             let user = result.context("failed to retrieve group users")?;
             let mut row = table.add_row();
-            row.set_col(0, user.id.id());
+            row.set_col(0, user.uid.clone());
 
             row.finish(user);
         }
@@ -116,14 +114,14 @@ fn get(client: &ApiClient, args: GetArgs) -> error::Result {
     } else {
         let mut builder = QueryUsers::new();
         let mut table = TextTable::with_columns([
-            Column::builder("id").float(Float::Right).build(),
+            Column::builder("uid").float(Float::Right).build(),
             Column::builder("username").build(),
         ]);
 
         for result in iterate::Iterate::new(client, &mut builder) {
             let user = result.context("failed to retrieve users")?;
             let mut row = table.add_row();
-            row.set_col(0, user.id.id());
+            row.set_col(0, user.uid.clone());
             row.set_col(1, user.username.clone());
 
             row.finish_sort_by(user, sort_user);
@@ -182,8 +180,8 @@ fn create(client: &ApiClient, args: CreateArgs) -> error::Result<()> {
 #[derive(Debug, Args)]
 struct UpdateArgs {
     /// id of the user to update
-    #[arg(long, value_parser(util::parse_flake_id::<rfs_lib::ids::UserId>))]
-    id: rfs_lib::ids::UserId,
+    #[arg(long)]
+    uid: ids::UserUid,
 
     /// updates username
     #[arg(long)]
@@ -199,7 +197,7 @@ struct UpdateArgs {
 }
 
 fn update(client: &ApiClient, args: UpdateArgs) -> error::Result<()> {
-    let mut builder = UpdateUser::id(args.id);
+    let mut builder = UpdateUser::uid(args.uid);
 
     if let Some(username) = args.username {
         builder.username(username);

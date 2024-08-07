@@ -551,12 +551,12 @@ where
     write!(
         output,
         "file {} {}/{} {}\n",
-        file.id.id(),
+        file.uid,
         file.path,
         file.basename,
         bytes_to_unit(file.size, &options.size_format)
     )?;
-    write!(output, "parent: {}\n", file.parent.id())?;
+    write!(output, "parent: {}\n", file.parent)?;
     write!(output, "created: {}\n", datetime_to_string(&file.created, &options.ts_format))?;
 
     if let Some(updated) = file.updated {
@@ -581,7 +581,7 @@ pub fn write_fs_root<O>(output: &mut O, root: &rfs_api::fs::Root, options: &Outp
 where
     O: std::io::Write
 {
-    write!(output, "root {} {}\n", root.id.id(), root.basename)?;
+    write!(output, "root {} {}\n", root.uid, root.basename)?;
     write!(output, "created: {}\n", datetime_to_string(&root.created, &options.ts_format))?;
 
     if let Some(updated) = root.updated {
@@ -603,8 +603,8 @@ pub fn write_fs_dir<O>(output: &mut O, dir: &rfs_api::fs::Directory, options: &O
 where
     O: std::io::Write
 {
-    write!(output, "directory {} {}/{}\n", dir.id.id(), dir.path, dir.basename)?;
-    write!(output, "parent: {}\n", dir.parent.id())?;
+    write!(output, "directory {} {}/{}\n", dir.uid, dir.path, dir.basename)?;
+    write!(output, "parent: {}\n", dir.parent)?;
     write!(output, "created: {}\n", datetime_to_string(&dir.created, &options.ts_format))?;
 
     if let Some(updated) = dir.updated {

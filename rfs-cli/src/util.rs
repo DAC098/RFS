@@ -4,21 +4,6 @@ use std::str::FromStr;
 
 use clap::Args;
 
-pub fn parse_flake_id<T>(arg: &str) -> Result<T, String>
-where
-    T: TryFrom<i64>
-{
-    let Ok(int): Result<i64, _> = i64::from_str(arg) else {
-        return Err("invalid i64 value".into());
-    };
-
-    let Ok(flake) = int.try_into() else {
-        return Err("invalid flake id".into());
-    };
-
-    Ok(flake)
-}
-
 pub fn parse_mime(arg: &str) -> Result<mime::Mime, String> {
     match mime::Mime::from_str(arg) {
         Ok(m) => Ok(m),

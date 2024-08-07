@@ -99,8 +99,7 @@ fn ext_mime(ext: &OsStr, fallback: Option<mime::Mime>) -> error::Result<mime::Mi
 #[derive(Debug, Args)]
 struct CreateArgs {
     /// the parent fs item to create the new fs item under
-    #[arg(value_parser(util::parse_flake_id::<rfs_lib::ids::FSId>))]
-    parent: rfs_lib::ids::FSId,
+    parent: rfs_lib::ids::FSUid,
 
     /// tags to apply to the fs item
     #[arg(
@@ -158,9 +157,8 @@ fn create(client: &ApiClient, args: CreateArgs) -> error::Result {
 
 #[derive(Debug, Args)]
 struct UpdateArgs {
-    /// the id of the fs item to update
-    #[arg(value_parser(util::parse_flake_id::<rfs_lib::ids::FSId>))]
-    id: rfs_lib::ids::FSId,
+    /// the uid of the fs item to update
+    uid: rfs_lib::ids::FSUid,
 
     #[command(flatten)]
     tags: Option<util::TagArgs>,
@@ -179,7 +177,7 @@ struct UpdateArgs {
 
 fn update(client: &ApiClient, args: UpdateArgs) -> error::Result {
     let current = {
-        let result = RetrieveItem::id(args.id.clone())
+        let result = RetrieveItem::uid(args.uid.clone())
             .send(client)
             .context("failed to retrieve fs item")?;
 
@@ -191,7 +189,7 @@ fn update(client: &ApiClient, args: UpdateArgs) -> error::Result {
         payload.into_payload()
     };
 
-    let mut builder = UpdateMetadata::id(args.id);
+    let mut builder = UpdateMetadata::uid(args.uid);
 
     if let Some(tags) = args.tags {
         let current_tags = match current {
@@ -258,8 +256,7 @@ enum UploadType {
     /// sends a new file to the server
     New {
         /// parent id to upload the fiel to
-        #[arg(value_parser(util::parse_flake_id::<rfs_lib::ids::FSId>))]
-        parent: rfs_lib::ids::FSId,
+        parent: rfs_lib::ids::FSUid,
 
         /// basename of the fs item
         #[arg(short = 'n', long)]
@@ -268,8 +265,7 @@ enum UploadType {
     /// updates an existing file on the server
     Existing {
         /// id of fs item to update
-        #[arg(value_parser(util::parse_flake_id::<rfs_lib::ids::FSId>))]
-        id: rfs_lib::ids::FSId,
+        uid: rfs_lib::ids::FSUid,
     }
 }
 
@@ -306,8 +302,8 @@ fn upload(client: &ApiClient, args: UploadArgs) -> error::Result {
 
             SendReadable::create(parent, basename)
         }
-        UploadType::Existing { id } => {
-            SendReadable::update(id)
+        UploadType::Existing { uid } => {
+            SendReadable::update(uid)
         }
     };
 
@@ -346,13 +342,12 @@ fn upload(client: &ApiClient, args: UploadArgs) -> error::Result {
 
 #[derive(Debug, Args)]
 struct DeleteArgs {
-    /// id of the fs item to delete
-    #[arg(value_parser(util::parse_flake_id::<rfs_lib::ids::FSId>))]
-    id: rfs_lib::ids::FSId,
+    /// uid of the fs item to delete
+    uid: rfs_lib::ids::FSUid,
 }
 
 fn delete(client: &ApiClient, args: DeleteArgs) -> error::Result {
-    DeleteItem::id(args.id)
+    DeleteItem::uid(args.uid)
         .send(client)
         .context("failed to delete fs item")?;
 

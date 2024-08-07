@@ -7,13 +7,13 @@ use crate::{Validator, ApiError, ApiErrorKind, Detail};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ListItem {
-    pub id: ids::GroupId,
+    pub uid: ids::GroupUid,
     pub name: String
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Group {
-    pub id: ids::GroupId,
+    pub uid: ids::GroupUid,
     pub name: String,
     pub created: DateTime<Utc>,
     pub updated: Option<DateTime<Utc>>,
@@ -21,7 +21,7 @@ pub struct Group {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GroupUser {
-    pub id: ids::UserId
+    pub uid: ids::UserUid
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -62,22 +62,22 @@ impl Validator for UpdateGroup {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AddUsers {
-    pub ids: Vec<ids::UserId>,
+    pub uids: Vec<ids::UserUid>,
 }
 
 impl Validator for AddUsers {
     fn has_work(&self) -> bool {
-        !self.ids.is_empty()
+        !self.uids.is_empty()
     }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DropUsers {
-    pub ids: Vec<ids::UserId>,
+    pub uids: Vec<ids::UserUid>,
 }
 
 impl Validator for DropUsers {
     fn has_work(&self) -> bool {
-        !self.ids.is_empty()
+        !self.uids.is_empty()
     }
 }

@@ -2,7 +2,6 @@ use rfs_lib::ids;
 use rfs_lib::serde::nested_option;
 
 use serde::{Serialize, Deserialize};
-use snowcloud_flake::serde_ext::string_id;
 
 use crate::{Validator, ApiError, ApiErrorKind, Detail};
 
@@ -12,8 +11,7 @@ pub mod totp;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ListItem {
-    #[serde(with = "string_id")]
-    pub id: ids::UserId,
+    pub uid: ids::UserUid,
     pub username: String
 }
 
@@ -25,8 +23,7 @@ pub struct Email {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct User {
-    #[serde(with = "string_id")]
-    pub id: ids::UserId,
+    pub uid: ids::UserUid,
     pub username: String,
     pub email: Option<Email>
 }

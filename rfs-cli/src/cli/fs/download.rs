@@ -10,7 +10,6 @@ use clap::Args;
 use reqwest::header::HeaderMap;
 
 use crate::error::{self, Context};
-use crate::util;
 use crate::formatting::{
     self,
     OutputOptions,
@@ -20,9 +19,8 @@ use crate::path::{metadata, normalize_from};
 
 #[derive(Debug, Args)]
 pub struct DownloadArgs {
-    /// the id of the item to retrieve
-    #[arg(value_parser(util::parse_flake_id::<ids::FSId>))]
-    id: ids::FSId,
+    /// the uid of the item to retrieve
+    uid: ids::FSUid,
 
     /// the output path for the file
     #[arg(short, long)]
@@ -166,7 +164,7 @@ fn resolve_file_path(given: Option<PathBuf>, filename: &str) -> error::Result<Pa
 }
 
 pub fn download(client: &ApiClient, mut args: DownloadArgs) -> error::Result {
-    let mut response = DownloadItem::id(args.id.clone())
+    let mut response = DownloadItem::uid(args.uid.clone())
         .send(client)
         .context("failed download file")?;
 

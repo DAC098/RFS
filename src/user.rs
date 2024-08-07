@@ -94,14 +94,14 @@ pub struct UserEmail {
 
 #[derive(Debug, Clone)]
 pub struct User {
-    pub id: ids::UserId,
+    pub id: ids::UserSet,
     pub username: String,
     pub email: Option<UserEmail>,
 }
 
 impl User {
     pub fn id(&self) -> &ids::UserId {
-        &self.id
+        self.id.local()
     }
 }
 
@@ -110,33 +110,54 @@ impl User {
         conn: &impl GenericClient,
         id: &ids::UserId
     ) -> Result<Option<User>, PgError> {
-        if let Some(row) = conn.query_opt(
+        Ok(conn.query_opt(
             "\
-            select users.id, \
+            select users.uid, \
                    users.username, \
                    users.email, \
                    users.email_verified \
             from users \
             where users.id = $1",
             &[id]
-        ).await? {
-            let email = if let Some(email) = row.get(2) {
+        ).await?.map(|row| User {
+            id: ids::UserSet::new(id.clone(), row.get(0)),
+            username: row.get(1),
+            email: if let Some(email) = row.get(2) {
                 Some(UserEmail {
                     email,
                     verified: row.get(3),
                 })
             } else {
                 None
-            };
+            }
+        }))
+    }
 
-            Ok(Some(User {
-                id: row.get(0),
-                username: row.get(1),
-                email,
-            }))
-        } else {
-            Ok(None)
-        }
+    pub async fn retrieve_uid(
+        conn: &impl GenericClient,
+        uid: &ids::UserUid,
+    ) -> Result<Option<Self>, PgError> {
+        Ok(conn.query_opt(
+            "\
+            select users.id, \
+                   users.username, \
+                   users.email, \
+                   users.email_verified \
+            from users \
+            where users.uid = $1",
+            &[uid]
+        ).await?.map(|row| User {
+            id: ids::UserSet::new(row.get(0), uid.clone()),
+            username: row.get(1),
+            email: if let Some(email) = row.get(2) {
+                Some(UserEmail {
+                    email,
+                    verified: row.get(3),
+                })
+            } else {
+                None
+            }
+        }))
     }
 
     pub async fn query_with_id(conn: &impl GenericClient, id: &ids::UserId) -> Result<Option<User>, PgError> {
@@ -152,33 +173,28 @@ impl User {
     {
         let username_ref = username.as_ref();
 
-        if let Some(row) = conn.query_opt(
+        Ok(conn.query_opt(
             "\
             select users.id, \
+                   users.uid, \
                    users.username, \
                    users.email, \
                    users.email_verified \
             from users \
             where users.username = $1",
             &[&username_ref]
-        ).await? {
-            let email = if let Some(email) = row.get(2) {
+        ).await?.map(|row| User {
+            id: ids::UserSet::new(row.get(0), row.get(1)),
+            username: row.get(2),
+            email: if let Some(email) = row.get(3) {
                 Some(UserEmail {
                     email,
-                    verified: row.get(3)
+                    verified: row.get(4),
                 })
             } else {
                 None
-            };
-
-            Ok(Some(User {
-                id: row.get(0),
-                username: row.get(1),
-                email
-            }))
-        } else {
-            Ok(None)
-        }
+            }
+        }))
     }
 
     pub async fn query_with_username(conn: &impl GenericClient, username: &String) -> Result<Option<User>, PgError> {

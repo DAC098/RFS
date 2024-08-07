@@ -52,24 +52,24 @@ fn sort_storage(a: &StorageMin, b: &StorageMin) -> bool {
 
 #[derive(Debug, Args)]
 struct GetArgs {
-    /// id of the storage item to retrieve
-    #[arg(long, value_parser(util::parse_flake_id::<rfs_lib::ids::StorageId>))]
-    id: Option<rfs_lib::ids::StorageId>,
+    /// uid of the storage item to retrieve
+    #[arg(long)]
+    uid: Option<rfs_lib::ids::StorageUid>,
 
     #[command(flatten)]
     output_options: OutputOptions,
 }
 
 fn get(client: &ApiClient, args: GetArgs) -> error::Result {
-    if let Some(id) = args.id {
-        let found = RetrieveStorage::id(id)
+    if let Some(uid) = args.uid {
+        let found = RetrieveStorage::uid(uid)
             .send(client)
             .context("failed to retrieve desired storage")?
             .context("storage id not found")?
             .into_payload();
 
-        println!("{} {}", found.name, found.id.id());
-        println!("owner: {}", found.user_id.id());
+        println!("{} {}", found.name, found.uid);
+        println!("owner: {}", found.user_uid);
         println!("created: {}", formatting::datetime_to_string(&found.created, &args.output_options.ts_format));
 
         if let Some(updated) = found.updated {
@@ -87,7 +87,7 @@ fn get(client: &ApiClient, args: GetArgs) -> error::Result {
     } else {
         let mut builder = QueryStorage::new();
         let mut table = TextTable::with_columns([
-            Column::builder("id").float(Float::Right).build(),
+            Column::builder("uid").float(Float::Right).build(),
             Column::builder("name").build(),
             Column::builder("type").build(),
             //Column::builder("mod").float(Float::Right).build(),
@@ -99,7 +99,7 @@ fn get(client: &ApiClient, args: GetArgs) -> error::Result {
 
             //let time = item.updated.as_ref().unwrap_or(&item.created);
 
-            row.set_col(0, item.id.id());
+            row.set_col(0, item.uid.clone());
             row.set_col(1, item.name.clone());
             //row.set_col(3, formatting::datetime_to_string(&time, &args.output_options.ts_format));
 
@@ -176,9 +176,9 @@ fn create(client: &ApiClient, args: CreateArgs) -> error::Result<()> {
 
 #[derive(Debug, Args)]
 struct UpdateArgs {
-    /// id of storage medium to update
-    #[arg(long, value_parser(util::parse_flake_id::<rfs_lib::ids::StorageId>))]
-    id: rfs_lib::ids::StorageId,
+    /// uid of storage medium to update
+    #[arg(long)]
+    uid: rfs_lib::ids::StorageUid,
 
     #[command(flatten)]
     tags: Option<util::TagArgs>,
@@ -194,7 +194,7 @@ struct UpdateArgs {
 
 fn update(client: &ApiClient, args: UpdateArgs) -> error::Result<()> {
     let current = {
-        let result = RetrieveStorage::id(args.id.clone())
+        let result = RetrieveStorage::uid(args.uid.clone())
             .send(client)
             .context("failed to retrieve storage")?;
 
@@ -206,7 +206,7 @@ fn update(client: &ApiClient, args: UpdateArgs) -> error::Result<()> {
         payload.into_payload()
     };
 
-    let mut builder = UpdateStorage::local(args.id);
+    let mut builder = UpdateStorage::local(args.uid);
 
     if let Some(rename) = args.rename {
         builder.name(rename);

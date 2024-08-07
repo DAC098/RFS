@@ -224,14 +224,14 @@ pub async fn password_rotate_deletion(
         let mut iter = batch.iter();
 
         if let Some((id, v, h)) = iter.next() {
-            tracing::debug!("id: {} | v: {v} | h: {h}", id.id());
+            tracing::debug!("id: {id} | v: {v} | h: {h}");
 
             write_sql_array(&mut batch_user_id, id, &mut batch_params, false);
             write_sql_array(&mut batch_version, v, &mut batch_params, false);
             write_sql_array(&mut batch_hash, h, &mut batch_params, false);
 
             for (id, v, h) in iter {
-                tracing::debug!("id: {} | v: {v} | h: {h}", id.id());
+                tracing::debug!("id: {id} | v: {v} | h: {h}");
 
                 write_sql_array(&mut batch_user_id, id, &mut batch_params, true);
                 write_sql_array(&mut batch_version, v, &mut batch_params, true);

@@ -23,7 +23,7 @@ use crate::users::groups::{
 pub struct QueryGroups {
     limit: Option<Limit>,
     offset: Option<Offset>,
-    last_id: Option<ids::GroupId>,
+    last_id: Option<ids::GroupUid>,
 }
 
 impl QueryGroups {
@@ -53,7 +53,7 @@ impl QueryGroups {
 
     pub fn last_id<I>(&mut self, last_id: I) -> &mut Self
     where
-        I: Into<Option<ids::GroupId>>
+        I: Into<Option<ids::GroupUid>>
     {
         self.last_id = last_id.into();
         self
@@ -82,12 +82,12 @@ impl QueryGroups {
 }
 
 impl iterate::Pageable for QueryGroups {
-    type Id = ids::GroupId;
+    type Id = ids::GroupUid;
     type Item = ListItem;
 
     #[inline]
     fn get_last_id(item: &Self::Item) -> Option<Self::Id> {
-        Some(item.id)
+        Some(item.uid.clone())
     }
 
     #[inline]
@@ -107,16 +107,16 @@ impl iterate::Pageable for QueryGroups {
 }
 
 pub struct QueryGroupUsers {
-    id: ids::GroupId,
+    uid: ids::GroupUid,
     limit: Option<Limit>,
     offset: Option<Offset>,
-    last_id: Option<ids::UserId>,
+    last_id: Option<ids::UserUid>,
 }
 
 impl QueryGroupUsers {
-    pub fn id(id: ids::GroupId) -> Self {
+    pub fn uid(uid: ids::GroupUid) -> Self {
         QueryGroupUsers {
-            id,
+            uid,
             limit: None,
             offset: None,
             last_id: None,
@@ -141,14 +141,14 @@ impl QueryGroupUsers {
 
     pub fn last_id<I>(&mut self, last_id: I) -> &mut Self
     where
-        I: Into<Option<ids::UserId>>
+        I: Into<Option<ids::UserUid>>
     {
         self.last_id = last_id.into();
         self
     }
 
     pub fn send(&self, client: &ApiClient) -> Result<Payload<Vec<GroupUser>>, RequestError> {
-        let mut builder = client.get(format!("/api/user/group/{}/users", self.id));
+        let mut builder = client.get(format!("/api/user/group/{}/users", self.uid));
 
         if let Some(limit) = &self.limit {
             builder = builder.query(&[("limit", limit)]);
@@ -170,12 +170,12 @@ impl QueryGroupUsers {
 }
 
 impl iterate::Pageable for QueryGroupUsers {
-    type Id = ids::UserId;
+    type Id = ids::UserUid;
     type Item = GroupUser;
 
     #[inline]
     fn get_last_id(item: &Self::Item) -> Option<Self::Id> {
-        Some(item.id.clone())
+        Some(item.uid.clone())
     }
 
     #[inline]
@@ -195,16 +195,16 @@ impl iterate::Pageable for QueryGroupUsers {
 }
 
 pub struct RetrieveGroup {
-    id: ids::GroupId,
+    uid: ids::GroupUid,
 }
 
 impl RetrieveGroup {
-    pub fn id(id: ids::GroupId) -> Self {
-        RetrieveGroup { id }
+    pub fn uid(uid: ids::GroupUid) -> Self {
+        RetrieveGroup { uid }
     }
 
     pub fn send(self, client: &ApiClient) -> Result<Option<Payload<Group>>, RequestError> {
-        let res = client.get(format!("/api/user/group/{}", self.id)).send()?;
+        let res = client.get(format!("/api/user/group/{}", self.uid)).send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(Some(res.json()?)),
@@ -253,17 +253,17 @@ impl CreateGroup {
 }
 
 pub struct UpdateGroup {
-    id: ids::GroupId,
+    uid: ids::GroupUid,
     body: UpdateGroupBody,
 }
 
 impl UpdateGroup {
-    pub fn id<N>(id: ids::GroupId, name: N) -> Self
+    pub fn uid<N>(uid: ids::GroupUid, name: N) -> Self
     where
         N: Into<String>
     {
         UpdateGroup {
-            id,
+            uid,
             body: UpdateGroupBody {
                 name: name.into()
             }
@@ -273,7 +273,7 @@ impl UpdateGroup {
     pub fn send(self, client: &ApiClient) -> Result<Payload<Group>, RequestError> {
         self.body.assert_ok()?;
 
-        let res = client.patch(format!("/user/group/{}", self.id))
+        let res = client.patch(format!("/user/group/{}", self.uid))
             .json(&self.body)
             .send()?;
 
@@ -285,16 +285,16 @@ impl UpdateGroup {
 }
 
 pub struct DeleteGroup {
-    id: ids::GroupId,
+    uid: ids::GroupUid,
 }
 
 impl DeleteGroup {
-    pub fn id(id: ids::GroupId) -> Self {
-        DeleteGroup { id }
+    pub fn uid(uid: ids::GroupUid) -> Self {
+        DeleteGroup { uid }
     }
 
     pub fn send(self, client: &ApiClient) -> Result<Payload<Group>, RequestError> {
-        let res = client.delete(format!("/api/user/group/{}", self.id)).send()?;
+        let res = client.delete(format!("/api/user/group/{}", self.uid)).send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(res.json()?),
@@ -304,38 +304,38 @@ impl DeleteGroup {
 }
 
 pub struct AddUsers {
-    id: ids::GroupId,
+    uid: ids::GroupUid,
     body: AddUsersBody
 }
 
 impl AddUsers {
-    pub fn id(id: ids::GroupId) -> Self {
+    pub fn uid(uid: ids::GroupUid) -> Self {
         AddUsers {
-            id,
+            uid,
             body: AddUsersBody {
-                ids: Vec::new()
+                uids: Vec::new()
             }
         }
     }
 
-    pub fn add_id(&mut self, user_id: ids::UserId) -> &mut Self {
-        self.body.ids.push(user_id);
+    pub fn add_id(&mut self, user_uid: ids::UserUid) -> &mut Self {
+        self.body.uids.push(user_uid);
         self
     }
 
     pub fn add_iter<I>(&mut self, iter: I) -> &mut Self
     where
-        I: IntoIterator<Item = ids::UserId>
+        I: IntoIterator<Item = ids::UserUid>
     {
         for id in iter {
-            self.body.ids.push(id);
+            self.body.uids.push(id);
         }
 
         self
     }
 
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
-        let res = client.post(format!("/api/user/group/{}/users", self.id))
+        let res = client.post(format!("/api/user/group/{}/users", self.uid))
             .json(&self.body)
             .send()?;
 
@@ -347,38 +347,38 @@ impl AddUsers {
 }
 
 pub struct DropUsers {
-    id: ids::GroupId,
+    uid: ids::GroupUid,
     body: DropUsersBody
 }
 
 impl DropUsers {
-    pub fn id(id: ids::GroupId) -> Self {
+    pub fn uid(uid: ids::GroupUid) -> Self {
         DropUsers {
-            id,
+            uid,
             body: DropUsersBody {
-                ids: Vec::new(),
+                uids: Vec::new(),
             }
         }
     }
 
-    pub fn add_id(&mut self, user_id: ids::UserId) -> &mut Self {
-        self.body.ids.push(user_id);
+    pub fn add_id(&mut self, user_uid: ids::UserUid) -> &mut Self {
+        self.body.uids.push(user_uid);
         self
     }
 
     pub fn add_iter<I>(&mut self, iter: I) -> &mut Self
     where
-        I: IntoIterator<Item = ids::UserId>
+        I: IntoIterator<Item = ids::UserUid>
     {
         for id in iter {
-            self.body.ids.push(id);
+            self.body.uids.push(id);
         }
 
         self
     }
 
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
-        let res = client.delete(format!("/api/user/group/{}/users", self.id))
+        let res = client.delete(format!("/api/user/group/{}/users", self.uid))
             .json(&self.body)
             .send()?;
 

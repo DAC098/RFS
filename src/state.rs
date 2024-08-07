@@ -9,7 +9,6 @@ use crate::config;
 use crate::template;
 use crate::sec;
 
-pub mod ids;
 pub mod db;
 
 #[derive(Debug)]
@@ -20,7 +19,6 @@ pub struct Shared {
     pool: Pool,
     templates: template::state::Templates,
     sec: sec::state::Sec,
-    ids: ids::Ids,
 }
 
 pub type ArcShared = Arc<Shared>;
@@ -39,7 +37,6 @@ impl Shared {
             pool: db::from_config(config)?,
             templates: template::state::Templates::from_config(config)?,
             sec: sec::state::Sec::from_config(config)?,
-            ids: ids::Ids::new(config.settings.id)?,
         })
     }
 
@@ -71,10 +68,6 @@ impl Shared {
     pub fn auth(&self) -> &sec::state::Sec {
         self.sec()
     }
-
-    pub fn ids(&self) -> &ids::Ids {
-        &self.ids
-    }
 }
 
 impl AsRef<Pool> for Shared {
@@ -86,12 +79,6 @@ impl AsRef<Pool> for Shared {
 impl AsRef<sec::state::Sec> for Shared {
     fn as_ref(&self) -> &sec::state::Sec {
         &self.sec
-    }
-}
-
-impl AsRef<ids::Ids> for Shared {
-    fn as_ref(&self) -> &ids::Ids {
-        &self.ids
     }
 }
 

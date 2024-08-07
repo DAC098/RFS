@@ -1,18 +1,15 @@
 use std::cmp::Ordering;
 
 use rfs_lib::ids;
-use rfs_lib::serde::from_to_str;
 use rfs_lib::sec::authz::permission::{Ability, Scope};
 
-use snowcloud_flake::serde_ext::string_id;
 use serde::{Serialize, Deserialize};
 
 use crate::{Validator, ApiError, ApiErrorKind, Detail};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RoleListItem {
-    #[serde(with = "from_to_str")]
-    pub id: ids::RoleId,
+    pub uid: ids::RoleUid,
     pub name: String
 }
 
@@ -41,22 +38,19 @@ impl Ord for Permission {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Role {
-    #[serde(with = "from_to_str")]
-    pub id: ids::RoleId,
+    pub uid: ids::RoleUid,
     pub name: String,
     pub permissions: Vec<Permission>
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RoleUser {
-    #[serde(with = "string_id")]
-    pub id: ids::UserId,
+    pub uid: ids::UserUid,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RoleGroup {
-    #[serde(with = "from_to_str")]
-    pub id: ids::GroupId
+    pub uid: ids::GroupUid
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -106,44 +100,44 @@ impl Validator for UpdateRole {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AddRoleUser {
-    pub ids: Vec<ids::UserId>,
+    pub uids: Vec<ids::UserUid>,
 }
 
 impl Validator for AddRoleUser {
     fn has_work(&self) -> bool {
-        !self.ids.is_empty()
+        !self.uids.is_empty()
     }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DropRoleUser {
-    pub ids: Vec<ids::UserId>,
+    pub uids: Vec<ids::UserUid>,
 }
 
 impl Validator for DropRoleUser {
     fn has_work(&self) -> bool {
-        !self.ids.is_empty()
+        !self.uids.is_empty()
     }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AddRoleGroup {
-    pub ids: Vec<ids::GroupId>,
+    pub uids: Vec<ids::GroupUid>,
 }
 
 impl Validator for AddRoleGroup {
     fn has_work(&self) -> bool {
-        !self.ids.is_empty()
+        !self.uids.is_empty()
     }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DropRoleGroup {
-    pub ids: Vec<ids::GroupId>,
+    pub uids: Vec<ids::GroupUid>,
 }
 
 impl Validator for DropRoleGroup {
     fn has_work(&self) -> bool {
-        !self.ids.is_empty()
+        !self.uids.is_empty()
     }
 }

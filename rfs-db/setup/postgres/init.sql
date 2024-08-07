@@ -1,5 +1,6 @@
 create table users (
-    id bigint not null primary key,
+    id bigint primary key generated always as identity,
+    uid varchar not null unique,
 
     username varchar not null unique,
 
@@ -9,6 +10,7 @@ create table users (
 
 create table groups (
     id bigint not null primary key generated always as identity,
+    uid varchar not null unique,
     name varchar not null unique,
     created timestamp with time zone not null,
     updated timestamp with time zone
@@ -65,6 +67,7 @@ create table auth_session (
 
 create table authz_roles (
     id bigint primary key generated always as identity,
+    uid varchar not null unique,
     name varchar not null unique
 );
 
@@ -88,7 +91,8 @@ create table user_roles (
 );
 
 create table storage (
-    id bigint not null primary key,
+    id bigint primary key generated always as identity,
+    uid varchar not null unique,
 
     user_id bigint not null references users(id),
 
@@ -112,7 +116,8 @@ create table storage_tags (
 );
 
 create table fs (
-    id bigint not null primary key,
+    id bigint primary key generated always as identity,
+    uid varchar not null unique,
 
     user_id bigint not null references users(id),
     storage_id bigint not null references storage(id),

@@ -20,23 +20,22 @@ use crate::state::ArcShared;
 pub use rfs_lib::sec::authz::permission::{Ability, Scope};
 
 pub struct Role {
-    pub id: ids::RoleId,
+    pub id: ids::RoleSet,
     pub name: String,
 }
 
 impl Role {
-    pub async fn retrieve(
+    pub async fn retrieve_uid(
         conn: &impl GenericClient,
-        id: &ids::RoleId
+        uid: &ids::RoleUid,
     ) -> Result<Option<Self>, PgError> {
         Ok(conn.query_opt(
-            "select id, name from authz_roles where id = $1",
-            &[id]
-        ).await?
-            .map(|row| Role {
-                id: row.get(0),
-                name: row.get(1)
-            }))
+            "select id, name from authz_roles where uid = $1",
+            &[uid]
+        ).await?.map(|row| Role {
+            id: ids::RoleSet::new(row.get(0), uid.clone()),
+            name: row.get(1),
+        }))
     }
 }
 
@@ -51,7 +50,7 @@ impl From<Role> for rfs_api::sec::roles::Role {
 }
 
 pub struct Permission {
-    pub role_id: ids::RoleId,
+    pub role: ids::RoleSet,
     pub ability: Ability,
     pub scope: Scope,
 }
@@ -61,14 +60,50 @@ impl Permission {
         conn: &impl GenericClient,
         role_id: &ids::RoleId
     ) -> Result<impl TryStream<Item = Result<Self, PgError>>, PgError> {
-        let result = conn.query_raw(
-            "select role_id, ability, scope from authz_permissions where role_id = $1",
-            &[role_id]
+        let params: sql::ParamsVec = vec![role_id];
+        let query = conn.query_raw(
+            "\
+            select authz_roles.id, \
+                   authz_roles.uid, \
+                   ability, \
+                   scope \
+            from authz_permissions \
+            left join authz_roles on \
+                authz_permissions.role_id = authz_roles.id \
+            where authz_roles.id = $1",
+            params
         ).await?;
 
         Ok(result.map(|row_result| row_result.map(
             |row| Permission {
-                role_id: row.get(0),
+                role: ids::RoleSet::new(row.get(0), row.get(1)),
+                ability: row.get(1),
+                scope: row.get(2),
+            }
+        )))
+    }
+
+    pub async fn stream_by_role_uid(
+        conn: &impl GenericClient,
+        role_uid: &ids::RoleUid
+    ) -> Result<impl TryStream<Item = Result<Self, PgError>>, PgError> {
+        let params: sql::ParamsArray<1> = [role_uid];
+        let query = conn.query_raw(
+            "\
+            select authz_roles.id, \
+                   authz_roles.uid, \
+                   ability, \
+                   scope \
+            from authz_permissions \
+            left join authz_roles on \
+                authz_permissions.role_id = authz_roles.id \
+            where authz_roles.uid = $1",
+            params
+        ).await?;
+
+        Ok(result.map(|row_result| row_result.map(
+            |row| Permission {
+                role: ids::RoleSet::new(row.get(0), row.get(1)),
                 ability: row.get(1),
                 scope: row.get(2),
             }
@@ -252,7 +287,7 @@ pub async fn api_ability(
 ) -> ApiResult<()> {
     match &initiator.mechanism {
         Mechanism::Session(_) => {
-            if !has_ability(conn, &initiator.user.id, scope, ability).await? {
+            if !has_ability(conn, &initiator.user.id.local(), scope, ability).await? {
                 return Err(ApiError::from(ApiErrorKind::PermissionDenied));
             }
         }

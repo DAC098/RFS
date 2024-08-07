@@ -24,7 +24,7 @@ pub mod totp;
 pub struct QueryUsers {
     limit: Option<Limit>,
     offset: Option<Offset>,
-    last_id: Option<ids::UserId>,
+    last_id: Option<ids::UserUid>,
 }
 
 impl QueryUsers {
@@ -54,7 +54,7 @@ impl QueryUsers {
 
     pub fn last_id<I>(&mut self, last_id: I) -> &mut Self
     where
-        I: Into<Option<ids::UserId>>
+        I: Into<Option<ids::UserUid>>
     {
         self.last_id = last_id.into();
         self
@@ -83,12 +83,12 @@ impl QueryUsers {
 }
 
 impl iterate::Pageable for QueryUsers {
-    type Id = ids::UserId;
+    type Id = ids::UserUid;
     type Item = ListItem;
 
     #[inline]
     fn get_last_id(item: &Self::Item) -> Option<Self::Id> {
-        Some(item.id.clone())
+        Some(item.uid.clone())
     }
 
     #[inline]
@@ -108,16 +108,16 @@ impl iterate::Pageable for QueryUsers {
 }
 
 pub struct RetrieveUser {
-    id: ids::UserId
+    uid: ids::UserUid
 }
 
 impl RetrieveUser {
-    pub fn id(id: ids::UserId) -> Self {
-        RetrieveUser { id }
+    pub fn uid(uid: ids::UserUid) -> Self {
+        RetrieveUser { uid }
     }
 
     pub fn send(self, client: &ApiClient) -> Result<Option<Payload<User>>, RequestError> {
-        let res = client.get(format!("/api/user/{}", self.id.id())).send()?;
+        let res = client.get(format!("/api/user/{}", self.uid)).send()?;
 
         match res.status() {
             reqwest::StatusCode::OK => Ok(Some(res.json()?)),
@@ -177,14 +177,14 @@ impl CreateUser {
 }
 
 pub struct UpdateUser {
-    id: ids::UserId,
+    uid: ids::UserUid,
     body: UpdateUserBody
 }
 
 impl UpdateUser {
-    pub fn id(id: ids::UserId) -> Self {
+    pub fn uid(uid: ids::UserUid) -> Self {
         UpdateUser {
-            id,
+            uid,
             body: UpdateUserBody {
                 username: None,
                 email: None
@@ -211,7 +211,7 @@ impl UpdateUser {
     pub fn send(self, client: &ApiClient) -> Result<Payload<User>, RequestError> {
         self.body.assert_ok()?;
 
-        let res = client.patch(format!("/api/user/{}", self.id.id()))
+        let res = client.patch(format!("/api/user/{}", self.uid))
             .json(&self.body)
             .send()?;
 
@@ -223,16 +223,16 @@ impl UpdateUser {
 }
 
 pub struct DeleteUser {
-    id: ids::UserId,
+    uid: ids::UserUid,
 }
 
 impl DeleteUser {
-    pub fn id(id: ids::UserId) -> Self {
-        DeleteUser { id }
+    pub fn uid(uid: ids::UserUid) -> Self {
+        DeleteUser { uid }
     }
 
     pub fn send(self, client: &ApiClient) -> Result<(), RequestError> {
-        let res = client.delete(format!("/api/user/{}", self.id.id())).send()?;
+        let res = client.delete(format!("/api/user/{}", self.uid)).send()?;
 
         match res.status() {
             reqwest::StatusCode::NO_CONTENT => Ok(()),

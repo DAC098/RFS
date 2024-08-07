@@ -22,7 +22,7 @@ use crate::path;
 
 #[derive(Deserialize)]
 pub struct PathParams {
-    fs_id: ids::FSId,
+    fs_uid: ids::FSUid,
 }
 
 #[derive(Deserialize)]
@@ -35,7 +35,7 @@ pub async fn upload_file(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
     headers: HeaderMap,
-    Path(PathParams { fs_id }): Path<PathParams>,
+    Path(PathParams { fs_uid }): Path<PathParams>,
     Query(upload_query): Query<UploadQuery>,
     stream: Body,
 ) -> ApiResult<rfs_api::Payload<rfs_api::fs::Item>> {
@@ -49,8 +49,8 @@ pub async fn upload_file(
     ).await?;
 
     let (item, storage) = tokio::try_join!(
-        fs::fetch_item(&conn, &fs_id, &initiator),
-        fs::fetch_storage_from_fs_id(&conn, &fs_id),
+        fs::fetch_item_uid(&conn, &fs_uid, &initiator),
+        fs::fetch_storage_from_fs_uid(&conn, &fs_uid),
     )?;
 
     let mime = get_mime(&headers)?;
@@ -59,13 +59,13 @@ pub async fn upload_file(
 
     let rtn = match item.try_into_parent_parts() {
         Ok((parent, path, container_backend)) => {
-            let id = state.ids().wait_fs_id()?;
-            let user_id = initiator.user.id.clone();
+            let uid = ids::FSUid::gen();
+            let user = initiator.user.id.clone();
             let storage_id = storage.id.clone();
             let created = chrono::Utc::now();
             let basename = get_basename(&headers, &upload_query)?;
 
-            if fs::Item::name_check(&transaction, &parent, &basename).await?.is_some() {
+            if fs::Item::name_check(&transaction, parent.local(), &basename).await?.is_some() {
                 return Err(ApiError::from(ApiErrorKind::AlreadyExists));
             }
 
@@ -73,7 +73,7 @@ pub async fn upload_file(
                 backend::Pair::Local((local, node_local)) => {
                     let dir = local.path.join(&node_local.path);
                     let full = dir.join(&basename);
-                    let tmp = dir.join(format!("{}.tmp.rfs", id.id()));
+                    let tmp = dir.join(format!("{}.tmp.rfs", uid));
 
                     tracing::debug!("tmp path: \"{}\"", tmp.display());
 
@@ -106,10 +106,12 @@ pub async fn upload_file(
                             .to_owned()
                     });
 
-                    let file = fs::File {
-                        id,
-                        user_id,
-                        storage_id,
+                    let tmp_id = ids::FSId::try_from(1).unwrap();
+
+                    let mut file = fs::File {
+                        id: ids::FSSet::new(tmp_id, uid),
+                        user,
+                        storage: storage_id,
                         backend,
                         parent,
                         basename,
@@ -124,7 +126,7 @@ pub async fn upload_file(
                         deleted: None,
                     };
 
-                    if let Err(err) = insert_file(&file, &transaction).await {
+                    if let Err(err) = insert_file(&mut file, &transaction).await {
                         tokio::fs::remove_file(&tmp)
                             .await
                             .context("failed removing tmp file after inserting database")?;
@@ -162,8 +164,8 @@ pub async fn upload_file(
                     let full = local.path.join(&node_local.path);
                     let parent_dir = full.parent()
                         .context("failed to retrieve parent directory of file?")?;
-                    let tmp = parent_dir.join(format!("{}.tmp.rfs", file.id.id()));
-                    let prev = parent_dir.join(format!("{}.prev.rfs", file.id.id()));
+                    let tmp = parent_dir.join(format!("{}.tmp.rfs", file.id.uid()));
+                    let prev = parent_dir.join(format!("{}.prev.rfs", file.id.uid()));
 
                     tracing::debug!("tmp path: \"{}\"", tmp.display());
                     tracing::debug!("prev path: \"{}\"", prev.display());
@@ -376,48 +378,55 @@ where
     Ok((size, hash))
 }
 
-async fn insert_file(file: &fs::File, conn: &impl GenericClient) -> ApiResult<()> {
-    let pg_backend = sql::ser_to_sql(&file.backend);
-    let pg_mime_type = file.mime.type_().as_str();
-    let pg_mime_subtype = file.mime.subtype().as_str();
-    let pg_hash = file.hash.as_bytes().as_slice();
-    let pg_size: i64 = TryFrom::try_from(file.size)
-        .kind_context(ApiErrorKind::MaxSize, "total bytes written exceeds i64")?;
+async fn insert_file(file: &mut fs::File, conn: &impl GenericClient) -> ApiResult<()> {
+    let id = {
+        let pg_backend = sql::ser_to_sql(&file.backend);
+        let pg_mime_type = file.mime.type_().as_str();
+        let pg_mime_subtype = file.mime.subtype().as_str();
+        let pg_hash = file.hash.as_bytes().as_slice();
+        let pg_size: i64 = TryFrom::try_from(file.size)
+            .kind_context(ApiErrorKind::MaxSize, "total bytes written exceeds i64")?;
 
-    let _ = conn.execute(
-        "\
-        insert into fs(\
-            id, \
-            user_id, \
-            storage_id, \
-            parent, \
-            basename, \
-            fs_type, \
-            fs_path, \
-            fs_size, \
-            hash, \
-            backend, \
-            mime_type, \
-            mime_subtype, \
-            created\
-        ) values \
-        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
-        &[
-            &file.id,
-            &file.user_id,
-            &file.storage_id,
-            &file.parent,
-            &file.basename,
-            &fs::consts::FILE_TYPE,
-            &file.path,
-            &pg_size,
-            &pg_hash,
-            &pg_backend,
-            &pg_mime_type,
-            &pg_mime_subtype,
-            &file.created
-        ]
-    ).await?;
+        let result = conn.query_one(
+            "\
+            insert into fs(\
+                uid, \
+                user_id, \
+                storage_id, \
+                parent, \
+                basename, \
+                fs_type, \
+                fs_path, \
+                fs_size, \
+                hash, \
+                backend, \
+                mime_type, \
+                mime_subtype, \
+                created\
+            ) values \
+            ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) \
+            returing id",
+            &[
+                file.id.uid(),
+                file.user.local(),
+                file.storage.local(),
+                file.parent.local(),
+                &file.basename,
+                &fs::consts::FILE_TYPE,
+                &file.path,
+                &pg_size,
+                &pg_hash,
+                &pg_backend,
+                &pg_mime_type,
+                &pg_mime_subtype,
+                &file.created
+            ]
+        ).await?;
+
+        result.get(0)
+    };
+
+    file.id = ids::FSSet::new(id, file.id.uid().clone());
 
     Ok(())
 }
@@ -434,7 +443,7 @@ async fn update_file(file: &fs::File, conn: &impl GenericClient) -> ApiResult<()
             hash = $3, \
             updated = $4 \
         where fs.id = $1",
-        &[&file.id, &pg_size, &pg_hash, &file.updated]
+        &[file.id.local(), &pg_size, &pg_hash, &file.updated]
     ).await?;
 
     Ok(())

@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use rfs_lib::ids::{self, GroupId};
+use rfs_lib::ids;
 
 use axum::http::StatusCode;
 use axum::extract::{Path, Query, State};
@@ -20,13 +20,13 @@ use crate::user;
 
 #[derive(Deserialize)]
 pub struct Params {
-    pub group_id: GroupId,
+    pub group_uid: ids::GroupUid,
 }
 
 pub async fn retrieve(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Query(PaginationQuery { limit, offset, last_id }): Query<PaginationQuery<GroupId>>,
+    Query(PaginationQuery { limit, offset, last_id }): Query<PaginationQuery<ids::GroupUid>>,
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
@@ -44,10 +44,14 @@ pub async fn retrieve(
 
         conn.query_raw(
             "\
-            select groups.id, \
+            select groups.uid, \
                    groups.name \
             from groups \
-            where groups.id > $1 \
+            where groups.id > (\
+                select groups.id \
+                from groups \
+                where groups.uid = $1\
+            ) \
             order by groups.id \
             limit $2",
             params
@@ -60,7 +64,7 @@ pub async fn retrieve(
 
         conn.query_raw(
             "\
-            select groups.id, \
+            select groups.uid, \
                    groups.name \
             from groups \
             order by groups.id \
@@ -76,7 +80,7 @@ pub async fn retrieve(
 
     while let Some(row) = result.try_next().await? {
         let item = rfs_api::users::groups::ListItem {
-            id: row.get(0),
+            uid: row.get(0),
             name: row.get(1),
         };
 
@@ -100,42 +104,40 @@ pub async fn create(
         permission::Ability::Write
     ).await?;
 
+    let uid = ids::GroupUid::gen();
     let name = json.name;
     let created = chrono::Utc::now();
 
     let transaction = conn.transaction().await?;
 
-    let result = match transaction.query_one( "\
-        insert into groups (name, created) \
-        values ($1, $2) \
+    if let Err(err) = transaction.execute( "\
+        insert into groups (uid, name, created) \
+        values ($1, $2, $3) \
         returning id",
-        &[&name, &created]
+        &[&uid, &name, &created]
     ).await {
-        Ok(r) => r,
-        Err(err) => {
-            let Some(db_error) = err.as_db_error() else {
+        let Some(db_error) = err.as_db_error() else {
+            return Err(err.into());
+        };
+
+        if *db_error.code() == SqlState::UNIQUE_VIOLATION {
+            let Some(constraint) = db_error.constraint() else {
                 return Err(err.into());
             };
 
-            if *db_error.code() == SqlState::UNIQUE_VIOLATION {
-                let Some(constraint) = db_error.constraint() else {
-                    return Err(err.into());
-                };
-
-                if constraint == "groups_name_key" {
-                    return Err(ApiError::from((
-                        ApiErrorKind::AlreadyExists,
-                        Detail::with_key("name")
-                    )));
-                }
+            if constraint == "groups_name_key" {
+                return Err(ApiError::from((
+                    ApiErrorKind::AlreadyExists,
+                    Detail::with_key("name")
+                )));
             }
-
-            return Err(err.into());
         }
-    };
+
+        return Err(err.into());
+    }
 
     let rtn = rfs_api::users::groups::Group {
-        id: result.get(0),
+        uid,
         name,
         created,
         updated: None
@@ -152,7 +154,7 @@ pub async fn create(
 pub async fn retrieve_id(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Path(Params { group_id }): Path<Params>,
+    Path(Params { group_uid }): Path<Params>,
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
@@ -163,12 +165,12 @@ pub async fn retrieve_id(
         permission::Ability::Read,
     ).await?;
 
-    let group = user::group::Group::retrieve(&conn, &group_id)
+    let group = user::group::Group::retrieve_uid(&conn, &group_uid)
         .await?
         .kind(ApiErrorKind::GroupNotFound)?;
 
     Ok(rfs_api::Payload::new(rfs_api::users::groups::Group {
-        id: group.id,
+        uid: group.id.into_uid(),
         name: group.name,
         created: group.created,
         updated: group.updated,
@@ -178,7 +180,7 @@ pub async fn retrieve_id(
 pub async fn update_id(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Path(Params { group_id }): Path<Params>,
+    Path(Params { group_uid }): Path<Params>,
     axum::Json(json): axum::Json<rfs_api::users::groups::UpdateGroup>,
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
@@ -190,7 +192,7 @@ pub async fn update_id(
         permission::Ability::Write,
     ).await?;
 
-    let original = user::group::Group::retrieve(&conn, &group_id)
+    let group = user::group::Group::retrieve_uid(&conn, &group_uid)
         .await?
         .kind(ApiErrorKind::GroupNotFound)?;
 
@@ -204,7 +206,7 @@ pub async fn update_id(
         update groups \
         set name = $2 \
         where id = $1",
-        &[&group_id, &name]
+        &[group.id.local(), &name]
     ).await {
         Ok(_c) => {},
         Err(err) => {
@@ -232,9 +234,9 @@ pub async fn update_id(
     transaction.commit().await?;
 
     Ok(rfs_api::Payload::new(rfs_api::users::groups::Group {
-        id: group_id,
+        uid: group.id.into_uid(),
         name,
-        created: original.created,
+        created: group.created,
         updated: Some(updated),
     }))
 }
@@ -242,7 +244,7 @@ pub async fn update_id(
 pub async fn delete_id(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Path(Params { group_id }): Path<Params>,
+    Path(Params { group_uid }): Path<Params>,
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
@@ -253,7 +255,7 @@ pub async fn delete_id(
         permission::Ability::Write,
     ).await?;
 
-    let original = user::group::Group::retrieve(&conn, &group_id)
+    let original = user::group::Group::retrieve_uid(&conn, &group_uid)
         .await?
         .kind(ApiErrorKind::GroupNotFound)?;
 
@@ -266,7 +268,7 @@ pub async fn delete_id(
 
     let _group = transaction.execute(
         "delete from groups where id = $1",
-        &[&group_id]
+        &[original.id.local()]
     ).await?;
 
     transaction.commit().await?;
@@ -280,7 +282,7 @@ pub async fn delete_id(
     }
 
     Ok(rfs_api::Payload::new(rfs_api::users::groups::Group {
-        id: original.id,
+        uid: original.id.into_uid(),
         name: original.name,
         created: original.created,
         updated: original.updated
@@ -290,8 +292,8 @@ pub async fn delete_id(
 pub async fn retrieve_users(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Path(Params { group_id }): Path<Params>,
-    Query(PaginationQuery { limit, offset, last_id }): Query<PaginationQuery<ids::UserId>>,
+    Path(Params { group_uid }): Path<Params>,
+    Query(PaginationQuery { limit, offset, last_id }): Query<PaginationQuery<ids::UserUid>>,
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
@@ -313,32 +315,39 @@ pub async fn retrieve_users(
     if let Some(last_id) = last_id {
         maybe_last_id = last_id;
 
-        params = [&group_id, &maybe_last_id, &limit];
+        params = [&group_uid, &maybe_last_id, &limit];
         query = "\
-            select users.id \
+            select users.uid \
             from users \
             join group_users on \
                 users.id = group_users.user_id \
-            where group_users.group_id = $1 and \
-                  users.id > $2 \
+            join groups on \
+                group_user.group_id = groups.id \
+            where groups.uid = $1 and \
+                  users.id > (\
+                      select users.id \
+                      from users \
+                      where users.uid = $2) \
             order by users.id \
             limit $3";
     } else {
         pagination.set_offset(offset);
 
-        params = [&group_id, &limit, &offset_num];
+        params = [&group_uid, &limit, &offset_num];
         query = "\
-            select users.id \
+            select users.uid \
             from users \
             join group_users on \
                 users.id = group_users.user_id \
-            where group_users.group_id = $1 \
+            join groups on \
+                group_users.group_id = groups.id \
+            where groups.uid = $1 \
             order by users.id \
             limit $2 \
             offset $3";
     }
 
-    let group_fut = user::group::Group::retrieve(&conn, &group_id);
+    let group_fut = user::group::Group::retrieve_uid(&conn, &group_uid);
     let users_fut = conn.query_raw(query, params);
 
     let result = match tokio::try_join!(group_fut, users_fut) {
@@ -357,7 +366,7 @@ pub async fn retrieve_users(
 
     while let Some(row) = result.try_next().await? {
         let item = rfs_api::users::groups::GroupUser {
-            id: row.get(0),
+            uid: row.get(0),
         };
 
         list.push(item);
@@ -369,7 +378,7 @@ pub async fn retrieve_users(
 pub async fn add_users(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Path(Params { group_id }): Path<Params>,
+    Path(Params { group_uid }): Path<Params>,
     axum::Json(json): axum::Json<rfs_api::users::groups::AddUsers>
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
@@ -381,22 +390,22 @@ pub async fn add_users(
         permission::Ability::Write,
     ).await?;
 
-    user::group::Group::retrieve(&conn, &group_id)
+    let group = user::group::Group::retrieve_uid(&conn, &group_uid)
         .await?
         .kind(ApiErrorKind::GroupNotFound)?;
 
-    if json.ids.len() == 0 {
+    if json.uids.len() == 0 {
         return Err(ApiError::from(ApiErrorKind::NoWork));
     }
 
-    let mut id_iter = json.ids.iter();
+    let mut id_iter = json.uids.iter();
     let mut query = String::from(
         "\
         insert into group_users (group_id, user_id) \
         values"
     );
-    let mut params: sql::ParamsVec = Vec::with_capacity(json.ids.len() + 1);
-    params.push(&group_id);
+    let mut params: sql::ParamsVec = Vec::with_capacity(json.uids.len() + 1);
+    params.push(group.id.local());
 
     if let Some(first) = id_iter.next() {
         write!(&mut query, " ($1, ${})", sql::push_param(&mut params, first))?;
@@ -426,7 +435,7 @@ pub async fn add_users(
 pub async fn delete_users(
     State(state): State<ArcShared>,
     initiator: initiator::Initiator,
-    Path(Params { group_id }): Path<Params>,
+    Path(Params { group_uid }): Path<Params>,
     axum::Json(json): axum::Json<rfs_api::users::groups::DropUsers>
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
@@ -438,11 +447,11 @@ pub async fn delete_users(
         permission::Ability::Write,
     ).await?;
 
-    user::group::Group::retrieve(&conn, &group_id)
+    let group = user::group::Group::retrieve_uid(&conn, &group_uid)
         .await?
         .kind(ApiErrorKind::GroupNotFound)?;
 
-    if json.ids.len() == 0 {
+    if json.uids.len() == 0 {
         return Err(ApiError::from(ApiErrorKind::NoWork));
     }
 
@@ -451,9 +460,11 @@ pub async fn delete_users(
     let _ = transaction.execute(
         "\
         delete from group_users \
-        where group_id = $1 and \
-              user_id <> all($2)",
-        &[&group_id, &json.ids]
+        using users \
+        where group_users.user_id = users.id and \
+              users.uid <> all($2) and \
+              group_id = $1",
+        &[group.id.local(), &json.uids]
     ).await?;
 
     transaction.commit().await?;

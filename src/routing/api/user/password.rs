@@ -23,7 +23,7 @@ pub async fn update(
 
     let transaction = conn.transaction().await?;
 
-    let mut password = Password::retrieve(&transaction, &initiator.user.id)
+    let mut password = Password::retrieve(&transaction, initiator.user.id.local())
         .await?
         .context("missing password for user")?;
 
@@ -41,7 +41,7 @@ pub async fn update(
             let cache = state.auth().session_info().cache();
             let session_tokens = session::Session::delete_user_sessions(
                 &transaction,
-                &initiator.user.id,
+                initiator.user.id.local(),
                 Some(&session.token)
             ).await?;
 
