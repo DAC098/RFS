@@ -19,6 +19,7 @@ use crate::sec::authz::permission;
 use crate::sql;
 use crate::user;
 use crate::routing::query::PaginationQuery;
+use crate::db;
 
 mod group;
 mod password;
@@ -57,13 +58,12 @@ pub fn routes() -> Router<ArcShared> {
 }
 
 async fn retrieve(
-    State(state): State<ArcShared>,
+    db::Conn(conn): db::Conn,
+    rbac: permission::Rbac,
     initiator: initiator::Initiator,
     Query(PaginationQuery { limit, offset, last_id }): Query<PaginationQuery<ids::UserUid>>,
 ) -> ApiResult<impl IntoResponse> {
-    let conn = state.pool().get().await?;
-
-    permission::api_ability(
+    rbac.api_ability(
         &conn,
         &initiator,
         permission::Scope::User,
@@ -130,7 +130,7 @@ async fn create(
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    permission::api_ability(
+    state.sec().rbac().api_ability(
         &conn,
         &initiator,
         permission::Scope::User,
@@ -205,13 +205,12 @@ async fn create(
 }
 
 async fn retrieve_id(
-    State(state): State<ArcShared>,
+    db::Conn(conn): db::Conn,
+    rbac: permission::Rbac,
     initiator: initiator::Initiator,
     Path(PathParams { user_uid }): Path<PathParams>,
 ) -> ApiResult<impl IntoResponse> {
-    let conn = state.pool().get().await?;
-
-    permission::api_ability(
+    rbac.api_ability(
         &conn,
         &initiator,
         permission::Scope::User,
@@ -235,14 +234,13 @@ async fn retrieve_id(
 }
 
 async fn update_id(
-    State(state): State<ArcShared>,
+    db::Conn(mut conn): db::Conn,
+    rbac: permission::Rbac,
     initiator: initiator::Initiator,
     Path(PathParams { user_uid }): Path<PathParams>,
     axum::Json(json): axum::Json<rfs_api::users::UpdateUser>,
 ) -> ApiResult<impl IntoResponse> {
-    let mut conn = state.pool().get().await?;
-
-    permission::api_ability(
+    rbac.api_ability(
         &conn,
         &initiator,
         permission::Scope::User,
@@ -360,8 +358,9 @@ async fn delete_id(
     Path(PathParams { user_uid }): Path<PathParams>,
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
+    let rbac = state.sec().rbac();
 
-    permission::api_ability(
+    rbac.api_ability(
         &conn,
         &initiator,
         permission::Scope::User,
@@ -378,8 +377,7 @@ async fn delete_id(
 
     let transaction = conn.transaction().await?;
 
-    let session = state.auth().session_info().cache();
-    let rbac = state.sec().rbac();
+    let session = state.sec().session_info().cache();
 
     let session_tokens = session::Session::delete_user_sessions(
         &transaction,
@@ -393,7 +391,7 @@ async fn delete_id(
         session.remove(&token);
     }
 
-    rbac.clear_id(&user.id);
+    rbac.clear_id(user.id.local());
 
     Ok(StatusCode::NO_CONTENT)
 }

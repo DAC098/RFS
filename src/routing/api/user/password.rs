@@ -38,7 +38,7 @@ pub async fn update(
 
     match initiator.mechanism {
         Mechanism::Session(session) => {
-            let cache = state.auth().session_info().cache();
+            let cache = state.sec().session_info().cache();
             let session_tokens = session::Session::delete_user_sessions(
                 &transaction,
                 initiator.user.id.local(),

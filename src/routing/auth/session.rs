@@ -24,7 +24,7 @@ pub async fn request(
 
     json.validate()?;
 
-    match initiator::lookup_header_map(state.auth(), &conn, &headers).await {
+    match initiator::lookup_header_map(state.sec(), &conn, &headers).await {
         Ok(_) => {
             return Err(ApiError::from(ApiErrorKind::AlreadyAuthenticated));
         },
@@ -67,10 +67,10 @@ pub async fn request(
 
     transaction.commit().await?;
 
-    let session_cookie = session::create_session_cookie(state.auth(), &session)
+    let session_cookie = session::create_session_cookie(state.sec(), &session)
         .context("session keys rwlock poisoned")?;
 
-    state.auth()
+    state.sec()
         .session_info()
         .cache()
         .insert(session.token.clone(), (session, user));
@@ -94,7 +94,7 @@ pub async fn submit(
 
     let transaction = conn.transaction().await?;
 
-    let mut session = match initiator::lookup_header_map(state.auth(), &transaction, &headers).await {
+    let mut session = match initiator::lookup_header_map(state.sec(), &transaction, &headers).await {
         Ok(_initiator) => {
             return Err(ApiError::from(ApiErrorKind::AlreadyAuthenticated));
         },
@@ -135,7 +135,7 @@ pub async fn submit(
                 .await?
                 .kind(ApiErrorKind::UserNotFound)?;
 
-            state.auth()
+            state.sec()
                 .session_info()
                 .cache()
                 .insert(session.token.clone(), (session, user));
@@ -154,7 +154,7 @@ pub async fn submit(
                 .await?
                 .kind(ApiErrorKind::UserNotFound)?;
 
-            state.auth()
+            state.sec()
                 .session_info()
                 .cache()
                 .insert(session.token.clone(), (session, user));
@@ -180,7 +180,7 @@ pub async fn verify(
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    let mut session = match initiator::lookup_header_map(state.auth(), &conn, &headers).await {
+    let mut session = match initiator::lookup_header_map(state.sec(), &conn, &headers).await {
         Ok(_initiator) => {
             return Err(ApiError::from(ApiErrorKind::AlreadyAuthenticated));
         },
@@ -250,7 +250,7 @@ pub async fn verify(
         .await?
         .kind(ApiErrorKind::UserNotFound)?;
 
-    state.auth()
+    state.sec()
         .session_info()
         .cache()
         .insert(session.token.clone(), (session, user));
@@ -266,7 +266,7 @@ pub async fn drop(
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    let session = match initiator::lookup_header_map(state.auth(), &conn, &headers).await {
+    let session = match initiator::lookup_header_map(state.sec(), &conn, &headers).await {
         Ok(initiator) => match initiator.mechanism {
             Mechanism::Session(session) => session,
         }
@@ -274,7 +274,7 @@ pub async fn drop(
             LookupError::SessionNotFound => {
                 return Ok((
                     StatusCode::NO_CONTENT,
-                    session::expire_session_cookie(state.auth())
+                    session::expire_session_cookie(state.sec())
                 ));
             }
             LookupError::SessionExpired(session) |
@@ -295,13 +295,13 @@ pub async fn drop(
 
     transaction.commit().await?;
 
-    state.auth()
+    state.sec()
         .session_info()
         .cache()
         .invalidate(&session.token);
 
     Ok((
         StatusCode::NO_CONTENT,
-        session::expire_session_cookie(state.auth())
+        session::expire_session_cookie(state.sec())
     ))
 }

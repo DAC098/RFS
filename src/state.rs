@@ -63,11 +63,6 @@ impl Shared {
     pub fn sec(&self) -> &sec::state::Sec {
         &self.sec
     }
-
-    #[inline]
-    pub fn auth(&self) -> &sec::state::Sec {
-        self.sec()
-    }
 }
 
 impl AsRef<Pool> for Shared {

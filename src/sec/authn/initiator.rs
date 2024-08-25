@@ -1,16 +1,16 @@
-use std::ops::Deref;
 use std::pin::Pin;
 use std::future::Future;
 
 use axum::http::header::{HeaderMap, HeaderValue, GetAll};
 use axum::http::request::Parts;
 use axum::extract::FromRequestParts;
-use deadpool_postgres::{Pool, GenericClient};
+use deadpool_postgres::GenericClient;
 
 use crate::error::ApiError;
 use crate::error::api::ApiErrorKind;
 use crate::sec::state;
 use crate::user;
+use crate::state::ArcShared;
 
 use super::session;
 
@@ -167,34 +167,29 @@ pub async fn lookup_header_map(
     Err(LookupError::MechanismNotFound)
 }
 
-impl<A, S> FromRequestParts<A> for Initiator
-where
-    A: Deref<Target = S> + Sync,
-    S: AsRef<state::Sec> + AsRef<Pool> + Sync,
-{
+impl FromRequestParts<ArcShared> for Initiator {
     type Rejection = ApiError;
 
     fn from_request_parts<'life0, 'life1, 'async_trait>(
         parts: &'life0 mut Parts,
-        state: &'life1 A,
+        state: &'life1 ArcShared,
     ) -> Pin<Box<dyn Future<Output = Result<Self, Self::Rejection>> + Send + 'async_trait>>
     where
         'life0: 'async_trait,
         'life1: 'async_trait,
         Self: 'async_trait
     {
+        let sec = state.sec();
+        let fut = state.pool().get();
+
         Box::pin(async move {
-            // since we are not explicitly requireing crate::state::Shared
-            // we can still achieve what we want by using Deref and then
-            // get the auth and pool structs
-            // this is wierd but it works so...
-            let state_deref = state.deref();
+            let conn = match fut.await {
+                Ok(obj) => obj,
+                Err(err) => return Err(ApiError::from(err)
+                    .context("failed to retrieve database connection"))
+            };
 
-            let auth: &state::Sec = state_deref.as_ref();
-            let pool: &Pool = state_deref.as_ref();
-            let conn = pool.get().await?;
-
-            Ok(lookup_header_map(auth, &conn, &parts.headers).await?)
+            Ok(lookup_header_map(sec, &conn, &parts.headers).await?)
         })
     }
 }

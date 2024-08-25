@@ -16,6 +16,7 @@ use crate::error::{ApiError, ApiResult};
 use crate::error::api::{ApiErrorKind, Context};
 use crate::sec::authn::initiator::{Initiator, Mechanism};
 use crate::state::ArcShared;
+use crate::sql;
 
 pub use rfs_lib::sec::authz::permission::{Ability, Scope};
 
@@ -42,7 +43,7 @@ impl Role {
 impl From<Role> for rfs_api::sec::roles::Role {
     fn from(role: Role) -> Self {
         rfs_api::sec::roles::Role {
-            id: role.id,
+            uid: role.id.into_uid(),
             name: role.name,
             permissions: Vec::new(),
         }
@@ -60,8 +61,8 @@ impl Permission {
         conn: &impl GenericClient,
         role_id: &ids::RoleId
     ) -> Result<impl TryStream<Item = Result<Self, PgError>>, PgError> {
-        let params: sql::ParamsVec = vec![role_id];
-        let query = conn.query_raw(
+        let params: sql::ParamsArray<1> = [role_id];
+        let result = conn.query_raw(
             "\
             select authz_roles.id, \
                    authz_roles.uid, \
@@ -88,7 +89,7 @@ impl Permission {
         role_uid: &ids::RoleUid
     ) -> Result<impl TryStream<Item = Result<Self, PgError>>, PgError> {
         let params: sql::ParamsArray<1> = [role_uid];
-        let query = conn.query_raw(
+        let result = conn.query_raw(
             "\
             select authz_roles.id, \
                    authz_roles.uid, \
@@ -120,6 +121,7 @@ impl From<Permission> for rfs_api::sec::roles::Permission {
     }
 }
 
+/*
 pub async fn has_ability(
     conn: &impl GenericClient,
     user_id: &ids::UserId,
@@ -148,6 +150,7 @@ pub async fn has_ability(
 
     Ok(result > 0)
 }
+*/
 
 #[derive(Debug)]
 pub struct Abilities(HashMap<Scope, HashSet<Ability>>);
@@ -190,18 +193,18 @@ impl Rbac {
     ) -> ApiResult<()> {
         match &initiator.mechanism {
             Mechanism::Session(_) => {
-                if let Some(abilities) = self.cache.get(&initiator.user.id) {
+                if let Some(abilities) = self.cache.get(&initiator.user.id.local()) {
                     if !abilities.has_ability(&scope, &ability) {
                         return Err(ApiError::from(ApiErrorKind::PermissionDenied));
                     }
                 } else {
-                    let abilities = retrieve_abilities(conn, &initiator.user.id)
+                    let abilities = retrieve_abilities(conn, &initiator.user.id.local())
                         .await
                         .context("failed to retrieve user abilities")?;
 
                     let result = abilities.has_ability(&scope, &ability);
 
-                    self.cache.insert(initiator.user.id.clone(), Arc::new(abilities));
+                    self.cache.insert(initiator.user.id.local().clone(), Arc::new(abilities));
 
                     if !result {
                         return Err(ApiError::from(ApiErrorKind::PermissionDenied));
@@ -277,21 +280,4 @@ pub async fn retrieve_abilities(
     }
 
     Ok(Abilities(scopes))
-}
-
-pub async fn api_ability(
-    conn: &impl GenericClient,
-    initiator: &Initiator,
-    scope: Scope,
-    ability: Ability,
-) -> ApiResult<()> {
-    match &initiator.mechanism {
-        Mechanism::Session(_) => {
-            if !has_ability(conn, &initiator.user.id.local(), scope, ability).await? {
-                return Err(ApiError::from(ApiErrorKind::PermissionDenied));
-            }
-        }
-    }
-
-    Ok(())
 }

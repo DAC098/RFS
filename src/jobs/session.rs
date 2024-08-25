@@ -8,7 +8,7 @@ use crate::time;
 
 pub async fn cleanup(state: state::ArcShared) -> error::Result<()> {
     let today = chrono::Utc::now();
-    let cache = state.auth().session_info().cache();
+    let cache = state.sec().session_info().cache();
     let mut conn = state.pool().get().await?;
 
     let transaction = conn.transaction().await?;

@@ -10,9 +10,9 @@ use rfs_api::fs::{
     RootMin,
 };
 
-use axum::{Router, debug_handler};
+use axum::Router;
 use axum::body::Body;
-use axum::extract::{Path, Query, State};
+use axum::extract::{Path, Query};
 use axum::http::StatusCode;
 use axum::response::Response;
 use axum::routing::get;
@@ -31,6 +31,7 @@ use crate::sec::authz::permission;
 use crate::sql;
 use crate::state::ArcShared;
 use crate::tags;
+use crate::db;
 
 mod storage;
 mod upload;
@@ -58,13 +59,12 @@ pub struct PathParams {
 }
 
 async fn retrieve(
-    State(state): State<ArcShared>,
+    db::Conn(conn): db::Conn,
+    rbac: permission::Rbac,
     initiator: initiator::Initiator,
     Query(PaginationQuery { limit, offset, last_id }): Query<PaginationQuery<ids::FSId>>,
 ) -> ApiResult<rfs_api::Payload<Vec<ItemMin>>> {
-    let conn = state.pool().get().await?;
-
-    state.sec().rbac().api_ability(
+    rbac.api_ability(
         &conn,
         &initiator,
         permission::Scope::Fs,
@@ -154,13 +154,12 @@ async fn retrieve(
 }
 
 pub async fn retrieve_id(
-    State(state): State<ArcShared>,
+    db::Conn(conn): db::Conn,
+    rbac: permission::Rbac,
     initiator: initiator::Initiator,
     Path(PathParams { fs_uid }): Path<PathParams>,
 ) -> ApiResult<rfs_api::Payload<rfs_api::fs::Item>> {
-    let conn = state.pool().get().await?;
-
-    state.sec().rbac().api_ability(
+    rbac.api_ability(
         &conn,
         &initiator,
         permission::Scope::Fs,
@@ -172,16 +171,14 @@ pub async fn retrieve_id(
     Ok(rfs_api::Payload::new(fs::fetch_item_uid(&conn, &fs_uid, &initiator).await?.into()))
 }
 
-#[debug_handler]
 async fn create_item(
-    State(state): State<ArcShared>,
+    db::Conn(mut conn): db::Conn,
+    rbac: permission::Rbac,
     initiator: initiator::Initiator,
     Path(PathParams { fs_uid }): Path<PathParams>,
     axum::Json(json): axum::Json<rfs_api::fs::CreateDir>,
 ) -> ApiResult<(StatusCode, rfs_api::Payload<rfs_api::fs::Item>)> {
-    let mut conn = state.pool().get().await?;
-
-    state.sec().rbac().api_ability(
+    rbac.api_ability(
         &conn,
         &initiator,
         permission::Scope::Fs,
@@ -319,14 +316,13 @@ async fn create_item(
 }
 
 async fn update_item(
-    State(state): State<ArcShared>,
+    db::Conn(mut conn): db::Conn,
+    rbac: permission::Rbac,
     initiator: initiator::Initiator,
     Path(PathParams { fs_uid }): Path<PathParams>,
     axum::Json(json): axum::Json<rfs_api::fs::UpdateMetadata>,
 ) -> ApiResult<rfs_api::Payload<rfs_api::fs::Item>> {
-    let mut conn = state.pool().get().await?;
-
-    state.sec().rbac().api_ability(
+    rbac.api_ability(
         &conn,
         &initiator,
         permission::Scope::Fs,
@@ -392,13 +388,12 @@ async fn update_item(
 }
 
 async fn delete_item(
-    State(state): State<ArcShared>,
+    db::Conn(mut conn): db::Conn,
+    rbac: permission::Rbac,
     initiator: initiator::Initiator,
     Path(PathParams { fs_uid }): Path<PathParams>,
 ) -> ApiResult<StatusCode> {
-    let mut conn = state.pool().get().await?;
-
-    state.sec().rbac().api_ability(
+    rbac.api_ability(
         &conn,
         &initiator,
         permission::Scope::Fs,
@@ -584,14 +579,13 @@ async fn delete_dir(
 }
 
 async fn retrieve_id_contents(
-    State(state): State<ArcShared>,
+    db::Conn(conn): db::Conn,
+    rbac: permission::Rbac,
     initiator: initiator::Initiator,
     Path(PathParams { fs_uid }): Path<PathParams>,
     Query(PaginationQuery { limit, offset, last_id }): Query<PaginationQuery<ids::FSUid>>,
 ) -> ApiResult<rfs_api::Payload<Vec<ItemMin>>> {
-    let conn = state.pool().get().await?;
-
-    state.sec().rbac().api_ability(
+    rbac.api_ability(
         &conn,
         &initiator,
         permission::Scope::Fs,
@@ -729,13 +723,12 @@ async fn retrieve_id_contents(
 }
 
 async fn download_id(
-    State(state): State<ArcShared>,
+    db::Conn(conn): db::Conn,
+    rbac: permission::Rbac,
     initiator: initiator::Initiator,
     Path(PathParams { fs_uid }): Path<PathParams>,
 ) -> ApiResult<Response<Body>> {
-    let conn = state.pool().get().await?;
-
-    state.sec().rbac().api_ability(
+    rbac.api_ability(
         &conn,
         &initiator,
         permission::Scope::Fs,

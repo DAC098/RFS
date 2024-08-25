@@ -5,7 +5,7 @@ use rfs_api::fs::{CreateStorage, StorageMin, UpdateStorage};
 use rfs_api::fs::backend::{CreateConfig, UpdateConfig};
 use rfs_lib::ids;
 
-use axum::extract::{Path, State, Query};
+use axum::extract::{Path, Query};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use futures::TryStreamExt;
@@ -18,8 +18,8 @@ use crate::routing::query::PaginationQuery;
 use crate::sec::authn::initiator;
 use crate::sec::authz::permission;
 use crate::sql;
-use crate::state::ArcShared;
 use crate::tags;
+use crate::db;
 
 #[derive(Deserialize)]
 pub struct PathParams {
@@ -27,13 +27,12 @@ pub struct PathParams {
 }
 
 pub async fn retrieve(
-    State(state): State<ArcShared>,
+    db::Conn(conn): db::Conn,
+    rbac: permission::Rbac,
     initiator: initiator::Initiator,
     Query(PaginationQuery { limit, offset, last_id }): Query<PaginationQuery<ids::StorageUid>>,
 ) -> ApiResult<impl IntoResponse> {
-    let conn = state.pool().get().await?;
-
-    permission::api_ability(
+    rbac.api_ability(
         &conn,
         &initiator,
         permission::Scope::Storage,
@@ -102,18 +101,12 @@ pub async fn retrieve(
 }
 
 pub async fn create(
-    State(state): State<ArcShared>,
+    db::Conn(mut conn): db::Conn,
+    rbac: permission::Rbac,
     initiator: initiator::Initiator,
     axum::Json(json): axum::Json<CreateStorage>,
 ) -> ApiResult<impl IntoResponse> {
-    tracing::event!(
-        tracing::Level::DEBUG,
-        "creating new storage medium"
-    );
-
-    let mut conn = state.pool().get().await?;
-
-    permission::api_ability(
+    rbac.api_ability(
         &conn,
         &initiator,
         permission::Scope::Storage,
@@ -231,13 +224,12 @@ pub async fn create(
 }
 
 pub async fn retrieve_id(
-    State(state): State<ArcShared>,
+    db::Conn(conn): db::Conn,
+    rbac: permission::Rbac,
     initiator: initiator::Initiator,
     Path(PathParams { storage_uid }): Path<PathParams>,
 ) -> ApiResult<impl IntoResponse> {
-    let conn = state.pool().get().await?;
-
-    permission::api_ability(
+    rbac.api_ability(
         &conn,
         &initiator,
         permission::Scope::Storage,
@@ -260,14 +252,13 @@ pub async fn retrieve_id(
 }
 
 pub async fn update_id(
-    State(state): State<ArcShared>,
+    db::Conn(mut conn): db::Conn,
+    rbac: permission::Rbac,
     initiator: initiator::Initiator,
     Path(PathParams { storage_uid }): Path<PathParams>,
     axum::Json(json): axum::Json<UpdateStorage>,
 ) -> ApiResult<impl IntoResponse> {
-    let mut conn = state.pool().get().await?;
-
-    permission::api_ability(
+    rbac.api_ability(
         &conn,
         &initiator,
         permission::Scope::Storage,
@@ -355,13 +346,12 @@ pub async fn update_id(
 }
 
 pub async fn delete_id(
-    State(state): State<ArcShared>,
+    db::Conn(mut conn): db::Conn,
+    rbac: permission::Rbac,
     initiator: initiator::Initiator,
     Path(PathParams { storage_uid }): Path<PathParams>,
 ) -> ApiResult<impl IntoResponse> {
-    let mut conn = state.pool().get().await?;
-
-    permission::api_ability(
+    rbac.api_ability(
         &conn,
         &initiator,
         permission::Scope::Storage,

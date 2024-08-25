@@ -25,7 +25,7 @@ pub async fn password_retrieve(
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
-    permission::api_ability(
+    state.sec().rbac().api_ability(
         &conn,
         &initiator,
         permission::Scope::SecSecrets,
@@ -59,7 +59,7 @@ pub async fn password_create(
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
-    permission::api_ability(
+    state.sec().rbac().api_ability(
         &conn,
         &initiator,
         permission::Scope::SecSecrets,
@@ -88,7 +88,7 @@ pub async fn password_retrieve_version(
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
-    permission::api_ability(
+    state.sec().rbac().api_ability(
         &conn,
         &initiator,
         permission::Scope::SecSecrets,
@@ -166,7 +166,7 @@ pub async fn password_rotate_deletion(
 ) -> ApiResult<impl IntoResponse> {
     let mut conn = state.pool().get().await?;
 
-    permission::api_ability(
+    state.sec().rbac().api_ability(
         &conn,
         &initiator,
         permission::Scope::SecSecrets,
@@ -281,7 +281,7 @@ pub async fn session_retrieve(
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
-    permission::api_ability(
+    state.sec().rbac().api_ability(
         &conn,
         &initiator,
         permission::Scope::SecSecrets,
@@ -318,7 +318,7 @@ pub async fn session_create(
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
-    permission::api_ability(
+    state.sec().rbac().api_ability(
         &conn,
         &initiator,
         permission::Scope::SecSecrets,
@@ -356,7 +356,7 @@ pub async fn session_delete(
 ) -> ApiResult<impl IntoResponse> {
     let conn = state.pool().get().await?;
 
-    permission::api_ability(
+    state.sec().rbac().api_ability(
         &conn,
         &initiator,
         permission::Scope::SecSecrets,

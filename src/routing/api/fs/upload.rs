@@ -2,9 +2,8 @@ use std::str::FromStr;
 
 use rfs_lib::ids;
 
-use axum::debug_handler;
 use axum::body::Body;
-use axum::extract::{Path, Query, State};
+use axum::extract::{Path, Query};
 use axum::http::HeaderMap;
 use deadpool_postgres::GenericClient;
 use futures::StreamExt;
@@ -17,8 +16,8 @@ use crate::fs::{self, backend};
 use crate::sec::authn::initiator;
 use crate::sec::authz::permission;
 use crate::sql;
-use crate::state::ArcShared;
 use crate::path;
+use crate::db;
 
 #[derive(Deserialize)]
 pub struct PathParams {
@@ -30,18 +29,16 @@ pub struct UploadQuery {
     basename: Option<String>,
 }
 
-#[debug_handler]
 pub async fn upload_file(
-    State(state): State<ArcShared>,
+    db::Conn(mut conn): db::Conn,
+    rbac: permission::Rbac,
     initiator: initiator::Initiator,
     headers: HeaderMap,
     Path(PathParams { fs_uid }): Path<PathParams>,
     Query(upload_query): Query<UploadQuery>,
     stream: Body,
 ) -> ApiResult<rfs_api::Payload<rfs_api::fs::Item>> {
-    let mut conn = state.pool().get().await?;
-
-    permission::api_ability(
+    rbac.api_ability(
         &conn,
         &initiator,
         permission::Scope::Fs,

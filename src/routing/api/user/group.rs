@@ -1,5 +1,3 @@
-use std::fmt::Write;
-
 use rfs_lib::ids;
 
 use axum::http::StatusCode;
@@ -263,7 +261,7 @@ pub async fn delete_id(
 
     let group_users = transaction.query(
         "delete from group_users where group_id = $1 returning user_id",
-        &[&group_id]
+        &[original.id.local()]
     ).await?;
 
     let _group = transaction.execute(
@@ -398,34 +396,30 @@ pub async fn add_users(
         return Err(ApiError::from(ApiErrorKind::NoWork));
     }
 
-    let mut id_iter = json.uids.iter();
-    let mut query = String::from(
-        "\
-        insert into group_users (group_id, user_id) \
-        values"
-    );
-    let mut params: sql::ParamsVec = Vec::with_capacity(json.uids.len() + 1);
-    params.push(group.id.local());
-
-    if let Some(first) = id_iter.next() {
-        write!(&mut query, " ($1, ${})", sql::push_param(&mut params, first))?;
-
-        while let Some(id) = id_iter.next() {
-            write!(&mut query, ", ($1, ${})", sql::push_param(&mut params, id))?;
-        }
-    }
-
-    write!(&mut query, " on conflict on constraint group_users_pkey do nothing")?;
-
     let transaction = conn.transaction().await?;
 
-    transaction.execute(query.as_str(), params.as_slice()).await?;
+    let params: sql::ParamsArray<2> = [group.id.local(), &json.uids];
+    let result = transaction.query_raw(
+        "\
+        insert into group_users (group_id, user_id)
+        select $1 as group_id, \
+               users.id as user_id \
+        from users \
+        where users.uid = any($2) \
+        on conflict on constraint group_users_pkey do nothing \
+        returning users.id",
+        params
+    ).await?;
 
     transaction.commit().await?;
 
+    futures::pin_mut!(result);
+
     let rbac = state.sec().rbac();
 
-    for user_id in json.ids {
+    while let Some(row) = result.try_next().await? {
+        let user_id = row.get(0);
+
         rbac.clear_id(&user_id);
     }
 
@@ -457,21 +451,26 @@ pub async fn delete_users(
 
     let transaction = conn.transaction().await?;
 
-    let _ = transaction.execute(
+    let params: sql::ParamsArray<2> = [group.id.local(), &json.uids];
+    let result = transaction.query_raw(
         "\
         delete from group_users \
         using users \
         where group_users.user_id = users.id and \
               users.uid <> all($2) and \
               group_id = $1",
-        &[group.id.local(), &json.uids]
+        params
     ).await?;
 
     transaction.commit().await?;
 
+    futures::pin_mut!(result);
+
     let rbac = state.sec().rbac();
 
-    for user_id in json.ids {
+    while let Some(row) = result.try_next().await? {
+        let user_id = row.get(0);
+
         rbac.clear_id(&user_id);
     }
 

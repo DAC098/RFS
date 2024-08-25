@@ -207,7 +207,7 @@ pub async fn retrieve_id(
 
     let (role, permissions) = match tokio::try_join!(
         Role::retrieve_uid(&conn, &role_uid),
-        Permission::stream_by_role_id(&conn, &role_id)
+        Permission::stream_by_role_uid(&conn, &role_uid)
     ) {
         Ok((Some(role), permissions)) => (role, permissions),
         Ok((None, _)) => return Err(ApiError::from(ApiErrorKind::RoleNotFound)),
@@ -414,7 +414,7 @@ pub async fn delete_id(
 
     transaction.commit().await?;
 
-    clear_via_role(&rbac, &conn, &role_id).await?;
+    clear_via_role(&rbac, &conn, original.id.local()).await?;
 
     Ok(StatusCode::OK)
 }
@@ -527,14 +527,19 @@ pub async fn add_id_users(
                users.id as user_id \
         from users \
         where users.uid = any($2) \
-        on conflict on constraint user_roles_pkey do nothing";
+        on conflict on constraint user_roles_pkey do nothing \
+        returning user_id";
     let params: sql::ParamsArray<2> = [role.id.local(), &json.uids];
 
-    let _ = transaction.execute(query, &params).await?;
+    let result = transaction.query_raw(query, params).await?;
 
     transaction.commit().await?;
 
-    for user_id in json.ids {
+    futures::pin_mut!(result);
+
+    while let Some(row) = result.try_next().await? {
+        let user_id = row.get(0);
+
         rbac.clear_id(&user_id);
     }
 
@@ -565,19 +570,25 @@ pub async fn remove_id_users(
         return Err(ApiError::from(ApiErrorKind::NoWork));
     }
 
-    let _ = transaction.execute(
+    let params: sql::ParamsArray<2> = [role.id.local(), &json.uids];
+    let result = transaction.query_raw(
         "\
         delete from user_roles \
         using users \
         where role_id = $1 and \
               user_id = users.id and \
-              users.uid = any($2)",
-        &[role.id.local(), &json.uids]
+              users.uid = any($2) \
+        returning users.id",
+        params
     ).await?;
 
     transaction.commit().await?;
 
-    for user_id in json.ids {
+    futures::pin_mut!(result);
+
+    while let Some(row) = result.try_next().await? {
+        let user_id = row.get(0);
+
         rbac.clear_id(&user_id);
     }
 
@@ -686,18 +697,20 @@ pub async fn add_id_groups(
         return Err(ApiError::from(ApiErrorKind::NoWork));
     }
 
-    let query = "\
+    transaction.execute(
+        "\
         insert into group_roles (role_id, group_id) \
         select $1 as role_id, \
                groups.id as group_id \
         from groups \
         where groups.uid = any($2) \
-        on conflict on constraint group_roles_pkey do nothing";
-    let params: sql::ParamsArray<2> = [role.id.local(), &json.uids];
+        on conflict on constraint group_roles_pkey do nothing",
+        &[role.id.local(), &json.uids]
+    ).await?;
 
-    transaction.execute(query, &params).await?;
+    transaction.commit().await?;
 
-    let users = users_multi_group(&transaction, &json.ids)
+    let users = users_multi_group(&conn, &json.uids)
         .await
         .context("failed to retrieve users attached to groups")?;
 
@@ -706,8 +719,6 @@ pub async fn add_id_groups(
     while let Some(user) = users.try_next().await? {
         rbac.clear_id(&user);
     }
-
-    transaction.commit().await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -748,7 +759,7 @@ pub async fn remove_id_groups(
 
     transaction.commit().await?;
 
-    let users = users_multi_group(&conn, &json.ids)
+    let users = users_multi_group(&conn, &json.uids)
         .await
         .context("failed to retrieve users attached to groups")?;
 
@@ -763,15 +774,17 @@ pub async fn remove_id_groups(
 
 async fn users_multi_group(
     conn: &impl GenericClient,
-    group_ids: &[ids::GroupId]
-) -> Result<impl TryStream<Item = Result<ids::UserId, PgError>>, PgError> {
+    group_uids: &[ids::GroupUid]
+) -> ApiResult<impl TryStream<Item = Result<ids::UserId, PgError>>> {
     let result = conn.query_raw(
         "\
         select distinct on (user_id) user_id \
         from group_users \
-        where group_id = any($1)",
-        &[group_ids]
-    ).await?;
+        left join groups on \
+            group_users.group_id = groups.id \
+        where groups.uid = any($1)",
+        &[group_uids]
+    ).await.context("failed to retrieve group users attached to group uids")?;
 
     Ok(result.map(|row_result| row_result.map(
         |row| row.get::<usize, ids::UserId>(0)
